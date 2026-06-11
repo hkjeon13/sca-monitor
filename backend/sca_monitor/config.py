@@ -108,6 +108,31 @@ def runtime_database_url_summary(settings: Settings) -> dict[str, dict[str, obje
     }
 
 
+def runtime_auto_migrate_summary(env: dict[str, str] | None = None) -> dict[str, dict[str, object]]:
+    env = os.environ if env is None else env
+
+    def component_summary(component: str) -> dict[str, object]:
+        component_name = f"SCA_MONITOR_{component.upper()}_AUTO_MIGRATE"
+        if env.get(component_name, "") != "":
+            source = component_name
+            raw_value = env.get(component_name)
+        elif env.get("SCA_MONITOR_AUTO_MIGRATE", "") != "":
+            source = "SCA_MONITOR_AUTO_MIGRATE"
+            raw_value = env.get("SCA_MONITOR_AUTO_MIGRATE")
+        else:
+            source = "default"
+            raw_value = None
+        try:
+            return {"enabled": env_flag(raw_value, default=True), "source": source}
+        except ValueError as exc:
+            return {"enabled": True, "source": source, "error": str(exc)}
+
+    return {
+        "api": component_summary("api"),
+        "worker": component_summary("worker"),
+    }
+
+
 def env_flag(value: str | None, *, default: bool) -> bool:
     if value is None or value == "":
         return default

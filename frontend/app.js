@@ -176,6 +176,7 @@ function renderDatabaseReadiness(readiness) {
   const required = readiness.cutover_required || {};
   const preflight = readiness.postgres_preflight || {};
   const runtimeUrls = readiness.runtime_database_urls || {};
+  const runtimeMigration = readiness.runtime_auto_migrate || {};
   const advisoryReadiness = readiness.advisory_sync_readiness || {};
   const advisoryFreshness = advisoryReadiness.freshness || {};
   document.querySelector("#database-readiness").innerHTML = `
@@ -195,6 +196,9 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Required Mode", preflight.required_mode || required.mode || "unknown")}
       ${detailRow("PostgreSQL Configured", cutover.postgres_configured ? "yes" : "no")}
       ${detailRow("Split Ready", preflight.split_ready ? "yes" : "no")}
+      ${detailRow("Runtime Migration", renderRuntimeAutoMigrate(runtimeMigration))}
+      ${detailRow("API Auto-Migrate", renderAutoMigrateRole(runtimeMigration.api))}
+      ${detailRow("Worker Auto-Migrate", renderAutoMigrateRole(runtimeMigration.worker))}
       ${detailRow("Advisory Freshness", `${advisoryFreshness.status || "unknown"} · ${advisoryFreshness.stale_count ?? 0} stale / ${advisoryFreshness.partial_count ?? 0} partial / ${advisoryFreshness.failed_count ?? 0} failed`)}
       ${detailRow("Advisory Sources", `${advisoryReadiness.initialized_count ?? 0}/${advisoryReadiness.required_count ?? 0} initialized · ${advisoryReadiness.status || "unknown"}`)}
       ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
@@ -206,6 +210,17 @@ function renderDatabaseReadiness(readiness) {
       ${renderPostgresCutoverCheckGroups(required.checks || [])}
     </div>
   `;
+}
+
+function renderRuntimeAutoMigrate(runtimeMigration) {
+  return `api ${renderAutoMigrateRole(runtimeMigration.api)} | worker ${renderAutoMigrateRole(runtimeMigration.worker)}`;
+}
+
+function renderAutoMigrateRole(role) {
+  if (!role) return "unknown";
+  const status = role.enabled ? "enabled" : "disabled";
+  const source = role.source || "unknown";
+  return `${status} (${source})`;
 }
 
 function renderRuntimeDatabaseUrls(runtimeUrls) {

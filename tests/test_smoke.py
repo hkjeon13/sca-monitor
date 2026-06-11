@@ -2211,6 +2211,21 @@ def test_ready_endpoint_exposes_role_database_url_sources_without_secrets(monkey
     assert "secret" not in json.dumps(payload)
 
 
+def test_ready_endpoint_exposes_runtime_auto_migrate_flags(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_AUTO_MIGRATE", "true")
+    monkeypatch.setenv("SCA_MONITOR_API_AUTO_MIGRATE", "false")
+    monkeypatch.setenv("SCA_MONITOR_WORKER_AUTO_MIGRATE", "false")
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["runtime_auto_migrate"] == {
+        "api": {"enabled": False, "source": "SCA_MONITOR_API_AUTO_MIGRATE"},
+        "worker": {"enabled": False, "source": "SCA_MONITOR_WORKER_AUTO_MIGRATE"},
+    }
+
+
 def test_ready_endpoint_reports_invalid_split_flag_as_preflight_blocker(monkeypatch, tmp_path):
     monkeypatch.setenv("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT", "sometimes")
     app = make_test_app(tmp_path)
@@ -2709,6 +2724,9 @@ def test_web_console_renders_database_readiness_panel():
     assert "Migration DB" in script
     assert "Split Ready" in script
     assert "Split Required" in script
+    assert "Runtime Migration" in script
+    assert "API Auto-Migrate" in script
+    assert "Worker Auto-Migrate" in script
     assert "Advisory Freshness" in script
     assert "Advisory Sources" in script
     assert "readiness.advisory_sync_readiness" in script
