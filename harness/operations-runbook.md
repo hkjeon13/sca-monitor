@@ -190,10 +190,24 @@ python3 scripts/expire_accepted_risks.py --limit 100 --actor risk-scheduler
 |---|---|
 | 서비스 등록 | Web Console Services |
 | endpoint test | Service Registration Wizard |
-| push credential 발급 | Service Detail 또는 Settings |
+| push credential 발급/회전/폐기 | Service Detail 또는 Settings |
 | impact acknowledge | Impact Detail |
 | accepted risk 승인 | Impact Detail, security-approver 권한 |
 | alert channel 변경 | Settings |
+
+Push credential 수동 회전:
+
+```bash
+python3 scripts/rotate_push_credential.py \
+  --service-id <service_id> \
+  --credential-id <credential_id> \
+  --environment prod \
+  --actor operator \
+  --reason "scheduled rotation"
+```
+
+회전 결과로 새 token이 1회 출력된다.
+기존 token은 즉시 revoked 처리되므로 CI/CD secret store 갱신을 먼저 계획하고, 새 token 배포 후 smoke push를 수행한다.
 
 ## 5. 신규 환경 Bootstrap
 

@@ -512,9 +512,24 @@ async function loadPushCredentials(serviceId, environment) {
         <strong>${escapeHtml(credential.token_prefix)}</strong>
         <span>${escapeHtml(credential.revoked_at ? "revoked" : "active")} · expires ${escapeHtml(credential.expires_at || "-")}</span>
       </div>
+      <button type="button" class="secondary" data-credential-rotate="${escapeHtml(credential.id)}" ${credential.revoked_at ? "disabled" : ""}>Rotate</button>
       <button type="button" class="secondary" data-credential-id="${escapeHtml(credential.id)}" ${credential.revoked_at ? "disabled" : ""}>Revoke</button>
     </div>
   `).join("");
+  target.querySelectorAll("[data-credential-rotate]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const data = await api.send(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials/${encodeURIComponent(button.dataset.credentialRotate)}/rotate`, "POST", {
+        environment,
+        reason: "web console credential rotation",
+      });
+      document.querySelector("#credential-result").innerHTML = `
+        <p><strong>Token rotated for ${escapeHtml(data.credential.service_id)} / ${escapeHtml(data.credential.environment)}</strong></p>
+        <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
+        <p>New prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
+      `;
+      await loadPushCredentials(serviceId, environment);
+    });
+  });
   target.querySelectorAll("[data-credential-id]").forEach((button) => {
     button.addEventListener("click", async () => {
       await api.send(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials/${encodeURIComponent(button.dataset.credentialId)}/revoke`, "POST", {environment});

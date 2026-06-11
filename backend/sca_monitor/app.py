@@ -126,6 +126,14 @@ class ScaMonitorApp:
                 auth_context = self.auth_context(request)
                 self.authorize_admin(auth_context, "push credential changes require admin role")
                 return self.json_response(request, self.create_push_credential(service_id, self.apply_authenticated_actor(body, auth_context)), HTTPStatus.CREATED)
+            if path.startswith("/api/v1/services/") and "/push-credentials/" in path and path.endswith("/rotate") and method == "POST":
+                parts = path.split("/")
+                service_id = parts[-4]
+                credential_id = parts[-2]
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "push credential changes require admin role")
+                return self.json_response(request, self.rotate_push_credential(service_id, credential_id, self.apply_authenticated_actor(body, auth_context)), HTTPStatus.CREATED)
             if path.startswith("/api/v1/services/") and "/push-credentials/" in path and path.endswith("/revoke") and method == "POST":
                 parts = path.split("/")
                 service_id = parts[-4]
@@ -615,6 +623,49 @@ class ScaMonitorApp:
         credential["scopes"] = json.loads(credential["scopes"]) if isinstance(credential["scopes"], str) else credential["scopes"]
         credential["revoked_at"] = revoked_at
         return {"credential": credential}
+
+    def rotate_push_credential(self, service_id: str, credential_id: str, body: dict) -> dict:
+        environment = body.get("environment", "prod")
+        actor = body.get("actor", "system")
+        reason = body.get("reason", "push credential rotation")
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT pc.id, pc.scopes, pc.expires_at, pc.revoked_at, s.service_id, s.environment
+                FROM push_credentials pc
+                JOIN services s ON s.id = pc.service_pk
+                WHERE pc.id = ? AND s.service_id = ? AND s.environment = ?
+                """,
+                (credential_id, service_id, environment),
+            ).fetchone()
+        if not row:
+            raise ValueError("push credential not found")
+        if row["revoked_at"]:
+            raise ValueError("push credential already revoked")
+        scopes = json.loads(row["scopes"]) if isinstance(row["scopes"], str) else row["scopes"]
+        ttl_days = body.get("ttl_days")
+        if ttl_days is None:
+            ttl_days = remaining_ttl_days(row["expires_at"])
+        revoked = self.revoke_push_credential(service_id, credential_id, {"environment": environment, "actor": actor, "reason": reason})
+        issued = self.create_push_credential(
+            service_id,
+            {
+                "environment": environment,
+                "scopes": scopes,
+                "ttl_days": ttl_days,
+                "actor": actor,
+                "reason": reason,
+            },
+        )
+        return {
+            "rotated": True,
+            "service_id": service_id,
+            "environment": environment,
+            "revoked_credential": revoked["credential"],
+            "credential": issued["credential"],
+            "token": issued["token"],
+            "usage": issued["usage"],
+        }
 
     def test_service_endpoint(self, service_id: str, body: dict, fetcher=None) -> dict:
         collected = self.collect_service_endpoint_payload(service_id, body, fetcher)
@@ -2162,6 +2213,19 @@ def fetch_json_endpoint(endpoint_url: str, auth_header: str | None = None) -> di
 
 def utcnow_after_seconds(seconds: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+
+def remaining_ttl_days(expires_at: str | None) -> int:
+    if not expires_at:
+        return 90
+    try:
+        expires = parse_iso_datetime(expires_at)
+    except (TypeError, ValueError):
+        return 90
+    remaining = expires - datetime.now(timezone.utc)
+    if remaining.total_seconds() <= 0:
+        return 1
+    return max(1, min(3650, int((remaining.total_seconds() + 86399) // 86400)))
 
 
 def run() -> None:

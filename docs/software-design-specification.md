@@ -1469,7 +1469,7 @@ GET /api/v1/audit-logs
 - Endpoint Poll Worker: `scripts/poll_endpoints.py` 기반 등록된 `status_endpoint_url`을 1회 또는 반복 polling하고, 유효한 endpoint payload를 dependency snapshot으로 저장해 impact 매칭까지 수행. `endpoint_poll_state` DB lease로 중복 실행을 차단
 - Endpoint Bearer Auth: Web Console/API에서 `status_auth_type=bearer_token`과 token을 등록하면 endpoint test/polling에서 `Authorization: Bearer` 헤더를 사용. 서비스 조회 응답은 secret 원문을 제거하고 `status_auth_configured`만 표시
 - Operational Metrics: `/metrics`에서 service/open impact/critical/high/unhealthy count와 advisory sync lag, endpoint poll success rate, alert delivery success rate, alert outbox pending/dead-letter count, stale service count를 Prometheus text 형태로 노출
-- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
+- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/rotate` 기반 회전을 지원한다. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push 및 credential rotate/revoke action을 지원
 - Alert Channel Settings: `GET/POST/PATCH /api/v1/settings/alert-channels`와 Web Console Settings에서 기본 webhook channel을 등록, 조회, default 전환, disable 처리한다. webhook URL 원문은 조회 응답에 노출하지 않는다
 - Alert Event Operations: `GET /api/v1/alert-events`와 Web Console Settings에서 alert event 상태를 status/search/limit 조건으로 조회하고, dead-letter event는 `POST /api/v1/alert-events/{id}/requeue`, `POST /api/v1/alert-events/requeue`, 또는 `scripts/requeue_alerts.py`로 pending 복구할 수 있다
 - Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, 명시적 `--webhook-url`이 없으면 기본 alert channel을 사용한다. webhook에는 `Idempotency-Key`, `X-SCA-Alert-Event-Id`, `X-SCA-Alert-Suppression-Key` 헤더를 포함한다. `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds`, `--max-retries` 옵션으로 운영 루프 실행과 dead-letter 전환을 지원한다
@@ -1487,7 +1487,7 @@ GET /api/v1/audit-logs
 
 - role-aware UI와 API 인가 연동
 - accepted risk role-aware 승인 정책과 운영 scheduler 등록
-- 외부 endpoint polling scheduler 배치 enable, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
+- 외부 endpoint polling scheduler 배치 enable, mTLS/HMAC endpoint auth policy, push credential rotation policy 고도화
 - Slack app 방식, alert channel hard delete
 
 ### 14.7 UI 상태

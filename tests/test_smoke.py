@@ -158,6 +158,60 @@ def test_push_credential_revoke_blocks_token_reuse(tmp_path):
         )
 
 
+def test_push_credential_rotate_revokes_old_token_and_issues_new(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
+    issued = app.create_push_credential("credential-service", {"environment": "prod", "ttl_days": 30})
+    old_token = issued["token"]
+    credential_id = issued["credential"]["id"]
+
+    rotated = app.rotate_push_credential(
+        "credential-service",
+        credential_id,
+        {"environment": "prod", "ttl_days": 60, "actor": "security-admin", "reason": "scheduled rotation"},
+    )
+
+    assert rotated["rotated"] is True
+    assert rotated["revoked_credential"]["id"] == credential_id
+    assert rotated["revoked_credential"]["revoked_at"] is not None
+    assert rotated["credential"]["id"] != credential_id
+    assert rotated["token"].startswith("sca_")
+    assert rotated["credential"]["token_prefix"] == rotated["token"][:12]
+    with pytest.raises(PermissionError, match="revoked"):
+        app.push_snapshot(
+            {
+                "service_id": "credential-service",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            f"Bearer {old_token}",
+        )
+
+    result = app.push_snapshot(
+        {
+            "service_id": "credential-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        },
+        f"Bearer {rotated['token']}",
+    )
+
+    assert result["impacts_created_or_updated"] == 0
+    credentials = app.list_push_credentials("credential-service", {"environment": ["prod"]})
+    assert {credential["revoked_at"] is None for credential in credentials} == {True, False}
+
+
+def test_push_credential_rotate_rejects_revoked_credential(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
+    issued = app.create_push_credential("credential-service", {"environment": "prod"})
+    credential_id = issued["credential"]["id"]
+    app.revoke_push_credential("credential-service", credential_id, {"environment": "prod"})
+
+    with pytest.raises(ValueError, match="already revoked"):
+        app.rotate_push_credential("credential-service", credential_id, {"environment": "prod"})
+
+
 def test_alert_channel_create_list_redacts_target(tmp_path):
     app = make_test_app(tmp_path)
 
@@ -923,8 +977,22 @@ def test_header_auth_admin_required_for_service_registration_and_credentials(tmp
             headers=admin_headers,
             expect_status=201,
         )
+        rotate_forbidden = http_json(
+            f"{base_url}/api/v1/services/admin-service/push-credentials/{credential['credential']['id']}/rotate",
+            method="POST",
+            body={"environment": "prod"},
+            headers=owner_headers,
+            expect_status=403,
+        )
+        rotated = http_json(
+            f"{base_url}/api/v1/services/admin-service/push-credentials/{credential['credential']['id']}/rotate",
+            method="POST",
+            body={"environment": "prod", "actor": "spoofed"},
+            headers=admin_headers,
+            expect_status=201,
+        )
         revoked = http_json(
-            f"{base_url}/api/v1/services/admin-service/push-credentials/{credential['credential']['id']}/revoke",
+            f"{base_url}/api/v1/services/admin-service/push-credentials/{rotated['credential']['id']}/revoke",
             method="POST",
             body={"environment": "prod", "actor": "spoofed"},
             headers=admin_headers,
@@ -934,6 +1002,8 @@ def test_header_auth_admin_required_for_service_registration_and_credentials(tmp
     assert created["service"]["service_id"] == "admin-service"
     assert "admin role" in credential_forbidden["error"]
     assert credential["credential"]["service_id"] == "admin-service"
+    assert "admin role" in rotate_forbidden["error"]
+    assert rotated["revoked_credential"]["id"] == credential["credential"]["id"]
     assert revoked["credential"]["revoked_at"] is not None
 
 
