@@ -2525,7 +2525,7 @@ class ScaMonitorApp:
                 f"""
                 SELECT ae.id, ae.impact_pk, ae.alert_suppression_key, ae.reason, ae.status,
                        ae.channel_type, ae.channel_target, ae.sent_at, ae.created_at,
-                       ae.retry_count, ae.next_attempt_at,
+                       ae.retry_count, ae.next_attempt_at, ae.payload,
                        s.service_id, s.service_name, i.package_name, i.resolved_version,
                        i.risk_level, a.advisory_id, a.summary
                 FROM alert_events ae
@@ -2542,6 +2542,7 @@ class ScaMonitorApp:
         for row in rows:
             event = row_to_dict(row)
             event["channel_target_masked"] = mask_url(event.pop("channel_target", None))
+            event["payload"] = json_column(event.get("payload"), {})
             events.append(event)
         return {
             "alert_events": events,

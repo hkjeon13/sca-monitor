@@ -1371,6 +1371,8 @@ def test_web_console_renders_database_readiness_panel():
     assert "System Alerts" in script
     assert "event.reason" in script
     assert "event.alert_suppression_key" in script
+    assert "renderAlertEventPayloadSummary" in script
+    assert "event.payload" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
@@ -5392,6 +5394,8 @@ def test_search_alert_events_lists_and_filters(tmp_path):
     assert system_page["pagination"]["total"] == 1
     assert system_page["alert_events"][0]["reason"] == "system_advisory_sync_failed"
     assert system_page["alert_events"][0]["service_id"] is None
+    assert system_page["alert_events"][0]["payload"]["source"] == "GHSA"
+    assert system_page["alert_events"][0]["payload"]["error_message"] == "rate limit"
 
     assert app.search_alert_events({"q": ["alert-service"]})["pagination"]["total"] == 1
     assert app.search_alert_events({"status": ["sent"]})["pagination"]["total"] == 0
