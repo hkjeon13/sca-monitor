@@ -47,6 +47,14 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=15min", "Unit={prefix}-sla-escalation.service"],
         "kind": "timer",
     },
+    "advisory-freshness.service": {
+        "required": ["scripts/evaluate_advisory_sync_freshness.py", "--actor freshness-scheduler"],
+        "kind": "oneshot",
+    },
+    "advisory-freshness.timer": {
+        "required": ["OnUnitActiveSec=15min", "Unit={prefix}-advisory-freshness.service"],
+        "kind": "timer",
+    },
     "daily-digest.service": {
         "required": ["scripts/create_daily_digest.py", "--timezone Asia/Seoul", "--actor digest-scheduler"],
         "kind": "oneshot",

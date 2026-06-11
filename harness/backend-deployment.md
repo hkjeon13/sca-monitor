@@ -204,6 +204,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-alert-dispatcher-dry-run.service` | alert outbox dry-run dispatch | long-running loop, no row update/send |
 | `sca-monitor-accepted-risk-expiry.timer` | accepted risk 만료 처리 | 15분 주기 oneshot |
 | `sca-monitor-sla-escalation.timer` | SLA 만료 alert 후보 생성 | 15분 주기 oneshot |
+| `sca-monitor-advisory-freshness.timer` | advisory sync stale source system alert 생성/해소 | 15분 주기 oneshot |
 | `sca-monitor-daily-digest.timer` | Medium 이하/비운영 이슈 Daily Digest 생성 | 매일 09:00 oneshot |
 | `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
 | `sca-monitor-ghsa-sync.timer` | GitHub Security Advisory sync | 1시간 주기 oneshot |

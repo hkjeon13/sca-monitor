@@ -66,6 +66,9 @@ python3 scripts/evaluate_advisory_sync_freshness.py --dry-run
 python3 scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler
 ```
 
+VM systemd full `enable` 모드에서는 `sca-monitor-advisory-freshness.timer`가 같은 평가를 15분 주기로 실행한다.
+canary 배포용 `enable-dispatcher-dry-run` 모드는 API, endpoint poller, dry-run dispatcher만 활성화하므로 이 timer는 unit 파일 검증 대상이지만 자동 시작 대상은 아니다.
+
 ## 3. 장애 대응
 
 감사 로그 확인:

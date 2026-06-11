@@ -253,6 +253,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-accepted-risk-expiry.timer",
         "sca-monitor-sla-escalation.service",
         "sca-monitor-sla-escalation.timer",
+        "sca-monitor-advisory-freshness.service",
+        "sca-monitor-advisory-freshness.timer",
         "sca-monitor-daily-digest.service",
         "sca-monitor-daily-digest.timer",
         "sca-monitor-cisa-kev-sync.service",
@@ -282,6 +284,11 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler" in sla_service
     sla_timer = (unit_dir / "sca-monitor-sla-escalation.timer").read_text(encoding="utf-8")
     assert "Unit=sca-monitor-sla-escalation.service" in sla_timer
+    advisory_freshness = (unit_dir / "sca-monitor-advisory-freshness.service").read_text(encoding="utf-8")
+    assert "scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler" in advisory_freshness
+    advisory_freshness_timer = (unit_dir / "sca-monitor-advisory-freshness.timer").read_text(encoding="utf-8")
+    assert "OnUnitActiveSec=15min" in advisory_freshness_timer
+    assert "Unit=sca-monitor-advisory-freshness.service" in advisory_freshness_timer
     digest_service = (unit_dir / "sca-monitor-daily-digest.service").read_text(encoding="utf-8")
     assert "scripts/create_daily_digest.py --limit 100 --timezone Asia/Seoul --actor digest-scheduler" in digest_service
     digest_timer = (unit_dir / "sca-monitor-daily-digest.timer").read_text(encoding="utf-8")
@@ -328,12 +335,13 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 20, "present": 20, "valid": 20, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 22, "present": 22, "valid": 22, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-daily-digest.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-ghsa-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
+    assert payload["units"]["sca-monitor-advisory-freshness.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-canonical-advisory-merge.timer"]["valid"] is True
 
 
@@ -819,7 +827,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 20
+    assert payload["summary"]["missing"] == 22
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -841,7 +849,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 20, "present": 20, "valid": 20, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 22, "present": 22, "valid": 22, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -885,7 +893,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 20
+    assert payload["summary"]["valid"] == 22
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -954,12 +962,14 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 20
+    assert payload["summary"]["valid"] == 22
     assert api_status == {"enabled": "enabled", "active": "active"}
     log_text = log_path.read_text(encoding="utf-8")
     assert "--user list-unit-files" in log_text
     assert "sca-monitor-canonical-advisory-merge.timer" in enabled_now_lines(log_text)
+    assert "sca-monitor-advisory-freshness.timer" in enabled_now_lines(log_text)
     assert "sca-monitor-canonical-advisory-merge.timer" in restart_lines(log_text)
+    assert "sca-monitor-advisory-freshness.timer" in restart_lines(log_text)
 
 
 def test_deploy_systemd_gate_enable_api_mode_only_enables_api_service(tmp_path):
@@ -1096,10 +1106,12 @@ exit 0
     assert payload["systemctl"]["sca-monitor-alert-dispatcher-dry-run.service"] == {"enabled": "enabled", "active": "active"}
     assert "sca-monitor-alert-dispatcher-dry-run.service" in enabled_now_lines(log_text)
     assert "sca-monitor-alert-dispatcher.service" not in enabled_now_lines(log_text)
+    assert "sca-monitor-advisory-freshness.timer" not in enabled_now_lines(log_text)
     assert "sca-monitor-api.service" in restart_lines(log_text)
     assert "sca-monitor-endpoint-poller.service" in restart_lines(log_text)
     assert "sca-monitor-alert-dispatcher-dry-run.service" in restart_lines(log_text)
     assert "sca-monitor-alert-dispatcher.service" not in restart_lines(log_text)
+    assert "sca-monitor-advisory-freshness.timer" not in restart_lines(log_text)
 
 
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):

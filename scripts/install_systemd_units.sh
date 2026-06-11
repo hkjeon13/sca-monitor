@@ -227,6 +227,29 @@ Unit=${PREFIX}-sla-escalation.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-advisory-freshness.service" <<EOF
+[Unit]
+Description=SCA Monitor advisory sync freshness alert job
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler
+EOF
+
+write_unit "${PREFIX}-advisory-freshness.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor advisory sync freshness alert evaluation every 15 minutes
+
+[Timer]
+OnBootSec=9min
+OnUnitActiveSec=15min
+Unit=${PREFIX}-advisory-freshness.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 write_unit "${PREFIX}-daily-digest.service" <<EOF
 [Unit]
 Description=SCA Monitor Daily Digest job
@@ -426,6 +449,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
     "${PREFIX}-sla-escalation.timer" \
+    "${PREFIX}-advisory-freshness.timer" \
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
@@ -438,6 +462,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
     "${PREFIX}-sla-escalation.timer" \
+    "${PREFIX}-advisory-freshness.timer" \
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
