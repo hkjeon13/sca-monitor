@@ -22,6 +22,7 @@ class Settings:
     max_snapshot_payload_bytes: int = 10 * 1024 * 1024
     max_snapshot_dependencies: int = 10000
     max_snapshot_pushes_per_minute: int = 30
+    strict_snapshot_push: bool = False
     advisory_sync_stale_after_seconds: int = 24 * 60 * 60
 
 
@@ -58,6 +59,7 @@ def load_settings(component: str = "api") -> Settings:
         max_snapshot_payload_bytes=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES", str(10 * 1024 * 1024))),
         max_snapshot_dependencies=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES", "10000")),
         max_snapshot_pushes_per_minute=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE", "30")),
+        strict_snapshot_push=env_flag(os.getenv("SCA_MONITOR_STRICT_SNAPSHOT_PUSH"), default=False),
         advisory_sync_stale_after_seconds=int(os.getenv("SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS", str(24 * 60 * 60))),
     )
 

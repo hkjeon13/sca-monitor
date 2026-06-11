@@ -232,6 +232,17 @@ def test_load_settings_supports_advisory_sync_stale_threshold(monkeypatch, tmp_p
     assert settings.advisory_sync_stale_after_seconds == 3600
 
 
+def test_load_settings_supports_strict_snapshot_push_flag(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("SCA_MONITOR_STRICT_SNAPSHOT_PUSH", raising=False)
+
+    assert load_settings(component="api").strict_snapshot_push is False
+
+    monkeypatch.setenv("SCA_MONITOR_STRICT_SNAPSHOT_PUSH", "true")
+
+    assert load_settings(component="api").strict_snapshot_push is True
+
+
 def test_sca_monitor_app_can_skip_runtime_migration(tmp_path):
     settings = Settings(
         app_env="test",
@@ -3182,6 +3193,60 @@ def test_service_status_push_route_requires_schema_fields(tmp_path):
     assert unsupported_schema["error"] == "unsupported schema_version"
     assert "generated_at required" in missing_generated_at["error"]
     assert "version required" in missing_dependency_version["error"]
+
+
+def test_legacy_snapshot_push_strict_mode_requires_schema_fields(tmp_path):
+    app = make_test_app(tmp_path, strict_snapshot_push=True)
+
+    with pytest.raises(ValueError, match="schema_version required"):
+        app.push_snapshot(
+            {
+                "service_id": "strict-legacy-service",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            }
+        )
+
+    with pytest.raises(ValueError, match="unsupported schema_version"):
+        app.push_snapshot(
+            {
+                "service_id": "strict-legacy-service",
+                "schema_version": "2.0",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            }
+        )
+
+    with pytest.raises(ValueError, match="generated_at required"):
+        app.push_snapshot(
+            {
+                "service_id": "strict-legacy-service",
+                "schema_version": "1.0",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            }
+        )
+
+
+def test_legacy_snapshot_push_strict_mode_route_rejects_invalid_schema(tmp_path):
+    app = make_test_app(tmp_path, strict_snapshot_push=True)
+
+    with run_test_server(app) as base_url:
+        response = http_json(
+            f"{base_url}/api/v1/snapshots",
+            method="POST",
+            body={
+                "service_id": "strict-route-service",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            expect_status=400,
+        )
+
+    assert response["error"] == "schema_version required"
 
 
 def test_snapshot_push_rate_limit_rejects_excess_service_pushes(tmp_path):

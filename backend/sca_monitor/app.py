@@ -1975,6 +1975,8 @@ class ScaMonitorApp:
 
     def push_snapshot(self, body: dict, authorization: str | None = None) -> dict:
         service_id = required(body, "service_id")
+        if self.settings.strict_snapshot_push:
+            self.validate_snapshot_status_payload(body, service_id)
         environment = body.get("environment", "prod")
         dependencies = body.get("dependencies") or []
         if not dependencies:

@@ -76,6 +76,7 @@ POST https://<api-host>/api/v1/services/<service_id>/status
 - rate limit
 - idempotency rule
 - 기존 `POST /api/v1/snapshots`는 호환 경로로 남기되 신규 자동화는 service-scoped status endpoint를 우선 사용
+- `SCA_MONITOR_STRICT_SNAPSHOT_PUSH=true`를 켜면 기존 `POST /api/v1/snapshots`도 동일 필수 필드 검증을 적용
 
 ## 5. Firewall Checklist
 
