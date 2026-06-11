@@ -119,6 +119,7 @@ async function loadOverview() {
     metric("Open Impacts", overview.open_impacts),
     metric("Critical", overview.critical_impacts),
     metric("High", overview.high_impacts),
+    metric("SLA Overdue", overview.sla_overdue_impacts || 0),
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
 }

@@ -21,6 +21,13 @@ from .versioning import version_is_affected
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
+DEFAULT_SLA_HOURS = {
+    "critical": 24,
+    "high": 72,
+    "medium": 7 * 24,
+    "low": 30 * 24,
+    "info": 30 * 24,
+}
 IMPACT_STATUSES = {
     "open",
     "acknowledged",
@@ -401,15 +408,29 @@ class ScaMonitorApp:
             ).fetchone()["c"]
             unhealthy = conn.execute("SELECT COUNT(*) AS c FROM endpoint_health WHERE collection_status != 'ok'").fetchone()["c"]
             advisory_sync = self.advisory_sync_overview(conn)
+            sla_overdue = self.sla_overdue_count(conn)
         return {
             "service_count": service_count,
             "open_impacts": open_impacts,
             "critical_impacts": critical,
             "high_impacts": high,
             "endpoint_unhealthy": unhealthy,
+            "sla_overdue_impacts": sla_overdue,
             "advisory_sync": advisory_sync,
             "system": {"environment": self.settings.app_env},
         }
+
+    def sla_overdue_count(self, conn) -> int:
+        rows = conn.execute(
+            f"""
+            SELECT risk_level, status, first_detected_at
+            FROM impacts
+            WHERE status IN ({",".join("?" for _ in ACTIVE_IMPACT_STATUSES)})
+            """,
+            ACTIVE_IMPACT_STATUSES,
+        ).fetchall()
+        now = datetime.now(timezone.utc)
+        return sum(1 for row in rows if impact_sla(row_to_dict(row), now)["overdue"])
 
     def advisory_sync_overview(self, conn) -> dict:
         sync = {"OSV": "seeded-demo", "CISA_KEV": "pending"}
@@ -1642,6 +1663,7 @@ class ScaMonitorApp:
         impact = row_to_dict(row)
         impact["affected_versions"] = json_column(impact["affected_versions"], [])
         impact["affected_ranges"] = json_column(impact["affected_ranges"], [])
+        impact = enrich_impact_sla(impact)
         return {
             "impact": impact,
             "history": [row_to_dict(history) for history in history_rows],
@@ -2061,6 +2083,7 @@ class ScaMonitorApp:
             f"sca_monitor_critical_impacts {overview['critical_impacts']}",
             f"sca_monitor_high_impacts {overview['high_impacts']}",
             f"sca_monitor_endpoint_unhealthy {overview['endpoint_unhealthy']}",
+            f"sca_monitor_sla_overdue_impacts {overview['sla_overdue_impacts']}",
         ]
         lines.extend(self.operational_metric_lines())
         lines.append("")
@@ -2175,7 +2198,40 @@ def sanitize_service_impact(row: dict | None) -> dict | None:
     sanitized = dict(row)
     sanitized["is_known_exploited"] = bool(sanitized.get("is_known_exploited"))
     sanitized["is_malicious_package"] = bool(sanitized.get("is_malicious_package"))
-    return sanitized
+    return enrich_impact_sla(sanitized)
+
+
+def enrich_impact_sla(impact: dict) -> dict:
+    enriched = dict(impact)
+    enriched["sla"] = impact_sla(enriched, datetime.now(timezone.utc))
+    return enriched
+
+
+def impact_sla(impact, now: datetime) -> dict:
+    risk_level = str(impact.get("risk_level") or "info").lower()
+    policy_hours = DEFAULT_SLA_HOURS.get(risk_level, DEFAULT_SLA_HOURS["info"])
+    first_detected_at = impact.get("first_detected_at")
+    status = impact.get("status")
+    deadline_at = None
+    seconds_until_deadline = None
+    overdue = False
+    if first_detected_at:
+        try:
+            detected = parse_iso_datetime(first_detected_at)
+            deadline = detected + timedelta(hours=policy_hours)
+            deadline_at = deadline.isoformat()
+            seconds_until_deadline = int((deadline - now).total_seconds())
+            overdue = status in ACTIVE_IMPACT_STATUSES and seconds_until_deadline < 0
+        except (TypeError, ValueError):
+            deadline_at = None
+            seconds_until_deadline = None
+            overdue = False
+    return {
+        "policy_hours": policy_hours,
+        "deadline_at": deadline_at,
+        "overdue": overdue,
+        "seconds_until_deadline": seconds_until_deadline,
+    }
 
 
 def parse_json_field(value):

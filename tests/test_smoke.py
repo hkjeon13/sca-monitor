@@ -1568,6 +1568,58 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert "sca_monitor_alert_delivery_success_rate 1.000000" in metrics
     assert "sca_monitor_alert_outbox_pending_count 0" in metrics
     assert "sca_monitor_stale_services 0" in metrics
+    assert "sca_monitor_sla_overdue_impacts 0" in metrics
+
+
+def test_impacts_expose_sla_deadline_and_overdue_metrics(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        impact_id = conn.execute("SELECT id FROM impacts").fetchone()["id"]
+        conn.execute(
+            """
+            UPDATE impacts
+            SET first_detected_at = '2026-01-01T00:00:00+00:00',
+                risk_level = 'critical',
+                status = 'open'
+            WHERE id = ?
+            """,
+            (impact_id,),
+        )
+
+    page = app.search_impacts({})
+    impact = page["impacts"][0]
+    detail = app.get_impact(impact_id)
+    metrics = app.metrics()
+
+    assert impact["sla"]["policy_hours"] == 24
+    assert impact["sla"]["deadline_at"] == "2026-01-02T00:00:00+00:00"
+    assert impact["sla"]["overdue"] is True
+    assert detail["impact"]["sla"]["overdue"] is True
+    assert app.overview()["sla_overdue_impacts"] == 1
+    assert "sca_monitor_sla_overdue_impacts 1" in metrics
+
+
+def test_fixed_impacts_are_not_sla_overdue(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        impact_id = conn.execute("SELECT id FROM impacts").fetchone()["id"]
+        conn.execute(
+            """
+            UPDATE impacts
+            SET first_detected_at = '2026-01-01T00:00:00+00:00',
+                risk_level = 'critical',
+                status = 'fixed'
+            WHERE id = ?
+            """,
+            (impact_id,),
+        )
+
+    impact = app.search_impacts({})["impacts"][0]
+
+    assert impact["sla"]["overdue"] is False
+    assert app.overview()["sla_overdue_impacts"] == 0
 
 
 def test_parse_osv_advisory_fixture():
