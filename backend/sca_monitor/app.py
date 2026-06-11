@@ -34,10 +34,26 @@ class ScaMonitorApp:
             def do_PATCH(self) -> None:
                 app.route(self, "PATCH")
 
+            def do_HEAD(self) -> None:
+                app.head(self)
+
             def log_message(self, fmt: str, *args) -> None:
                 print("[%s] %s" % (self.log_date_time_string(), fmt % args))
 
         return Handler
+
+    def head(self, request: BaseHTTPRequestHandler) -> None:
+        parsed = urlparse(request.path)
+        path = parsed.path
+        if path in ("/", "/index.html") or path.startswith("/api/") or path in ("/health", "/ready", "/metrics"):
+            request.send_response(HTTPStatus.OK)
+            request.send_header("Content-Type", "text/html; charset=utf-8" if path in ("/", "/index.html") else "application/json; charset=utf-8")
+            request.send_header("Content-Length", "0")
+            request.end_headers()
+            return
+        request.send_response(HTTPStatus.NOT_FOUND)
+        request.send_header("Content-Length", "0")
+        request.end_headers()
 
     def route(self, request: BaseHTTPRequestHandler, method: str) -> None:
         parsed = urlparse(request.path)
@@ -461,4 +477,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-
