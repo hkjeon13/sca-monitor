@@ -407,7 +407,7 @@ class ScaMonitorApp:
             return
         if "admin" in auth_context["roles"] or "security-approver" in auth_context["roles"]:
             return
-        if status in {"acknowledged", "in_progress"} and "service-owner" in auth_context["roles"]:
+        if status in {"acknowledged", "in_progress", "fixed", "not_affected"} and "service-owner" in auth_context["roles"]:
             owner_team = self.impact_owner_team(impact_id)
             if owner_team in auth_context["owner_teams"]:
                 return

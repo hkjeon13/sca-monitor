@@ -5656,6 +5656,66 @@ def test_header_auth_service_owner_can_only_update_owned_impact(tmp_path):
     assert "not authorized" in forbidden["error"]
 
 
+def test_header_auth_service_owner_can_mark_owned_impact_fixed_or_not_affected(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "owned-fixed-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    app.push_snapshot(
+        {
+            "service_id": "owned-not-affected-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    app.push_snapshot(
+        {
+            "service_id": "other-service",
+            "environment": "prod",
+            "owner_team": "billing",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    fixed_impact_id = app.list_impacts({"service_id": ["owned-fixed-service"]})[0]["id"]
+    not_affected_impact_id = app.list_impacts({"service_id": ["owned-not-affected-service"]})[0]["id"]
+    other_impact_id = app.list_impacts({"service_id": ["other-service"]})[0]["id"]
+    headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+
+    with run_test_server(app) as base_url:
+        fixed = http_json(
+            f"{base_url}/api/v1/impacts/{fixed_impact_id}/status",
+            method="PATCH",
+            body={"status": "fixed", "actor": "spoofed-client", "reason": "upgraded to fixed version"},
+            headers=headers,
+        )
+        not_affected = http_json(
+            f"{base_url}/api/v1/impacts/{not_affected_impact_id}/status",
+            method="PATCH",
+            body={"status": "not_affected", "actor": "spoofed-client", "reason": "package not loaded at runtime"},
+            headers=headers,
+        )
+        forbidden = http_json(
+            f"{base_url}/api/v1/impacts/{other_impact_id}/status",
+            method="PATCH",
+            body={"status": "fixed", "reason": "wrong team"},
+            headers=headers,
+            expect_status=403,
+        )
+
+    assert fixed["status"] == "fixed"
+    assert not_affected["status"] == "not_affected"
+    assert app.get_impact(fixed_impact_id)["history"][0]["actor"] == "owner@example.test"
+    assert app.get_impact(not_affected_impact_id)["history"][0]["actor"] == "owner@example.test"
+    assert "not authorized" in forbidden["error"]
+
+
 def test_header_auth_service_owner_bulk_requires_owned_team_filter(tmp_path):
     app = make_test_app(tmp_path, auth_mode="header")
     app.import_osv_payload(osv_fixture())
