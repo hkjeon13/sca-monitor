@@ -66,6 +66,15 @@ python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 중복 실행은 `advisory_sync_state.lock_owner`, `lock_expires_at` 기준으로 차단된다.
 테스트 또는 폐쇄망 검증에는 `--zip-path /path/to/osv-fixture.zip`을 사용할 수 있다.
 
+CISA KEV 수동 재시도 예시:
+
+```bash
+python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
+```
+
+CISA KEV는 `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` JSON feed를 기본으로 사용한다.
+운영 검증에는 작은 `--limit`으로 먼저 실행하고, 폐쇄망 또는 테스트 fixture 검증에는 `--json-path /path/to/cisa-kev.json`을 사용할 수 있다.
+
 ### Endpoint polling failed
 
 1. endpoint_health 확인

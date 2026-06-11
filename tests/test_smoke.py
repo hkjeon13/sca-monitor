@@ -4,7 +4,7 @@ import zipfile
 import pytest
 
 from backend.sca_monitor.alert_dispatch import dispatch_alert_batches, dispatch_pending_alerts
-from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
+from backend.sca_monitor.advisory_sync import parse_cisa_kev_vulnerability, sync_cisa_kev_catalog, sync_osv_ecosystem_dump
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
@@ -673,6 +673,38 @@ def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     assert app.overview()["advisory_sync"]["OSV"] == "ok"
 
 
+def test_parse_cisa_kev_vulnerability_marks_known_exploited():
+    advisory = parse_cisa_kev_vulnerability(cisa_kev_fixture()["vulnerabilities"][0], cisa_kev_fixture())
+
+    assert advisory.advisory_id == "CISA_KEV:CVE-2026-0001"
+    assert advisory.source == "CISA_KEV"
+    assert advisory.severity == "critical"
+    assert advisory.ecosystem == "cve"
+    assert advisory.package_name == "ExampleVendor/Example Product"
+    assert advisory.is_known_exploited is True
+    assert advisory.raw_payload["dueDate"] == "2026-07-01"
+
+
+def test_sync_cisa_kev_catalog_from_json_file(tmp_path):
+    app = make_test_app(tmp_path)
+    catalog_path = tmp_path / "cisa-kev.json"
+    catalog_path.write_text(json.dumps(cisa_kev_fixture()), encoding="utf-8")
+
+    result = sync_cisa_kev_catalog(app, json_path=catalog_path, limit=1)
+
+    assert result.processed == 1
+    assert result.imported_rows == 1
+    assert result.failed == 0
+    advisories = app.list_advisories({"source": ["CISA_KEV"]})
+    imported = next(advisory for advisory in advisories if advisory["advisory_id"] == "CISA_KEV:CVE-2026-0001")
+    assert imported["is_known_exploited"] is True
+    assert imported["severity"] == "critical"
+    with app.db.connect() as conn:
+        raw_payload = json.loads(conn.execute("SELECT raw_payload FROM advisories WHERE advisory_id = 'CISA_KEV:CVE-2026-0001'").fetchone()["raw_payload"])
+    assert raw_payload["requiredAction"] == "Apply vendor mitigations."
+    assert app.overview()["advisory_sync"]["CISA_KEV"] == "ok"
+
+
 def test_advisory_sync_lock_releases_after_success(tmp_path):
     app = make_test_app(tmp_path)
 
@@ -1039,5 +1071,42 @@ def osv_fixture():
                 "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}],
                 "database_specific": {"severity": "HIGH"},
             }
+        ],
+    }
+
+
+def cisa_kev_fixture():
+    return {
+        "title": "CISA Catalog of Known Exploited Vulnerabilities",
+        "catalogVersion": "2026.06.11",
+        "dateReleased": "2026-06-11",
+        "count": 2,
+        "vulnerabilities": [
+            {
+                "cveID": "CVE-2026-0001",
+                "vendorProject": "ExampleVendor",
+                "product": "Example Product",
+                "vulnerabilityName": "Example Product Remote Code Execution Vulnerability",
+                "dateAdded": "2026-06-10",
+                "shortDescription": "Example Product contains a remote code execution vulnerability.",
+                "requiredAction": "Apply vendor mitigations.",
+                "dueDate": "2026-07-01",
+                "knownRansomwareCampaignUse": "Known",
+                "notes": "https://example.test/advisory",
+                "cwes": ["CWE-78"],
+            },
+            {
+                "cveID": "CVE-2026-0002",
+                "vendorProject": "OtherVendor",
+                "product": "Other Product",
+                "vulnerabilityName": "Other Product Vulnerability",
+                "dateAdded": "2026-06-11",
+                "shortDescription": "Other Product contains a known exploited vulnerability.",
+                "requiredAction": "Apply updates.",
+                "dueDate": "2026-07-02",
+                "knownRansomwareCampaignUse": "Unknown",
+                "notes": "",
+                "cwes": [],
+            },
         ],
     }
