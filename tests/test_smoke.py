@@ -997,6 +997,79 @@ def test_postgres_cutover_readiness_accepts_split_postgres_urls(tmp_path):
     assert payload["postgres_configured"] is True
 
 
+def test_deployment_input_readiness_allows_sqlite_fallback_env_file(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_DATABASE_URL=sqlite:////tmp/sca-monitor.sqlite3",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run",
+                "SMOKE_TEST_TOKEN=dev-smoke-token",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/deployment_input_readiness.py", "--env-file", str(env_file), "--json"],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["postgres"]["status"] == "sqlite_fallback"
+    assert any(check["id"] == "public_url" and check["status"] == "ok" for check in payload["checks"])
+    assert any(check["id"] == "postgres_cutover" and check["status"] == "ok" for check in payload["checks"])
+    assert "sqlite:////tmp" not in result.stdout
+
+
+def test_deployment_input_readiness_requires_split_postgres_inputs(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_DATABASE_URL=sqlite:////tmp/sca-monitor.sqlite3",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/deployment_input_readiness.py",
+            "--env-file",
+            str(env_file),
+            "--require-postgres",
+            "--require-split",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert payload["postgres"]["status"] == "blocked"
+    assert any(check["id"] == "postgres_cutover" and check["status"] == "blocker" for check in payload["checks"])
+    assert "sqlite:////tmp" not in result.stdout
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1369,6 +1442,17 @@ def test_ci_smoke_runs_core_gates():
     assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" in script
     assert "--expect-postgres-split-required" in script
+
+
+def test_harness_documents_deployment_input_readiness():
+    database_doc = (REPO_ROOT / "harness" / "database-deployment.md").read_text(encoding="utf-8")
+    cicd_doc = (REPO_ROOT / "harness" / "cicd-automation.md").read_text(encoding="utf-8")
+    values_doc = (REPO_ROOT / "harness" / "values" / "deployment-inputs.md").read_text(encoding="utf-8")
+
+    for text in (database_doc, cicd_doc, values_doc):
+        assert "scripts/deployment_input_readiness.py" in text
+    assert "--require-postgres --require-split" in values_doc
+    assert "DB URL 원문이나 password를 포함하지" in values_doc
 
 
 def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):

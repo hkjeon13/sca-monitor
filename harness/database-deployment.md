@@ -132,6 +132,8 @@ curl -fsS "$PUBLIC_URL/api/v1/operations/database-readiness"
 ```bash
 python3 scripts/postgres_cutover_readiness.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
+python3 scripts/deployment_input_readiness.py --env-file .env --json
+python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --production-preflight --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json

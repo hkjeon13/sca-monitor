@@ -105,6 +105,8 @@ GET /ready
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-postgres-split-metrics --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
+python3 scripts/deployment_input_readiness.py --env-file .env --json
+python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
 python3 scripts/db_smoke.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --production-preflight --json

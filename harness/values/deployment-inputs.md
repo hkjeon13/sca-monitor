@@ -50,3 +50,20 @@ https://monitoring.fin-ally.net -> http://127.0.0.1:18780
 ```
 
 reverse proxy에서 `/api`와 `/` 모두 같은 upstream으로 전달한다.
+
+## Automation Preflight
+
+배포 자동화는 원격 `.env` 또는 배포 시 주입할 env file을 대상으로 다음 명령을 먼저 실행한다.
+
+```bash
+python3 scripts/deployment_input_readiness.py --env-file .env --json
+```
+
+PostgreSQL split credential 전환 stage에서는 다음 명령을 stop gate로 사용한다.
+
+```bash
+python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
+```
+
+이 preflight는 public URL, API port, systemd mode, smoke token 설정 여부와 PostgreSQL cutover readiness를 확인한다.
+출력에는 DB URL 원문이나 password를 포함하지 않고, 환경 변수 source와 check 결과만 포함한다.
