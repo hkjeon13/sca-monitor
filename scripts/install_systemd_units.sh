@@ -8,6 +8,7 @@ UNIT_SCOPE="user"
 UNIT_DIR=""
 ENABLE=0
 ENABLE_API_ONLY=0
+ENABLE_POLLER_ONLY=0
 DRY_RUN=0
 
 usage() {
@@ -23,6 +24,7 @@ Options:
   --unit-dir PATH       Override target unit directory.
   --enable              Run daemon-reload and enable/restart units.
   --enable-api-only     Run daemon-reload and enable/restart only the API service.
+  --enable-poller-only  Run daemon-reload and enable/restart API and endpoint poller services.
   --dry-run             Write unit files but do not call systemctl.
   -h, --help            Show this help.
 USAGE
@@ -60,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --enable-api-only)
       ENABLE_API_ONLY=1
+      shift
+      ;;
+    --enable-poller-only)
+      ENABLE_POLLER_ONLY=1
       shift
       ;;
     --dry-run)
@@ -259,6 +265,16 @@ if [[ "$ENABLE_API_ONLY" == "1" ]]; then
   fi
   "${SYSTEMCTL[@]}" daemon-reload
   "${SYSTEMCTL[@]}" enable --now "${PREFIX}-api.service"
+elif [[ "$ENABLE_POLLER_ONLY" == "1" ]]; then
+  if [[ "$UNIT_SCOPE" == "system" ]]; then
+    SYSTEMCTL=(systemctl)
+  else
+    SYSTEMCTL=(systemctl --user)
+  fi
+  "${SYSTEMCTL[@]}" daemon-reload
+  "${SYSTEMCTL[@]}" enable --now \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service"
 elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
