@@ -1587,6 +1587,8 @@ Content-Type: application/json
 요청 body는 dependency status endpoint 응답 schema와 동일하되 `service_id`는 URL path의 `{service_id}`를 기준으로 고정한다.
 body에 `service_id`가 포함되어 있으면 path 값과 일치해야 하며, 일치하지 않으면 400 Bad Request를 반환한다.
 기존 호환 경로인 `POST /api/v1/snapshots`도 유지하지만 신규 연동 가이드와 push credential 사용 예시는 service-scoped status endpoint를 기본으로 사용한다.
+service-scoped status endpoint는 `schema_version=1.0`, `environment`, `generated_at`, `dependencies[].ecosystem/name/version`을 필수로 검증한다.
+legacy `/api/v1/snapshots` 경로와 내부 API는 기존 MVP 연동 호환을 위해 단계적으로 strict mode로 전환한다.
 
 입력 제한:
 
@@ -1602,6 +1604,7 @@ rate_limit: service credential별 분당 30회
 - 동일 `(service_id, environment, snapshot_id)`이나 `content_hash`가 다르면 409 Conflict를 반환한다.
 - payload의 `(service_id, environment)`가 push credential에 바인딩된 값과 다르면 403 Forbidden을 반환한다.
 - service-scoped status endpoint는 path의 `{service_id}`와 body의 `service_id` 불일치를 400 Bad Request로 거절해 service spoofing 가능성을 줄인다.
+- service-scoped status endpoint는 지원하지 않는 `schema_version` 또는 필수 필드 누락 시 dependency snapshot을 저장하지 않고 400 Bad Request를 반환한다.
 
 ### 15.3 Impact Workflow API
 

@@ -1141,6 +1141,26 @@ class ScaMonitorApp:
             required(dep, "name")
             required(dep, "version")
 
+    def validate_snapshot_status_payload(self, payload: dict, service_id: str) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("snapshot status payload must be a JSON object")
+        if required(payload, "schema_version") != "1.0":
+            raise ValueError("unsupported schema_version")
+        body_service_id = payload.get("service_id")
+        if body_service_id and body_service_id != service_id:
+            raise ValueError("body service_id must match route service_id")
+        required(payload, "environment")
+        required(payload, "generated_at")
+        dependencies = payload.get("dependencies")
+        if not isinstance(dependencies, list) or not dependencies:
+            raise ValueError("dependencies required")
+        for dep in dependencies:
+            if not isinstance(dep, dict):
+                raise ValueError("dependency must be a JSON object")
+            required(dep, "ecosystem")
+            required(dep, "name")
+            required(dep, "version")
+
     def record_endpoint_health(self, service_pk: str, collection_status: str, freshness_status: str, error_code: str | None, error_message: str | None, success: bool = False) -> None:
         now = utcnow()
         with self.db.connect() as conn:
@@ -2067,9 +2087,7 @@ class ScaMonitorApp:
         }
 
     def push_service_status(self, service_id: str, body: dict, authorization: str | None = None) -> dict:
-        body_service_id = body.get("service_id")
-        if body_service_id and body_service_id != service_id:
-            raise ValueError("body service_id must match route service_id")
+        self.validate_snapshot_status_payload(body, service_id)
         snapshot_body = dict(body)
         snapshot_body["service_id"] = service_id
         result = self.push_snapshot(snapshot_body, authorization)

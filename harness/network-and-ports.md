@@ -71,6 +71,7 @@ POST https://<api-host>/api/v1/services/<service_id>/status
 
 - push credential은 service/environment에 바인딩
 - body에 `service_id`가 있으면 path의 `<service_id>`와 일치해야 함
+- `schema_version=1.0`, `environment`, `generated_at`, `dependencies[].ecosystem/name/version` 필수
 - payload size limit
 - rate limit
 - idempotency rule

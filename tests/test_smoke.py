@@ -3124,6 +3124,66 @@ def test_service_status_push_route_binds_service_id_from_path(tmp_path):
     assert row["environment"] == "prod"
 
 
+def test_service_status_push_route_requires_schema_fields(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "strict-status-service", "environment": "prod"})
+    issued = app.create_push_credential("strict-status-service", {"environment": "prod"})
+    valid_dependency = {"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}
+
+    with run_test_server(app) as base_url:
+        missing_schema = http_json(
+            f"{base_url}/api/v1/services/strict-status-service/status",
+            method="POST",
+            body={
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [valid_dependency],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=400,
+        )
+        unsupported_schema = http_json(
+            f"{base_url}/api/v1/services/strict-status-service/status",
+            method="POST",
+            body={
+                "schema_version": "2.0",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [valid_dependency],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=400,
+        )
+        missing_generated_at = http_json(
+            f"{base_url}/api/v1/services/strict-status-service/status",
+            method="POST",
+            body={
+                "schema_version": "1.0",
+                "environment": "prod",
+                "dependencies": [valid_dependency],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=400,
+        )
+        missing_dependency_version = http_json(
+            f"{base_url}/api/v1/services/strict-status-service/status",
+            method="POST",
+            body={
+                "schema_version": "1.0",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package"}],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=400,
+        )
+
+    assert "schema_version required" in missing_schema["error"]
+    assert unsupported_schema["error"] == "unsupported schema_version"
+    assert "generated_at required" in missing_generated_at["error"]
+    assert "version required" in missing_dependency_version["error"]
+
+
 def test_snapshot_push_rate_limit_rejects_excess_service_pushes(tmp_path):
     app = make_test_app(tmp_path, max_snapshot_pushes_per_minute=2)
 
