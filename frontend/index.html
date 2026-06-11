@@ -139,6 +139,13 @@
               </label>
               <label>Owner Team<input name="owner_team" placeholder="platform-security" /></label>
               <label>Endpoint URL<input name="status_endpoint_url" placeholder="https://service/.well-known/sca/dependencies" /></label>
+              <label>Endpoint Auth
+                <select name="status_auth_type">
+                  <option value="none">none</option>
+                  <option value="bearer_token">bearer token</option>
+                </select>
+              </label>
+              <label>Bearer Token<input name="status_bearer_token" type="password" autocomplete="off" placeholder="optional endpoint token" /></label>
               <button type="submit">Register</button>
               <button type="button" id="endpoint-test" class="secondary">Test Endpoint</button>
             </form>

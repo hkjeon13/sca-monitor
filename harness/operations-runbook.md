@@ -74,6 +74,9 @@ python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 5. egress IP allowlist 확인
 6. mTLS/HMAC clock skew 확인
 
+bearer token endpoint는 서비스 등록 값의 `status_auth_type=bearer_token` 설정 여부를 먼저 확인한다.
+서비스 조회 API는 token 원문을 반환하지 않고 `status_auth_configured`만 표시한다.
+
 수동 1회 polling:
 
 ```bash

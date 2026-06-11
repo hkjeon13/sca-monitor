@@ -164,6 +164,60 @@ def test_service_endpoint_test_records_invalid_response(tmp_path):
         assert row["last_error_code"] == "invalid_response"
 
 
+def test_service_endpoint_uses_saved_bearer_token_without_exposing_secret(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "status_bearer_token": "endpoint-secret",
+        }
+    )
+
+    seen_headers = []
+    result = app.test_service_endpoint(
+        "endpoint-service",
+        {"environment": "prod"},
+        fetcher=lambda url, auth_header=None: seen_headers.append(auth_header) or {
+            "schema_version": "1.0",
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result["collection_status"] == "ok"
+    assert seen_headers == ["Bearer endpoint-secret"]
+    service = app.list_services()[0]
+    assert service["status_auth_type"] == "bearer_token"
+    assert service["status_auth_configured"] is True
+    assert "encrypted_auth_config" not in service
+    assert "endpoint-secret" not in json.dumps(service)
+
+
+def test_service_endpoint_missing_bearer_token_records_auth_failed(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "status_auth_type": "bearer_token",
+        }
+    )
+
+    with pytest.raises(PermissionError, match="bearer token is not configured"):
+        app.test_service_endpoint("endpoint-service", {"environment": "prod"})
+
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT collection_status, last_error_code FROM endpoint_health").fetchone()
+        assert row["collection_status"] == "auth_failed"
+        assert row["last_error_code"] == "auth_failed"
+
+
 def test_poll_configured_endpoints_pushes_endpoint_snapshot(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service(
@@ -195,6 +249,34 @@ def test_poll_configured_endpoints_pushes_endpoint_snapshot(tmp_path):
     assert service["status_endpoint_url"] == "https://endpoint.example.test/dependencies"
     assert service["collection_status"] == "ok"
     assert app.list_impacts({"service_id": ["endpoint-service"]})[0]["package_name"] == "lodash"
+
+
+def test_poll_configured_endpoints_uses_saved_bearer_token(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "collection_mode": "poll",
+            "status_bearer_token": "endpoint-secret",
+        }
+    )
+    seen_headers = []
+
+    result = poll_configured_endpoints(
+        app,
+        fetcher=lambda url, auth_header=None: seen_headers.append(auth_header) or {
+            "schema_version": "1.0",
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result.succeeded == 1
+    assert seen_headers == ["Bearer endpoint-secret"]
 
 
 def test_poll_configured_endpoints_counts_failed_endpoint(tmp_path):

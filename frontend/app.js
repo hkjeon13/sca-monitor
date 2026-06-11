@@ -59,7 +59,7 @@ async function loadServices() {
       <td><strong>${escapeHtml(svc.service_name)}</strong><br><span>${escapeHtml(svc.service_id)}</span></td>
       <td>${escapeHtml(svc.environment)}</td>
       <td>${escapeHtml(svc.owner_team)}</td>
-      <td><span class="badge">${escapeHtml(svc.collection_status || "ok")} / ${escapeHtml(svc.freshness_status || "fresh")}</span></td>
+      <td><span class="badge">${escapeHtml(svc.collection_status || "ok")} / ${escapeHtml(svc.freshness_status || "fresh")}</span><br><span>${escapeHtml(svc.status_auth_configured ? svc.status_auth_type : "no endpoint auth")}</span></td>
       <td>${escapeHtml(svc.open_impacts || 0)}</td>
     </tr>
   `).join("");
@@ -256,6 +256,7 @@ document.querySelector("#endpoint-test").addEventListener("click", async () => {
   const data = await api.send(`/api/v1/services/${encodeURIComponent(form.service_id)}/endpoint/test`, "POST", {
     environment: form.environment,
     endpoint_url: form.status_endpoint_url,
+    status_bearer_token: form.status_bearer_token,
   });
   result.innerHTML = `<p><strong>${escapeHtml(data.collection_status)} / ${escapeHtml(data.freshness_status)}</strong></p>`;
   await refreshAll();

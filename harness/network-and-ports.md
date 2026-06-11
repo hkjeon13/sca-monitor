@@ -40,6 +40,7 @@ GET https://<service-host>/status/dependencies
 
 - 중앙 서버 egress IP allowlist
 - bearer token, mTLS, HMAC 중 하나 이상
+- 현재 MVP 자동화는 bearer token endpoint를 지원한다. mTLS/HMAC과 secret manager/KMS 연동은 배포 입력값 확정 후 추가한다.
 - endpoint 접근 로그
 - 응답에 secret/token/env 포함 금지
 

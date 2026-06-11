@@ -199,6 +199,7 @@ references
 - OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
 - endpoint polling worker는 등록된 `status_endpoint_url`을 순회해 snapshot을 수집하고, `endpoint_poll_state` DB lease로 중복 실행을 차단한다.
 - endpoint polling CLI는 `--iterations`, `--interval-seconds`, `--worker-name`, `--lock-owner`, `--lock-ttl-seconds` 옵션을 지원한다.
+- endpoint polling/test는 MVP 범위에서 저장된 bearer token을 `Authorization: Bearer` 헤더로 전달한다. 서비스 조회 API와 Web Console에는 secret 원문을 노출하지 않고 설정 여부만 표시한다.
 - 외부 scheduler 배치, alias canonical merge, 재매칭 job queue 분리는 후속 구현 대상이다.
 
 ### 5.3 CISA KEV 수집 방식
@@ -1447,7 +1448,8 @@ POST /api/v1/settings/alert-channels
 - Services: `GET /api/v1/services` 기반 등록 서비스 목록과 open impact count 표시
 - Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록
 - Endpoint Test: `POST /api/v1/services/{service_id}/endpoint/test` 기반 dependency status endpoint 단건 호출, schema/service/environment/dependency 필수 필드 검증, `endpoint_health` 상태 반영. Web Console에서 등록 폼 입력값으로 test action 제공
-- Endpoint Poll Worker: `scripts/poll_endpoints.py` 기반 등록된 `status_endpoint_url`을 1회 polling하고, 유효한 endpoint payload를 dependency snapshot으로 저장해 impact 매칭까지 수행
+- Endpoint Poll Worker: `scripts/poll_endpoints.py` 기반 등록된 `status_endpoint_url`을 1회 또는 반복 polling하고, 유효한 endpoint payload를 dependency snapshot으로 저장해 impact 매칭까지 수행. `endpoint_poll_state` DB lease로 중복 실행을 차단
+- Endpoint Bearer Auth: Web Console/API에서 `status_auth_type=bearer_token`과 token을 등록하면 endpoint test/polling에서 `Authorization: Bearer` 헤더를 사용. 서비스 조회 응답은 secret 원문을 제거하고 `status_auth_configured`만 표시
 - Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
@@ -1460,7 +1462,7 @@ POST /api/v1/settings/alert-channels
 
 - role-aware UI와 API 인가 연동
 - accepted risk 승인자/만료일 workflow
-- service detail, endpoint polling scheduler/auth policy, push credential rotation policy/automation
+- service detail, 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
 - settings/alert channel 관리 화면

@@ -223,11 +223,12 @@ class ScaMonitorApp:
                 """,
                 ACTIVE_IMPACT_STATUSES,
             ).fetchall()
-        return [row_to_dict(row) for row in rows]
+        return [sanitize_service(row_to_dict(row)) for row in rows]
 
     def create_service(self, body: dict) -> dict:
         service_id = required(body, "service_id")
         environment = body.get("environment", "prod")
+        auth_type, auth_secret_ref, encrypted_auth_config = endpoint_auth_config_from_body(body)
         now = utcnow()
         service_pk = str(uuid.uuid4())
         with self.db.connect() as conn:
@@ -236,8 +237,9 @@ class ScaMonitorApp:
                 INSERT INTO services (
                     id, service_id, service_name, environment, owner_team,
                     status_endpoint_url, collection_mode, internet_facing,
-                    business_criticality, alert_channel, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    business_criticality, alert_channel, status_auth_type,
+                    auth_secret_ref, encrypted_auth_config, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(service_id, environment) DO UPDATE SET
                     service_name=excluded.service_name,
                     owner_team=excluded.owner_team,
@@ -246,6 +248,9 @@ class ScaMonitorApp:
                     internet_facing=excluded.internet_facing,
                     business_criticality=excluded.business_criticality,
                     alert_channel=excluded.alert_channel,
+                    status_auth_type=COALESCE(excluded.status_auth_type, services.status_auth_type),
+                    auth_secret_ref=COALESCE(excluded.auth_secret_ref, services.auth_secret_ref),
+                    encrypted_auth_config=COALESCE(excluded.encrypted_auth_config, services.encrypted_auth_config),
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -259,6 +264,9 @@ class ScaMonitorApp:
                     int(bool(body.get("internet_facing", False))),
                     body.get("business_criticality", "medium"),
                     body.get("alert_channel", "#security-alerts"),
+                    auth_type,
+                    auth_secret_ref,
+                    encrypted_auth_config,
                     now,
                     now,
                 ),
@@ -272,7 +280,7 @@ class ScaMonitorApp:
                 """,
                 (row["id"], now),
             )
-        return {"service": row_to_dict(row)}
+        return {"service": sanitize_service(row_to_dict(row))}
 
     def list_push_credentials(self, service_id: str, query: dict[str, list[str]]) -> list[dict]:
         environment = query.get("environment", ["prod"])[0]
@@ -381,7 +389,12 @@ class ScaMonitorApp:
         environment = body.get("environment", "prod")
         with self.db.connect() as conn:
             service = conn.execute(
-                "SELECT id, service_id, environment, status_endpoint_url FROM services WHERE service_id = ? AND environment = ?",
+                """
+                SELECT id, service_id, environment, status_endpoint_url, status_auth_type,
+                       auth_secret_ref, encrypted_auth_config
+                FROM services
+                WHERE service_id = ? AND environment = ?
+                """,
                 (service_id, environment),
             ).fetchone()
             if not service:
@@ -392,7 +405,7 @@ class ScaMonitorApp:
             raise ValueError("endpoint URL is not configured")
         fetcher = fetcher or fetch_json_endpoint
         try:
-            payload = fetcher(endpoint_url, body.get("auth_header"))
+            payload = fetcher(endpoint_url, endpoint_auth_header(service, body))
             self.validate_endpoint_payload(payload, service_id, environment)
         except PermissionError as exc:
             self.record_endpoint_health(service["id"], "auth_failed", "stale", "auth_failed", str(exc))
@@ -685,7 +698,7 @@ class ScaMonitorApp:
             if not service:
                 raise ValueError("service not found")
             impacts = conn.execute("SELECT * FROM impacts WHERE service_pk = ? ORDER BY updated_at DESC", (service["id"],)).fetchall()
-        return {"service": row_to_dict(service), "impacts": [row_to_dict(row) for row in impacts]}
+        return {"service": sanitize_service(row_to_dict(service)), "impacts": [row_to_dict(row) for row in impacts]}
 
     def push_snapshot(self, body: dict, authorization: str | None = None) -> dict:
         service_id = required(body, "service_id")
@@ -1054,6 +1067,62 @@ def required(data: dict, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"{key} required")
     return str(value)
+
+
+def sanitize_service(service: dict | None) -> dict | None:
+    if service is None:
+        return None
+    sanitized = dict(service)
+    auth_type = sanitized.get("status_auth_type") or "none"
+    has_secret = bool(sanitized.get("auth_secret_ref") or sanitized.get("encrypted_auth_config"))
+    sanitized["status_auth_type"] = auth_type
+    sanitized["status_auth_configured"] = has_secret
+    sanitized.pop("encrypted_auth_config", None)
+    return sanitized
+
+
+def endpoint_auth_config_from_body(body: dict) -> tuple[str | None, str | None, str | None]:
+    auth_type = normalize_optional(body.get("status_auth_type") or body.get("endpoint_auth_type"))
+    secret_ref = normalize_optional(body.get("auth_secret_ref"))
+    bearer_token = normalize_optional(body.get("status_bearer_token") or body.get("endpoint_bearer_token"))
+    auth_header = normalize_optional(body.get("auth_header"))
+    if bearer_token:
+        return "bearer_token", secret_ref, json.dumps({"bearer_token": bearer_token})
+    if auth_header and auth_header.lower().startswith("bearer "):
+        return "bearer_token", secret_ref, json.dumps({"bearer_token": auth_header.split(" ", 1)[1]})
+    if auth_type and auth_type != "none":
+        return auth_type, secret_ref, None
+    return None, secret_ref, None
+
+
+def endpoint_auth_header(service, body: dict) -> str | None:
+    override = normalize_optional(body.get("auth_header"))
+    if override:
+        return override
+    direct_token = normalize_optional(body.get("status_bearer_token") or body.get("endpoint_bearer_token"))
+    if direct_token:
+        return f"Bearer {direct_token}"
+    auth_type = service["status_auth_type"] or "none"
+    if auth_type == "bearer_token":
+        config = service["encrypted_auth_config"]
+        if not config:
+            raise PermissionError("endpoint bearer token is not configured")
+        if isinstance(config, bytes):
+            config = config.decode("utf-8")
+        token = json.loads(config).get("bearer_token")
+        if not token:
+            raise PermissionError("endpoint bearer token is not configured")
+        return f"Bearer {token}"
+    if auth_type in ("none", ""):
+        return None
+    raise PermissionError(f"endpoint auth type is not implemented: {auth_type}")
+
+
+def normalize_optional(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
