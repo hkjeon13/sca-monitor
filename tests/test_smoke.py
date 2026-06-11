@@ -822,6 +822,37 @@ def test_dispatch_pending_alerts_moves_to_dead_letter_after_max_retries(tmp_path
         assert json.loads(row["payload"])["dispatch_terminal"] is True
 
 
+def test_requeue_dead_letter_alert_event(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        max_retries=1,
+        sender=lambda url, payload, headers: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+    )
+    with app.db.connect() as conn:
+        alert_id = conn.execute("SELECT id FROM alert_events").fetchone()["id"]
+
+    result = app.requeue_alert_event(alert_id, {"actor": "security", "reason": "target fixed"})
+
+    assert result["alert_event"]["status"] == "pending"
+    assert result["alert_event"]["retry_count"] == 0
+    assert result["alert_event"]["next_attempt_at"] is None
+    assert result["alert_event"]["payload"]["requeued_by"] == "security"
+    assert result["alert_event"]["payload"]["requeue_reason"] == "target fixed"
+
+
+def test_requeue_rejects_non_dead_letter_alert_event(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        alert_id = conn.execute("SELECT id FROM alert_events").fetchone()["id"]
+
+    with pytest.raises(ValueError, match="only dead_letter"):
+        app.requeue_alert_event(alert_id, {"actor": "security"})
+
+
 def test_failed_alert_waits_for_next_attempt(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

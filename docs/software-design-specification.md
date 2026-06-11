@@ -1434,6 +1434,7 @@ GET /api/v1/advisories/{advisory_id}
 GET /api/v1/settings/alert-channels
 POST /api/v1/settings/alert-channels
 PATCH /api/v1/settings/alert-channels/{channel_id}
+POST /api/v1/alert-events/{alert_event_id}/requeue
 ```
 
 조회 API는 pagination, sorting, filtering을 지원해야 한다.
@@ -1454,7 +1455,7 @@ PATCH /api/v1/settings/alert-channels/{channel_id}
 - Operational Metrics: `/metrics`에서 service/open impact/critical/high/unhealthy count와 advisory sync lag, endpoint poll success rate, alert delivery success rate, alert outbox pending/dead-letter count, stale service count를 Prometheus text 형태로 노출
 - Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
 - Alert Channel Settings: `GET/POST/PATCH /api/v1/settings/alert-channels`와 Web Console Settings에서 기본 webhook channel을 등록, 조회, default 전환, disable 처리한다. webhook URL 원문은 조회 응답에 노출하지 않는다
-- Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, 명시적 `--webhook-url`이 없으면 기본 alert channel을 사용한다. webhook에는 `Idempotency-Key`, `X-SCA-Alert-Event-Id`, `X-SCA-Alert-Suppression-Key` 헤더를 포함한다. `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds`, `--max-retries` 옵션으로 운영 루프 실행과 dead-letter 전환을 지원
+- Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, 명시적 `--webhook-url`이 없으면 기본 alert channel을 사용한다. webhook에는 `Idempotency-Key`, `X-SCA-Alert-Event-Id`, `X-SCA-Alert-Suppression-Key` 헤더를 포함한다. `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds`, `--max-retries` 옵션으로 운영 루프 실행과 dead-letter 전환을 지원한다. `POST /api/v1/alert-events/{id}/requeue`와 `scripts/requeue_alerts.py`로 dead-letter를 pending으로 복구할 수 있다
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
@@ -1469,7 +1470,7 @@ PATCH /api/v1/settings/alert-channels/{channel_id}
 - service detail, 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
-- Slack app 방식, alert channel hard delete, dead-letter 재처리/복구 workflow
+- Slack app 방식, alert channel hard delete, dead-letter bulk UI
 
 ### 14.7 UI 상태
 

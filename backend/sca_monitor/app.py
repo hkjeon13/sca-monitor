@@ -131,6 +131,9 @@ class ScaMonitorApp:
             if path.startswith("/api/v1/impacts/") and path.endswith("/status") and method == "PATCH":
                 impact_id = path.split("/")[-2]
                 return self.json_response(request, self.update_impact_status(impact_id, self.read_json(request)))
+            if path.startswith("/api/v1/alert-events/") and path.endswith("/requeue") and method == "POST":
+                alert_event_id = path.split("/")[-2]
+                return self.json_response(request, self.requeue_alert_event(alert_event_id, self.read_json(request)))
             if path.startswith("/api/"):
                 return self.json_response(request, {"error": "not_found"}, HTTPStatus.NOT_FOUND)
             return self.serve_static(request, path)
@@ -1141,6 +1144,35 @@ class ScaMonitorApp:
                 (str(uuid.uuid4()), impact_id, current["status"], status, actor, reason, now),
             )
         return {"impact_id": impact_id, "status": status}
+
+    def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
+        actor = body.get("actor", "operator")
+        reason = body.get("reason", "requeue dead-letter alert")
+        now = utcnow()
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM alert_events WHERE id = ?", (alert_event_id,)).fetchone()
+            if not row:
+                raise ValueError("alert event not found")
+            if row["status"] != "dead_letter":
+                raise ValueError("only dead_letter alert events can be requeued")
+            payload = json.loads(row["payload"] or "{}")
+            payload["requeued_by"] = actor
+            payload["requeue_reason"] = reason
+            payload["requeued_at"] = now
+            conn.execute(
+                """
+                UPDATE alert_events
+                SET status = 'pending', retry_count = 0, next_attempt_at = NULL,
+                    dispatch_lock_owner = NULL, dispatch_lock_expires_at = NULL,
+                    payload = ?
+                WHERE id = ?
+                """,
+                (json.dumps(payload, ensure_ascii=False), alert_event_id),
+            )
+            updated = conn.execute("SELECT id, status, retry_count, next_attempt_at, payload FROM alert_events WHERE id = ?", (alert_event_id,)).fetchone()
+        result = row_to_dict(updated)
+        result["payload"] = json.loads(result["payload"] or "{}")
+        return {"alert_event": result}
 
     def metrics(self) -> str:
         overview = self.overview()
