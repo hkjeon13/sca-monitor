@@ -1156,6 +1156,56 @@ def test_backup_database_cli_copies_sqlite_without_leaking_paths(tmp_path):
     assert "sqlite:///" not in result.stdout
 
 
+def test_verify_backup_restore_cli_checks_sqlite_backup_copy_without_mutating_backup(tmp_path):
+    database_path = tmp_path / "sca-monitor.sqlite3"
+    database_url = f"sqlite:///{database_path}"
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": database_url,
+    }
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backup_result = subprocess.run(
+        ["python3", "scripts/backup_database.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backup_path = Path(json.loads(backup_result.stdout)["backup_path"])
+    backup_mtime_ns = backup_path.stat().st_mtime_ns
+    backup_size = backup_path.stat().st_size
+
+    result = subprocess.run(
+        ["python3", "scripts/verify_backup_restore.py", "--backup-path", str(backup_path), "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["database_backend"] == "sqlite"
+    assert payload["backup_path"] == "configured"
+    assert payload["restore_copy_path"] == "temporary"
+    assert payload["smoke"]["status"] == "ok"
+    assert payload["smoke"]["checks"]["services_readable"] is True
+    assert "audit_log_write_rollback" not in payload["smoke"]["checks"]
+    assert backup_path.stat().st_size == backup_size
+    assert backup_path.stat().st_mtime_ns == backup_mtime_ns
+    assert str(backup_path) not in result.stdout
+    assert "sqlite:///" not in result.stdout
+
+
 def test_deploy_db_gate_runs_sqlite_smoke(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -2169,6 +2219,7 @@ def test_ci_smoke_runs_core_gates():
     assert "scripts/prepare_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py" in script
     assert "scripts/backup_database.py" in script
+    assert "scripts/verify_backup_restore.py" in script
     assert "scripts/advisory_source_preflight.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2200,6 +2251,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
+    assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
@@ -2210,6 +2262,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/bootstrap_readiness_check.py --json" in script
     assert "scripts/http_smoke.py" in script
     assert "scripts/backup_database.py --json" in script
+    assert "scripts/verify_backup_restore.py --backup-path" in script
     assert "scripts/postgres_integration_smoke.py --production-preflight --json" in script
     assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
@@ -2220,6 +2273,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
+    assert script.index("scripts/verify_backup_restore.py --backup-path") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/postgres_integration_smoke.py --production-preflight --json") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
@@ -2238,12 +2292,14 @@ def test_harness_documents_deployment_input_readiness():
     assert "scripts/prepare_database_env_file.py" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
     assert "scripts/database_env_dry_run_gate.py" in database_doc
+    assert "scripts/verify_backup_restore.py" in database_doc
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
+    assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE=required" in database_doc
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc

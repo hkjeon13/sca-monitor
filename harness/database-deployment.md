@@ -101,12 +101,18 @@ contract migration은 자동 배포에서 실행하지 않고 별도 승인 gate
 ```bash
 python3 scripts/backup_database.py --json
 python3 scripts/backup_database.py --required --json
+python3 scripts/verify_backup_restore.py --backup-path "$BACKUP_PATH" --json
 
-SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required scripts/deploy_remote.sh
+SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required \
+SCA_MONITOR_VERIFY_BACKUP_RESTORE=required \
+scripts/deploy_remote.sh
 ```
 
 `auto` 모드는 SQLite DB 파일이 이미 있으면 백업하고, 초기 bootstrap처럼 파일이 아직 없으면 skip한다.
 `required` 모드는 SQLite DB 파일이 없거나 PostgreSQL처럼 애플리케이션 외부 백업이 필요한 backend이면 배포를 중단한다.
+`scripts/verify_backup_restore.py`는 backup 파일을 임시 위치로 복사한 뒤 read-only DB smoke를 실행해 schema와 migration compatibility를 확인한다.
+검증 출력에는 backup 원본 경로나 SQLite URL을 포함하지 않는다.
+원격 배포에서 `SCA_MONITOR_VERIFY_BACKUP_RESTORE=required`를 설정하면 backup 생성 직후, migration 실행 전에 restore-check를 stop gate로 실행한다.
 PostgreSQL 전환 후에는 managed backup/PITR 정책과 복구 테스트 결과를 별도 운영 증적으로 확인한다.
 
 ## 5. Retention

@@ -21,6 +21,7 @@ EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
 BACKUP_BEFORE_MIGRATION="${SCA_MONITOR_BACKUP_BEFORE_MIGRATION:-auto}"
+VERIFY_BACKUP_RESTORE="${SCA_MONITOR_VERIFY_BACKUP_RESTORE:-auto}"
 POSTGRES_PRODUCTION_PREFLIGHT="${SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT:-disabled}"
 
 ssh "$REMOTE" "set -euo pipefail
@@ -92,6 +93,7 @@ ssh "$REMOTE" "set -euo pipefail
   EXPECT_ADVISORY_SYNC_READY='$EXPECT_ADVISORY_SYNC_READY'
   EXPECT_DATABASE_BACKEND='$EXPECT_DATABASE_BACKEND'
   BACKUP_BEFORE_MIGRATION='$BACKUP_BEFORE_MIGRATION'
+  VERIFY_BACKUP_RESTORE='$VERIFY_BACKUP_RESTORE'
   POSTGRES_PRODUCTION_PREFLIGHT='$POSTGRES_PRODUCTION_PREFLIGHT'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
@@ -185,18 +187,59 @@ ssh "$REMOTE" "set -euo pipefail
   }
   stop_systemd_workers_for_migration
   trap restart_systemd_workers_after_migration EXIT
+  backup_result_file=''
   case \"\$BACKUP_BEFORE_MIGRATION\" in
     disabled|skip|false|0|'')
       echo 'pre-migration database backup skipped'
       ;;
     auto)
-      python3 scripts/backup_database.py --json
+      backup_result_file=\"\$(mktemp)\"
+      python3 scripts/backup_database.py --json | tee \"\$backup_result_file\"
       ;;
     required)
-      python3 scripts/backup_database.py --required --json
+      backup_result_file=\"\$(mktemp)\"
+      python3 scripts/backup_database.py --required --json | tee \"\$backup_result_file\"
       ;;
     *)
       echo \"invalid SCA_MONITOR_BACKUP_BEFORE_MIGRATION: \$BACKUP_BEFORE_MIGRATION\" >&2
+      exit 2
+      ;;
+  esac
+  case \"\$VERIFY_BACKUP_RESTORE\" in
+    disabled|skip|false|0|'')
+      echo 'backup restore verification skipped'
+      ;;
+    auto|required)
+      if [ -z \"\$backup_result_file\" ]; then
+        if [ \"\$VERIFY_BACKUP_RESTORE\" = 'required' ]; then
+          echo 'backup restore verification required but backup result is unavailable' >&2
+          exit 2
+        fi
+        echo 'backup restore verification skipped: backup result unavailable'
+      else
+        backup_path=\"\$(python3 - \"\$backup_result_file\" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+print(payload.get('backup_path') or '')
+PY
+)\"
+        rm -f \"\$backup_result_file\"
+        backup_result_file=''
+        if [ -n \"\$backup_path\" ]; then
+          python3 scripts/verify_backup_restore.py --backup-path \"\$backup_path\" --json
+        elif [ \"\$VERIFY_BACKUP_RESTORE\" = 'required' ]; then
+          echo 'backup restore verification required but no backup path was produced' >&2
+          exit 2
+        else
+          echo 'backup restore verification skipped: no backup path produced'
+        fi
+      fi
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_VERIFY_BACKUP_RESTORE: \$VERIFY_BACKUP_RESTORE\" >&2
       exit 2
       ;;
   esac
