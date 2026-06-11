@@ -284,6 +284,8 @@ PY
     cutover_report_args=(--env-file .env --output \"\$CUTOVER_READINESS_REPORT_PATH\" --json)
     if [ -n \"\$DATABASE_ENV_FILE\" ]; then
       cutover_report_args+=(--database-env-file \"\$DATABASE_ENV_FILE\")
+      cutover_report_args+=(--require-postgres --require-split)
+      echo 'cutover report with SCA_MONITOR_DATABASE_ENV_FILE requires PostgreSQL split readiness'
     fi
     if [ -n \"\$cutover_report_backup_path\" ]; then
       cutover_report_args+=(--backup-path \"\$cutover_report_backup_path\")
@@ -295,7 +297,9 @@ PY
     esac
     case \"\$CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES\" in
       true|1|yes|on)
-        cutover_report_args+=(--require-postgres)
+        if [ -z \"\$DATABASE_ENV_FILE\" ]; then
+          cutover_report_args+=(--require-postgres)
+        fi
         ;;
       false|0|no|off|'')
         ;;
@@ -306,7 +310,9 @@ PY
     esac
     case \"\$CUTOVER_READINESS_REPORT_REQUIRE_SPLIT\" in
       true|1|yes|on)
-        cutover_report_args+=(--require-split)
+        if [ -z \"\$DATABASE_ENV_FILE\" ]; then
+          cutover_report_args+=(--require-split)
+        fi
         ;;
       false|0|no|off|'')
         ;;

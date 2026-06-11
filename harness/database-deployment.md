@@ -248,9 +248,11 @@ SCA_MONITOR_VERIFY_BACKUP_RESTORE=required \
 scripts/deploy_remote.sh
 ```
 
-실제 PostgreSQL split credential cutover stage에서는 `SCA_MONITOR_DATABASE_ENV_FILE`과 함께
+실제 PostgreSQL split credential cutover stage에서 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정되면 report는 자동으로 `--require-postgres --require-split`을 적용한다.
+따라서 protected DB env file을 지정한 report가 SQLite fallback 상태를 성공 증적으로 오해하지 않는다.
+DB env file 없이 stage 환경의 runtime `.env`만 강제 검증해야 할 때는
 `SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES=true`,
-`SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_SPLIT=true`를 설정해 report가 SQLite fallback 상태를 성공 증적으로 오해하지 않게 한다.
+`SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_SPLIT=true`를 별도로 설정한다.
 필요하면 `SCA_MONITOR_CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT=true`로 report 생성 중 live PostgreSQL production preflight도 포함한다.
 `MIGRATION_DATABASE_URL`이 설정되면 migration owner URL로 migration smoke를 실행하고, `API_DATABASE_URL`은 `--skip-migrate` runtime smoke, `WORKER_DATABASE_URL`은 `--skip-migrate --read-only` smoke로 분리 검증한다.
 `--production-preflight`는 split credential 운영 전환 직전에 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`을 한 번에 검증한다. migration role은 migration과 transactional write/rollback smoke를 수행하고, API/worker role은 migrate 없이 read-only schema smoke만 수행한다.

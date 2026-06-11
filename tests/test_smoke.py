@@ -2489,6 +2489,9 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/postgres_integration_smoke.py --production-preflight --json" in script
     assert "scripts/cutover_readiness_report.py" in script
     assert "--output" in script
+    assert 'if [ -n \\"\\$DATABASE_ENV_FILE\\" ]; then' in script
+    assert "cutover_report_args+=(--require-postgres --require-split)" in script
+    assert "cutover report with SCA_MONITOR_DATABASE_ENV_FILE requires PostgreSQL split readiness" in script
     assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2532,6 +2535,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
     assert "SCA_MONITOR_CUTOVER_READINESS_REPORT=required" in database_doc
     assert "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH" in database_doc
+    assert "자동으로 `--require-postgres --require-split`" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
