@@ -1242,13 +1242,14 @@ class ScaMonitorApp:
             "raw_payload": json.dumps(advisory.raw_payload, ensure_ascii=False),
         }
         changed = previous is None or any(previous[key] != value for key, value in next_values.items())
+        now = utcnow()
         conn.execute(
             """
             INSERT INTO advisories (
                 id, advisory_id, source, summary, severity, ecosystem, package_name,
                 canonical_package_name, affected_versions, affected_ranges, fixed_version,
-                is_known_exploited, is_malicious_package, published_at, modified_at, raw_payload
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_known_exploited, is_malicious_package, published_at, modified_at, first_seen_at, raw_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(advisory_id) DO UPDATE SET
                 source=excluded.source,
                 summary=excluded.summary,
@@ -1281,6 +1282,7 @@ class ScaMonitorApp:
                 bool(advisory.is_malicious_package),
                 advisory.published_at,
                 advisory.modified_at,
+                now,
                 json.dumps(advisory.raw_payload, ensure_ascii=False),
             ),
         )
@@ -3064,6 +3066,17 @@ class ScaMonitorApp:
                 GROUP BY status
                 """
             ).fetchall()
+            latest_new_alert = conn.execute(
+                """
+                SELECT ae.created_at AS alert_created_at, a.first_seen_at AS advisory_first_seen_at
+                FROM alert_events ae
+                JOIN impacts i ON i.id = ae.impact_pk
+                JOIN advisories a ON a.id = i.advisory_pk
+                WHERE ae.reason = 'new' AND a.first_seen_at IS NOT NULL
+                ORDER BY ae.created_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
             stale_services = conn.execute(
                 "SELECT COUNT(*) AS count FROM endpoint_health WHERE freshness_status = 'stale'"
             ).fetchone()["count"]
@@ -3083,6 +3096,10 @@ class ScaMonitorApp:
                 lines.append(
                     f'sca_monitor_worker_lease_acquire_failures{{worker_type="advisory_sync",source="{metric_label(row["source"])}"}} {failures}'
                 )
+        if latest_new_alert:
+            latency = seconds_between(latest_new_alert["advisory_first_seen_at"], latest_new_alert["alert_created_at"])
+            if latency is not None:
+                lines.append(f"new_advisory_to_alert_latency_seconds {latency}")
 
         total_checked = 0
         total_succeeded = 0
@@ -3296,6 +3313,17 @@ def seconds_since(value: str | None, now: datetime) -> int | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return max(0, int((now - parsed).total_seconds()))
+
+
+def seconds_between(start_value: str | None, end_value: str | None) -> int | None:
+    if not start_value or not end_value:
+        return None
+    try:
+        start = parse_iso_datetime(start_value)
+        end = parse_iso_datetime(end_value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, int((end - start).total_seconds()))
 
 
 def timestamp_is_due(value: str | None, now_value: str) -> bool:

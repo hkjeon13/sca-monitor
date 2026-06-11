@@ -2485,6 +2485,9 @@ def test_metrics_exposes_operational_indicators(tmp_path):
         },
     )
     dispatch_pending_alerts(app, webhook_url="https://alerts.example.test/webhook", sender=lambda url, payload: None)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisories SET first_seen_at = '2026-01-01T00:00:00+00:00'")
+        conn.execute("UPDATE alert_events SET created_at = '2026-01-01T00:00:42+00:00' WHERE reason = 'new'")
 
     metrics = app.metrics()
 
@@ -2493,6 +2496,7 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert 'sca_monitor_advisory_sync_initialized{source="CISA_KEV"} 0' in metrics
     assert 'sca_monitor_advisory_sync_initialized{source="OpenSSF"} 0' in metrics
     assert 'sca_monitor_advisory_sync_lag_seconds{source="OSV"}' in metrics
+    assert "new_advisory_to_alert_latency_seconds 42" in metrics
     assert 'sca_monitor_endpoint_poll_success_rate{worker="metric-worker"} 1.000000' in metrics
     assert "sca_monitor_endpoint_poll_success_rate 1.000000" in metrics
     assert "sca_monitor_alert_delivery_success_rate 1.000000" in metrics
