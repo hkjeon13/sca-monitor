@@ -1170,6 +1170,80 @@ def test_alert_channel_marks_non_placeholder_target_ready(tmp_path):
     assert created["channel"]["placeholder_target"] is False
 
 
+def test_seed_default_alert_channel_cli_creates_real_default(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+        "SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL": "https://alerts.internal/hooks/secret-token",
+        "SCA_MONITOR_DEFAULT_ALERT_CHANNEL_NAME": "bootstrap-router",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/seed_default_alert_channel.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["before"] == {"configured": False}
+    assert payload["after"]["configured"] is True
+    assert payload["after"]["target_url_masked"] == "https://alerts.internal/..."
+    assert payload["after"]["placeholder_target"] is False
+    assert payload["channel"]["name"] == "bootstrap-router"
+    assert "secret-token" not in result.stdout
+
+
+def test_seed_default_alert_channel_cli_rejects_placeholder_by_default(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+        "SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL": "https://alerts.example.test/hooks/secret-token",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/seed_default_alert_channel.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "error"
+    assert "placeholder webhook target rejected" in payload["error"]
+
+
+def test_seed_default_alert_channel_cli_allows_placeholder_for_dev(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+        "SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL": "https://alerts.example.test/hooks/secret-token",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/seed_default_alert_channel.py", "--json", "--allow-placeholder"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["after"]["placeholder_target"] is True
+    assert "secret-token" not in result.stdout
+
+
 def test_alert_channel_only_one_default(tmp_path):
     app = make_test_app(tmp_path)
 

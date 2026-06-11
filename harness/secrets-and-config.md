@@ -108,10 +108,14 @@ NVD_API_KEY
 SLACK_BOT_TOKEN
 SLACK_WEBHOOK_URL
 DEFAULT_ALERT_CHANNEL
+SCA_MONITOR_DEFAULT_ALERT_CHANNEL_NAME
+SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL
 DEFAULT_DAILY_DIGEST_CHANNEL
 ```
 
 Slack app 방식을 선택하면 `SLACK_BOT_TOKEN`을 사용하고, incoming webhook 방식을 선택하면 `SLACK_WEBHOOK_URL`을 사용한다.
+배포 bootstrap 자동화는 `SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL`을 우선 사용해 `scripts/seed_default_alert_channel.py`로 기본 webhook channel을 생성 또는 갱신한다.
+이 값은 secret으로 취급하며 git, 로그, 문서 예시에 실제 token path를 남기지 않는다.
 
 ### Frontend
 

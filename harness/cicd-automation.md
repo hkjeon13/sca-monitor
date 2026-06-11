@@ -137,10 +137,17 @@ live dispatcher 전환 전 webhook endpoint 자체는 synthetic payload로 별�
 ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" python3 scripts/alert_webhook_smoke.py --json
 ```
 
-live dispatcher enable 전에는 DB/default channel/dry-run dispatcher preflight를 통과해야 한다.
+webhook smoke가 통과하면 같은 target을 기본 alert channel로 seed한다.
 
 ```bash
-python3 scripts/alert_dispatcher_preflight.py --json
+SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" \
+python3 scripts/seed_default_alert_channel.py --json
+```
+
+live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activation checklist를 통과해야 한다.
+
+```bash
+python3 scripts/alert_dispatcher_activation_check.py --json
 ```
 
 운영 환경에서는 destructive test를 실행하지 않는다.

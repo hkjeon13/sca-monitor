@@ -176,6 +176,15 @@ ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/alert_web
 이 검증은 `alert_events`를 claim/send 처리하지 않고 synthetic payload만 전송한다.
 기본 alert channel이 Settings에 등록된 경우 Web Console의 Settings > Configured Channels에서 `Test` action으로 같은 목적의 synthetic payload 검증을 수행할 수 있다.
 
+기본 alert channel seed:
+
+```bash
+SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL=https://alert-router.example/webhook \
+python3 scripts/seed_default_alert_channel.py --json
+```
+
+seed 스크립트는 webhook URL 원문을 출력하지 않고, placeholder/example target은 기본적으로 거부한다.
+
 Webhook 수동 발송:
 
 ```bash

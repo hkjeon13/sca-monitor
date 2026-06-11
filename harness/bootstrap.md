@@ -85,7 +85,21 @@ synthetic-service:push
 - prod 실제 서비스에 대한 write 권한 부여
 - 만료일 없는 token
 
-## 6. Bootstrap 완료 기준
+## 6. Default Alert Channel Seed
+
+배포 자동화는 secret store 또는 원격 `.env`에 실제 alert router webhook URL을 주입한 뒤 기본 alert channel을 seed한다.
+placeholder/example target은 운영 seed에서 거부된다.
+
+```bash
+SCA_MONITOR_DEFAULT_ALERT_CHANNEL_NAME=default-webhook \
+SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL=https://alert-router.example.internal/webhook \
+python3 scripts/seed_default_alert_channel.py --json
+```
+
+dev fixture에서만 placeholder URL이 필요하면 `--allow-placeholder`를 명시한다.
+seed 이후에는 live dispatcher enable 전 `python3 scripts/alert_dispatcher_activation_check.py --json`이 `ready`를 반환해야 한다.
+
+## 7. Bootstrap 완료 기준
 
 ```text
 GET /health -> 200
@@ -97,4 +111,3 @@ synthetic snapshot accepted -> true
 worker health -> ok
 alert outbox processing -> ok
 ```
-
