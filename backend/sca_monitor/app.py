@@ -2456,6 +2456,8 @@ class ScaMonitorApp:
         if status := query.get("status", [None])[0]:
             where.append("ae.status = ?")
             params.append(status)
+        if parse_bool(query.get("system_only", [None])[0]):
+            where.append("ae.impact_pk IS NULL AND ae.reason LIKE 'system_%'")
         if search := query.get("q", [None])[0]:
             like = f"%{search.lower()}%"
             where.append(

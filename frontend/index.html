@@ -326,6 +326,12 @@
                   <option value="50">50</option>
                 </select>
               </label>
+              <label>Type
+                <select name="system_only">
+                  <option value="">All</option>
+                  <option value="true">system only</option>
+                </select>
+              </label>
               <label>Search<input name="q" placeholder="service, package, advisory" /></label>
               <button type="submit">Apply</button>
               <button type="button" id="bulk-requeue-alert-events" class="secondary">Requeue Dead Letters</button>

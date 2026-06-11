@@ -1363,6 +1363,7 @@ def test_web_console_renders_database_readiness_panel():
 
     assert 'id="database-readiness"' in html
     assert 'id="canonicalization-status"' in html
+    assert 'name="system_only"' in html
     assert "/api/v1/operations/database-readiness" in script
     assert "/api/v1/operations/canonicalization" in script
     assert "/api/v1/operations/canonicalization/apply" in script
@@ -5349,14 +5350,18 @@ def test_bulk_requeue_rejects_non_dead_letter_status(tmp_path):
 def test_search_alert_events_lists_and_filters(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST", "rate limit")
 
     page = app.search_alert_events({"status": ["pending"], "limit": ["5"]})
 
-    assert page["pagination"]["total"] == 1
+    assert page["pagination"]["total"] == 2
     assert page["alert_events"][0]["status"] == "pending"
-    assert page["alert_events"][0]["service_id"] == "alert-service"
-    assert page["alert_events"][0]["advisory_id"] == "OSV-TEST-0001"
     assert "channel_target" not in page["alert_events"][0]
+
+    system_page = app.search_alert_events({"system_only": ["true"], "limit": ["5"]})
+    assert system_page["pagination"]["total"] == 1
+    assert system_page["alert_events"][0]["reason"] == "system_advisory_sync_failed"
+    assert system_page["alert_events"][0]["service_id"] is None
 
     assert app.search_alert_events({"q": ["alert-service"]})["pagination"]["total"] == 1
     assert app.search_alert_events({"status": ["sent"]})["pagination"]["total"] == 0
