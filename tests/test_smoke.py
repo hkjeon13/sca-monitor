@@ -1882,6 +1882,90 @@ def test_bootstrap_readiness_check_cli_can_skip_alert_activation(tmp_path):
     assert "alert_dispatcher_activation" not in payload
 
 
+def test_bootstrap_advisory_sync_cli_initializes_required_sources(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    cisa_path = tmp_path / "cisa-kev.json"
+    cisa_path.write_text(json.dumps(cisa_kev_fixture()), encoding="utf-8")
+    zip_path = tmp_path / "advisories.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("OSV-TEST-0001.json", json.dumps(osv_fixture()))
+        archive.writestr("MAL-2026-0001.json", json.dumps(malicious_osv_fixture()))
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/bootstrap_advisory_sync.py",
+            "--json",
+            "--osv-zip-path",
+            str(zip_path),
+            "--openssf-zip-path",
+            str(zip_path),
+            "--cisa-json-path",
+            str(cisa_path),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert [task["status"] for task in payload["tasks"]] == ["ok", "ok", "ok"]
+    assert payload["advisory_sync_readiness"]["status"] == "ready"
+    app = ScaMonitorApp(
+        Settings(
+            app_env="test",
+            host="127.0.0.1",
+            port=0,
+            data_dir=tmp_path,
+            database_url=database_url,
+            database_path=tmp_path / "sca-monitor.sqlite3",
+            frontend_dir=tmp_path,
+            smoke_token="test",
+        )
+    )
+    assert app.overview()["advisory_sync_readiness"]["initialized_count"] == 3
+
+
+def test_bootstrap_advisory_sync_cli_blocks_on_partial_source(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    cisa_path = tmp_path / "cisa-kev.json"
+    cisa_path.write_text(json.dumps(cisa_kev_fixture()), encoding="utf-8")
+    zip_path = tmp_path / "advisories.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("AAA-OSV-TEST-0001.json", json.dumps(osv_fixture()))
+        archive.writestr("MAL-2026-0001.json", json.dumps(malicious_osv_fixture()))
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/bootstrap_advisory_sync.py",
+            "--json",
+            "--osv-zip-path",
+            str(zip_path),
+            "--openssf-zip-path",
+            str(zip_path),
+            "--openssf-scan-limit",
+            "1",
+            "--cisa-json-path",
+            str(cisa_path),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["blocking_sources"] == ["openssf"]
+    assert payload["tasks"][2]["status"] == "partial"
+
+
 def test_impacts_expose_sla_deadline_and_overdue_metrics(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

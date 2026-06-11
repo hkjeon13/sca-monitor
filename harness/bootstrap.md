@@ -44,6 +44,15 @@ initial sync가 완료되기 전에는 매칭 결과가 불완전하다.
 - Critical/High alert 발송은 source별 initial sync 완료 후 활성화한다.
 - 수동으로 smoke test용 synthetic advisory fixture를 사용할 수 있다.
 
+bootstrap 자동화는 다음 명령으로 필수 advisory source의 initial sync를 순차 실행할 수 있다.
+
+```bash
+python3 scripts/bootstrap_advisory_sync.py --json
+```
+
+기본 실행 대상은 OSV npm dump, CISA KEV catalog, OpenSSF `MAL-*` malicious package record이다.
+대용량 OpenSSF scan을 bootstrap window 안에 제한해야 하면 `--openssf-scan-limit`을 사용할 수 있으며, 이 경우 dump 전체를 끝까지 확인하지 못하면 결과는 `blocked`로 반환된다.
+
 ## 4. Synthetic Service
 
 첫 등록 서비스는 SCA Monitor 자기 자신을 권장한다.

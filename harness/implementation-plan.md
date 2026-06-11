@@ -100,6 +100,7 @@ Phase 0 착수 전 선행 조건:
 - OSV affected range version matcher 추가
 - `scripts/osv_sync.py` OSV ecosystem dump sync worker CLI 추가
 - `scripts/osv_sync.py --source OpenSSF --malicious-only` 기반 OSV-format `MAL-*` malicious package sync 추가
+- `scripts/bootstrap_advisory_sync.py` 기반 OSV/CISA KEV/OpenSSF initial sync 순차 실행 gate 추가
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
 - `scripts/dispatch_alerts.py` webhook alert outbox dispatcher CLI 추가
