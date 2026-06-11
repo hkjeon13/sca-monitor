@@ -121,7 +121,7 @@ SCA_MONITOR_SYSTEMD_MODE=validate bash scripts/deploy_systemd_gate.sh
 GET /api/v1/overview
 GET frontend /
 GET frontend static asset
-POST /api/v1/snapshots with test credential in stage
+POST /api/v1/services/{service_id}/status with test credential in stage
 GET /api/v1/impacts
 ```
 

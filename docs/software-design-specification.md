@@ -1497,12 +1497,12 @@ GET /api/v1/audit-logs
 - Advisory Sync Failure Alert: advisory source 동기화가 실패하면 `reason='system_advisory_sync_failed'` system alert outbox row를 생성한다. suppression key는 `system:advisory_sync:{source}:failed`로 고정해 같은 source의 active 실패 alert 중복을 억제한다. 같은 source 동기화가 이후 `ok`로 성공하면 active 실패 alert는 `resolved`로 전환하고, 이후 재실패는 새 pending alert로 기록한다
 - Advisory Sync Stale Alert: `scripts/evaluate_advisory_sync_freshness.py`는 `advisory_sync_readiness.freshness` 기준으로 stale source를 평가해 `reason='system_advisory_sync_stale'` system alert outbox row를 생성한다. suppression key는 `system:advisory_sync:{source}:stale`이며, source가 다시 fresh가 되면 active stale alert를 `resolved`로 전환한다. VM systemd 배포의 full `enable` 모드에서는 `sca-monitor-advisory-freshness.timer`가 이 평가를 15분 주기로 실행한다
 - SLA Evaluation: active impact(`open`, `acknowledged`, `in_progress`)는 risk level별 기본 SLA(critical 24h, high 72h, medium 7d, low/info 30d)를 기준으로 API 응답의 `sla.deadline_at`, `sla.overdue`, `sla.seconds_until_deadline`을 계산한다. Overview와 `/metrics`는 `sla_overdue_impacts`/`sca_monitor_sla_overdue_impacts`를 노출한다. `scripts/evaluate_sla_escalations.py`는 overdue impact에 대해 중복되지 않는 `sla_expired` alert outbox row를 생성한다
-- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/rotate` 기반 회전을 지원한다. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push 및 credential rotate/revoke action을 지원
+- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/rotate` 기반 회전을 지원한다. Web Console에서 token을 1회 표시하고 `POST /api/v1/services/{service_id}/status` 기반 Bearer token snapshot push 예시 및 credential rotate/revoke action을 지원
 - Alert Channel Settings: `GET/POST/PATCH /api/v1/settings/alert-channels`와 Web Console Settings에서 기본 webhook channel을 등록, 조회, default 전환, disable 처리한다. 채널 목록은 placeholder target 여부와 live dispatcher 차단 상태를 표시한다. `scripts/seed_default_alert_channel.py`는 `SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL` 기반으로 cold-start 기본 channel을 생성 또는 갱신하고, 운영 실수를 줄이기 위해 placeholder target을 기본 거부한다. `POST /api/v1/settings/alert-channels/{channel_id}/test`와 Web Console `Test` action은 alert outbox row를 claim/send 처리하지 않고 synthetic payload로 channel 연결성을 검증한다. webhook URL 원문은 조회 응답에 노출하지 않는다
 - Alert Event Operations: `GET /api/v1/alert-events`와 Web Console Settings에서 alert event 상태를 status/search/limit/system-only 조건으로 조회하고, pending/dispatching/sent/failed/dead_letter/resolved 상태를 필터링할 수 있다. Web Console은 alert reason, suppression key, payload 요약(source, error, resolved/requeue timestamp 등)과 펼침 가능한 payload 원문을 표시해 system alert의 원인과 해소 이력을 확인하게 한다. dead-letter event는 `POST /api/v1/alert-events/{id}/requeue`, `POST /api/v1/alert-events/requeue`, 또는 `scripts/requeue_alerts.py`로 pending 복구할 수 있으며, Web Console requeue reason 입력값은 audit log와 alert payload의 requeue reason으로 기록된다. Web Console requeue 완료 후 Audit Logs 필터는 `alert_event.requeue`로 갱신되어 운영자가 감사 이력을 바로 확인할 수 있다
 - Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, 명시적 `--webhook-url`이 없으면 기본 alert channel을 사용한다. webhook에는 `Idempotency-Key`, `X-SCA-Alert-Event-Id`, `X-SCA-Alert-Suppression-Key` 헤더를 포함한다. `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds`, `--max-retries` 옵션으로 운영 루프 실행과 dead-letter 전환을 지원한다. `scripts/alert_dispatcher_preflight.py`, `GET /api/v1/alerts/dispatcher/preflight`, Web Console Settings의 Dispatcher Preflight는 DB readiness, default webhook channel, placeholder target 여부, dispatcher dry-run 결과를 row update 없이 확인한다. live dispatcher enable 전에는 `scripts/alert_dispatcher_activation_check.py`, `GET /api/v1/alerts/dispatcher/activation-checklist`, Web Console Settings의 Activation Checklist로 DB, default channel, placeholder, dry-run, dead-letter blocking condition을 확인한다. `scripts/alert_dispatcher_go_live_gate.py`는 activation checklist와 systemd unit 상태를 함께 확인하고 live dispatcher 전환 명령을 자동화용 JSON으로 제공한다
 - Daily Digest: `scripts/create_daily_digest.py`는 active impact 중 Medium 이하 또는 비운영 환경 이슈를 집계해 `reason='daily_digest'` alert outbox row를 생성한다. digest suppression key는 `daily_digest:{date}:all` 형식으로 하루 1회 중복 생성을 억제하며, 기본 발송 기준 시각은 `Asia/Seoul` 날짜와 systemd `OnCalendar=*-*-* 09:00:00`이다. Web Console Settings와 `POST /api/v1/alerts/daily-digest/preview`는 동일 기준의 dry-run preview를 제공하며 outbox row를 생성하지 않는다
-- Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증. `SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES` 기본 10MB, `SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES` 기본 10000개, `SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE` 기본 분당 30회 제한을 적용해 과대 payload, dependency 폭증, 과도한 push 호출을 거절한다
+- Snapshot Demo Push: `POST /api/v1/services/{service_id}/status` 기반 dependency snapshot push 검증. 기존 `POST /api/v1/snapshots`는 호환 경로로 유지한다. `SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES` 기본 10MB, `SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES` 기본 10000개, `SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE` 기본 분당 30회 제한을 적용해 과대 payload, dependency 폭증, 과도한 push 호출을 거절한다
 - Advisory Sync Readiness: `GET /api/v1/overview`는 기존 source별 `advisory_sync` 상태 맵과 별도로 `advisory_sync_readiness`를 제공한다. `OSV`, `CISA_KEV`, `OpenSSF` initial sync가 모두 `ok`이고 `last_success_at`을 가진 경우 `ready`, 일부 실패/부분 실패는 `degraded`, 그 외는 `initializing`으로 표시한다. `advisory_sync_readiness.freshness`는 source별 최신 성공 lag를 `fresh`, `stale`, `partial`, `failed`, `pending`으로 요약하며, stale 기준은 `SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS` 기본 86400초를 사용한다. Web Console Overview는 이 상태와 초기화된 source 수, stale/partial/failed count를 표시한다
 - Bootstrap Advisory Sync: `scripts/bootstrap_advisory_sync.py`는 OSV, CISA KEV, OpenSSF malicious package source를 순차 동기화하고 source별 결과, `advisory_sync_readiness`, exit code를 자동화용 JSON으로 제공한다
 - Bootstrap Readiness Gate: `scripts/bootstrap_readiness_check.py`는 DB migration/readiness, advisory initial sync readiness, alert dispatcher activation readiness를 read-only로 확인하고 bootstrap 자동화가 사용할 수 있는 JSON 결과와 exit code를 제공한다
@@ -1579,12 +1579,14 @@ Authorization: Bearer <token>
 endpoint 공개가 어려운 서비스 또는 CI/CD pipeline이 중앙 서버로 snapshot을 push한다.
 
 ```http
-POST /api/v1/snapshots
+POST /api/v1/services/{service_id}/status
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-요청 body는 dependency status endpoint 응답 schema와 동일하다.
+요청 body는 dependency status endpoint 응답 schema와 동일하되 `service_id`는 URL path의 `{service_id}`를 기준으로 고정한다.
+body에 `service_id`가 포함되어 있으면 path 값과 일치해야 하며, 일치하지 않으면 400 Bad Request를 반환한다.
+기존 호환 경로인 `POST /api/v1/snapshots`도 유지하지만 신규 연동 가이드와 push credential 사용 예시는 service-scoped status endpoint를 기본으로 사용한다.
 
 입력 제한:
 
@@ -1599,6 +1601,7 @@ rate_limit: service credential별 분당 30회
 - 동일 `(service_id, environment, snapshot_id)`와 동일 `content_hash`가 다시 들어오면 200 OK로 처리하고 `last_confirmed_at`만 갱신한다.
 - 동일 `(service_id, environment, snapshot_id)`이나 `content_hash`가 다르면 409 Conflict를 반환한다.
 - payload의 `(service_id, environment)`가 push credential에 바인딩된 값과 다르면 403 Forbidden을 반환한다.
+- service-scoped status endpoint는 path의 `{service_id}`와 body의 `service_id` 불일치를 400 Bad Request로 거절해 service spoofing 가능성을 줄인다.
 
 ### 15.3 Impact Workflow API
 

@@ -3074,6 +3074,56 @@ def test_snapshot_push_route_returns_200_for_replay_and_409_for_conflict(tmp_pat
     assert conflict["error"] == "snapshot_id already exists with different content_hash"
 
 
+def test_service_status_push_route_binds_service_id_from_path(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "status-service", "environment": "prod"})
+    issued = app.create_push_credential("status-service", {"environment": "prod"})
+
+    with run_test_server(app) as base_url:
+        created = http_json(
+            f"{base_url}/api/v1/services/status-service/status",
+            method="POST",
+            body={
+                "schema_version": "1.0",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=201,
+        )
+        mismatch = http_json(
+            f"{base_url}/api/v1/services/status-service/status",
+            method="POST",
+            body={
+                "service_id": "spoofed-service",
+                "schema_version": "1.0",
+                "environment": "prod",
+                "generated_at": "2026-06-12T00:00:00+00:00",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            headers={"Authorization": f"Bearer {issued['token']}"},
+            expect_status=400,
+        )
+
+    assert created["service_id"] == "status-service"
+    assert created["environment"] == "prod"
+    assert created["idempotency_status"] == "created"
+    assert "must match route service_id" in mismatch["error"]
+    with app.db.connect() as conn:
+        row = conn.execute(
+            """
+            SELECT s.service_id, ds.environment
+            FROM dependency_snapshots ds
+            JOIN services s ON s.id = ds.service_pk
+            WHERE ds.snapshot_id = ?
+            """,
+            (created["snapshot_id"],),
+        ).fetchone()
+    assert row["service_id"] == "status-service"
+    assert row["environment"] == "prod"
+
+
 def test_snapshot_push_rate_limit_rejects_excess_service_pushes(tmp_path):
     app = make_test_app(tmp_path, max_snapshot_pushes_per_minute=2)
 

@@ -64,15 +64,17 @@ GET https://<service-host>/status/dependencies
 endpoint 공개가 어려운 서비스는 outbound로 중앙 API에 push한다.
 
 ```text
-POST https://<api-host>/api/v1/snapshots
+POST https://<api-host>/api/v1/services/<service_id>/status
 ```
 
 요구사항:
 
 - push credential은 service/environment에 바인딩
+- body에 `service_id`가 있으면 path의 `<service_id>`와 일치해야 함
 - payload size limit
 - rate limit
 - idempotency rule
+- 기존 `POST /api/v1/snapshots`는 호환 경로로 남기되 신규 자동화는 service-scoped status endpoint를 우선 사용
 
 ## 5. Firewall Checklist
 

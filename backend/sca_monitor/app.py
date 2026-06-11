@@ -199,6 +199,15 @@ class ScaMonitorApp:
                 auth_context = self.auth_context(request)
                 self.authorize_admin(auth_context, "endpoint test requires admin role")
                 return self.json_response(request, self.test_service_endpoint(service_id, self.apply_authenticated_actor(body, auth_context)))
+            if path.startswith("/api/v1/services/") and path.endswith("/status") and method == "POST":
+                service_id = unquote(path.split("/")[-2])
+                result = self.push_service_status(
+                    service_id,
+                    self.read_json(request, max_length=self.settings.max_snapshot_payload_bytes),
+                    request.headers.get("Authorization"),
+                )
+                status = HTTPStatus.OK if result.get("idempotency_status") == "confirmed" else HTTPStatus.CREATED
+                return self.json_response(request, result, status)
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
@@ -999,7 +1008,8 @@ class ScaMonitorApp:
             "token": token,
             "usage": {
                 "header": "Authorization: Bearer <token>",
-                "curl": f"curl -X POST /api/v1/snapshots -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' --data @snapshot.json",
+                "curl": f"curl -X POST /api/v1/services/{service_id}/status -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' --data @snapshot.json",
+                "legacy_curl": f"curl -X POST /api/v1/snapshots -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' --data @snapshot.json",
             },
         }
 
@@ -2055,6 +2065,17 @@ class ScaMonitorApp:
             "impacts_created_or_updated": impacts,
             "idempotency_status": "created",
         }
+
+    def push_service_status(self, service_id: str, body: dict, authorization: str | None = None) -> dict:
+        body_service_id = body.get("service_id")
+        if body_service_id and body_service_id != service_id:
+            raise ValueError("body service_id must match route service_id")
+        snapshot_body = dict(body)
+        snapshot_body["service_id"] = service_id
+        result = self.push_snapshot(snapshot_body, authorization)
+        result["service_id"] = service_id
+        result["environment"] = snapshot_body.get("environment", "prod")
+        return result
 
     def enforce_snapshot_push_rate_limit(self, conn, rate_limit_key: str, now: str) -> None:
         limit = self.settings.max_snapshot_pushes_per_minute
