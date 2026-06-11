@@ -2140,6 +2140,44 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
+def test_cutover_readiness_report_endpoint_exposes_sanitized_artifact(monkeypatch, tmp_path):
+    report_path = tmp_path / "cutover-readiness-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "status": "action_required",
+                "summary": {"ok": 2, "action_required": 1, "skipped": 1, "blockers": 0},
+                "inputs": {"env_file": "configured", "database_env_file": "not_configured"},
+                "deployment_inputs": {"status": "action_required"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH", str(report_path))
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/operations/cutover-readiness-report")
+
+    assert payload["artifact"] == {"status": "available", "path": "configured"}
+    assert payload["report"]["status"] == "action_required"
+    assert payload["report"]["summary"]["action_required"] == 1
+    assert str(tmp_path) not in json.dumps(payload)
+
+
+def test_cutover_readiness_report_endpoint_handles_missing_artifact(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH", str(tmp_path / "missing.json"))
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/operations/cutover-readiness-report")
+
+    assert payload == {
+        "artifact": {"status": "not_configured", "path": "not_configured"},
+        "report": None,
+    }
+
+
 def test_ready_endpoint_exposes_postgres_cutover_summary(tmp_path):
     app = make_test_app(tmp_path)
 
@@ -2701,6 +2739,7 @@ def test_web_console_renders_database_readiness_panel():
     assert '<option value="resolved">resolved</option>' in html
     assert 'name="requeue_reason"' in html
     assert "/api/v1/operations/database-readiness" in script
+    assert "/api/v1/operations/cutover-readiness-report" in script
     assert "/api/v1/operations/canonicalization" in script
     assert "/api/v1/operations/canonicalization/apply" in script
     assert "System Alerts" in script
@@ -2727,6 +2766,8 @@ def test_web_console_renders_database_readiness_panel():
     assert "Runtime Migration" in script
     assert "API Auto-Migrate" in script
     assert "Worker Auto-Migrate" in script
+    assert "Cutover Report" in script
+    assert "renderCutoverReadinessReport" in script
     assert "Advisory Freshness" in script
     assert "Advisory Sources" in script
     assert "readiness.advisory_sync_readiness" in script

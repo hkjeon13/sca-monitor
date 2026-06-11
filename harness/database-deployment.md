@@ -261,6 +261,9 @@ scripts/deploy_remote.sh
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
 `scripts/cutover_readiness_report.py`는 runtime `.env`, protected PostgreSQL env file, backup restore-check, 선택적 production preflight 결과를 하나의 sanitized JSON으로 묶어 운영 전환 증적으로 사용한다.
 이 report는 DB URL 원문, password, backup 원본 경로를 출력하지 않는다.
+`GET /api/v1/operations/cutover-readiness-report`는 `SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH`의 sanitized report artifact를 조회한다.
+응답은 artifact path를 `configured` 또는 `not_configured`로만 표시하고 서버 파일 경로를 노출하지 않는다.
+Web Console Database Readiness 패널은 이 endpoint의 report status와 summary count를 표시한다.
 원격 배포 자동화에서 migration 직전 report artifact를 남기려면 다음 입력을 사용한다.
 
 ```bash

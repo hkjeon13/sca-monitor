@@ -135,6 +135,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.overview())
             if path == "/api/v1/operations/database-readiness" and method == "GET":
                 return self.json_response(request, self.database_readiness_summary())
+            if path == "/api/v1/operations/cutover-readiness-report" and method == "GET":
+                return self.json_response(request, self.cutover_readiness_report_artifact())
             if path == "/api/v1/operations/canonicalization" and method == "GET":
                 return self.json_response(request, self.canonicalization_status(parse_qs(parsed.query)))
             if path == "/api/v1/operations/canonicalization/apply" and method == "POST":
@@ -523,6 +525,30 @@ class ScaMonitorApp:
             "cutover": cutover,
             "cutover_required": required_cutover,
             "postgres_preflight": summarize_preflight(cutover, required_cutover),
+        }
+
+    def cutover_readiness_report_artifact(self) -> dict:
+        report_path = Path(
+            os.environ.get(
+                "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH",
+                self.settings.data_dir / "cutover-readiness-report.json",
+            )
+        )
+        if not report_path.exists():
+            return {
+                "artifact": {"status": "not_configured", "path": "not_configured"},
+                "report": None,
+            }
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "artifact": {"status": "unreadable", "path": "configured", "error": str(exc)},
+                "report": None,
+            }
+        return {
+            "artifact": {"status": "available", "path": "configured"},
+            "report": report,
         }
 
     def canonicalization_status(self, query: dict[str, list[str]] | None = None) -> dict:

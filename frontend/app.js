@@ -146,9 +146,10 @@ function renderReadinessBadge(status) {
 }
 
 async function loadOverview() {
-  const [overview, databaseReadiness, canonicalization] = await Promise.all([
+  const [overview, databaseReadiness, cutoverReadinessReport, canonicalization] = await Promise.all([
     api.get("/api/v1/overview"),
     api.get("/api/v1/operations/database-readiness"),
+    api.get("/api/v1/operations/cutover-readiness-report"),
     api.get("/api/v1/operations/canonicalization?limit=20"),
   ]);
   const alertReadiness = overview.alert_readiness || {};
@@ -166,11 +167,11 @@ async function loadOverview() {
     advisorySyncReadinessMetric(advisorySyncReadiness),
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
-  renderDatabaseReadiness(databaseReadiness);
+  renderDatabaseReadiness(databaseReadiness, cutoverReadinessReport);
   renderCanonicalizationStatus(canonicalization);
 }
 
-function renderDatabaseReadiness(readiness) {
+function renderDatabaseReadiness(readiness, cutoverReadinessReport) {
   const migration = readiness.migration || {};
   const cutover = readiness.cutover || {};
   const required = readiness.cutover_required || {};
@@ -199,6 +200,7 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Runtime Migration", renderRuntimeAutoMigrate(runtimeMigration))}
       ${detailRow("API Auto-Migrate", renderAutoMigrateRole(runtimeMigration.api))}
       ${detailRow("Worker Auto-Migrate", renderAutoMigrateRole(runtimeMigration.worker))}
+      ${detailRow("Cutover Report", renderCutoverReadinessReport(cutoverReadinessReport))}
       ${detailRow("Advisory Freshness", `${advisoryFreshness.status || "unknown"} · ${advisoryFreshness.stale_count ?? 0} stale / ${advisoryFreshness.partial_count ?? 0} partial / ${advisoryFreshness.failed_count ?? 0} failed`)}
       ${detailRow("Advisory Sources", `${advisoryReadiness.initialized_count ?? 0}/${advisoryReadiness.required_count ?? 0} initialized · ${advisoryReadiness.status || "unknown"}`)}
       ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
@@ -210,6 +212,14 @@ function renderDatabaseReadiness(readiness) {
       ${renderPostgresCutoverCheckGroups(required.checks || [])}
     </div>
   `;
+}
+
+function renderCutoverReadinessReport(cutoverReadinessReport) {
+  const artifact = cutoverReadinessReport?.artifact || {};
+  if (artifact.status !== "available") return artifact.status || "not_configured";
+  const report = cutoverReadinessReport.report || {};
+  const summary = report.summary || {};
+  return `${report.status || "unknown"} · ${summary.ok ?? 0} ok / ${summary.action_required ?? 0} action / ${summary.blockers ?? 0} blockers / ${summary.skipped ?? 0} skipped`;
 }
 
 function renderRuntimeAutoMigrate(runtimeMigration) {
