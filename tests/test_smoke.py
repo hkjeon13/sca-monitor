@@ -4915,6 +4915,21 @@ def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):
         assert row["status"] == "pending"
 
 
+def test_dispatch_pending_alerts_dry_run_does_not_read_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    def fail_default_channel_lookup():
+        raise AssertionError("dry-run should not read default alert channel")
+
+    app.default_alert_webhook_url = fail_default_channel_lookup
+
+    result = dispatch_pending_alerts(app, webhook_url=None, dry_run=True)
+
+    assert result.pending == 1
+    assert result.claimed == 0
+
+
 def test_alert_dispatcher_preflight_requires_default_channel(tmp_path):
     env = {
         **os.environ,
