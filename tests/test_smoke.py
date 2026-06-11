@@ -2923,6 +2923,81 @@ def test_alert_dispatcher_preflight_route_requires_admin_in_header_auth(tmp_path
     assert allowed["status"] == "ok"
 
 
+def test_alert_dispatcher_activation_checklist_blocks_placeholder_without_updating_rows(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/alerts/dispatcher/activation-checklist?limit=10")
+
+    assert payload["status"] == "blocked"
+    assert payload["next_action"] == "resolve_blocking_failures"
+    assert "default_alert_channel_not_placeholder" in payload["blocking_failures"]
+    assert payload["preflight"]["dry_run"]["pending"] == 1
+    item_status = {item["name"]: item["status"] for item in payload["items"]}
+    assert item_status["database_ready"] == "passed"
+    assert item_status["default_alert_channel_not_placeholder"] == "failed"
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT status FROM alert_events").fetchone()["status"] == "pending"
+
+
+def test_alert_dispatcher_activation_checklist_ready_with_real_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/alerts/dispatcher/activation-checklist?limit=10")
+
+    assert payload["status"] == "ready"
+    assert payload["next_action"] == "enable_live_dispatcher"
+    assert payload["blocking_failures"] == []
+    assert payload["preflight"]["checks"]["default_alert_channel_not_placeholder"] is True
+
+
+def test_alert_dispatcher_activation_checklist_requires_admin_in_header_auth(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/alerts/dispatcher/activation-checklist",
+            headers={"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"},
+            expect_status=403,
+        )
+        allowed = http_json(
+            f"{base_url}/api/v1/alerts/dispatcher/activation-checklist?limit=10",
+            headers={"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"},
+            expect_status=200,
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert allowed["status"] == "blocked"
+    assert "default_alert_channel_configured" in allowed["blocking_failures"]
+
+
+def test_alert_dispatcher_activation_check_cli_reports_blocked(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/alert_dispatcher_activation_check.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert "default_alert_channel_configured" in payload["blocking_failures"]
+
+
 def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_update_rows(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

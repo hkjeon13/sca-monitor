@@ -210,6 +210,10 @@ class ScaMonitorApp:
                 auth_context = self.auth_context(request)
                 self.authorize_admin(auth_context, "alert dispatcher preflight requires admin role")
                 return self.json_response(request, self.alert_dispatcher_preflight(parse_qs(parsed.query)))
+            if path == "/api/v1/alerts/dispatcher/activation-checklist" and method == "GET":
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "alert dispatcher activation checklist requires admin role")
+                return self.json_response(request, self.alert_dispatcher_activation_checklist(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
                 return self.json_response(request, self.bulk_requeue_alert_events(self.read_json(request)))
             if path == "/api/v1/alerts/daily-digest/preview" and method == "POST":
@@ -2172,6 +2176,12 @@ class ScaMonitorApp:
         limit = bounded_int(first_query_value(query, "limit"), default=50, minimum=1, maximum=1000)
         allow_missing = truthy(first_query_value(query, "allow_missing_default_channel"))
         return run_alert_dispatcher_preflight(self, limit=limit, require_default_channel=not allow_missing)
+
+    def alert_dispatcher_activation_checklist(self, query: dict[str, list[str]]) -> dict:
+        from .alert_preflight import run_alert_dispatcher_activation_check
+
+        limit = bounded_int(first_query_value(query, "limit"), default=50, minimum=1, maximum=1000)
+        return run_alert_dispatcher_activation_check(self, limit=limit)
 
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")

@@ -160,10 +160,11 @@ Live dispatcher preflight:
 
 ```bash
 python3 scripts/alert_dispatcher_preflight.py --json
+python3 scripts/alert_dispatcher_activation_check.py --json
 ```
 
 이 검증은 DB readiness, enabled default webhook channel, dry-run dispatcher 결과, alert outbox 상태를 확인하며 실제 alert 발송이나 row update는 수행하지 않는다.
-같은 검증은 `GET /api/v1/alerts/dispatcher/preflight`와 Web Console Settings의 Dispatcher Preflight에서도 확인할 수 있다.
+같은 검증은 `GET /api/v1/alerts/dispatcher/preflight`, `GET /api/v1/alerts/dispatcher/activation-checklist`, Web Console Settings의 Dispatcher Preflight와 Activation Checklist에서도 확인할 수 있다.
 Settings의 Configured Channels 목록에서 `placeholder target` 또는 `live dispatcher blocked` badge가 보이면 실제 webhook URL로 교체하고 channel test를 통과시킨 뒤 live dispatcher enable을 검토한다.
 
 Webhook endpoint smoke:
