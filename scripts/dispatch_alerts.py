@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,19 +25,36 @@ def main() -> None:
     parser.add_argument("--lock-owner", default=None, help="Explicit dispatch lock owner id")
     parser.add_argument("--lock-ttl-seconds", type=int, default=300, help="Per-alert dispatch lock time-to-live in seconds")
     parser.add_argument("--retry-backoff-seconds", type=int, default=300, help="Base retry backoff in seconds")
+    parser.add_argument("--iterations", type=int, default=1, help="Number of dispatch iterations; use 0 to run forever")
+    parser.add_argument("--interval-seconds", type=float, default=0, help="Sleep interval between iterations")
     args = parser.parse_args()
 
     app = ScaMonitorApp(load_settings())
-    result = dispatch_pending_alerts(
-        app,
-        webhook_url=args.webhook_url,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        lock_owner=args.lock_owner,
-        lock_ttl_seconds=args.lock_ttl_seconds,
-        retry_backoff_seconds=args.retry_backoff_seconds,
-    )
-    print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+    iteration = 0
+    results = []
+    while args.iterations == 0 or iteration < args.iterations:
+        iteration += 1
+        result = dispatch_pending_alerts(
+            app,
+            webhook_url=args.webhook_url,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            lock_owner=args.lock_owner,
+            lock_ttl_seconds=args.lock_ttl_seconds,
+            retry_backoff_seconds=args.retry_backoff_seconds,
+        )
+        payload = {"iteration": iteration, **result.__dict__}
+        results.append(payload)
+        if args.iterations == 1:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+        print(json.dumps(payload, ensure_ascii=False), flush=True)
+        if args.iterations != 0 and iteration >= args.iterations:
+            break
+        if args.interval_seconds > 0:
+            time.sleep(args.interval_seconds)
+
+    print(json.dumps({"iterations": results}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

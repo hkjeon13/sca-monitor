@@ -116,6 +116,13 @@ DB migration rollback은 자동화 대상이 아니다.
 | Alert Dispatcher | multi-replica 가능 | `alert_events` pending row `FOR UPDATE SKIP LOCKED` |
 | SLA/Digest Worker | single-active 권장 | schedule lock |
 
+Alert Dispatcher는 MVP에서 DB row 상태 전이로 per-alert claim을 수행한다.
+운영 프로세스는 다음 형태로 구성할 수 있다.
+
+```bash
+ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_alerts.py --iterations 0 --interval-seconds 30 --limit 50
+```
+
 Graceful shutdown:
 
 ```text

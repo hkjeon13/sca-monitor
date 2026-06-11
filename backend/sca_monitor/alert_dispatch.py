@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -109,6 +110,45 @@ def dispatch_pending_alerts(
                 (utcnow(), webhook_url, json.dumps(payload, ensure_ascii=False), row["id"]),
             )
     return AlertDispatchResult(pending=len(eligible_rows), claimed=len(rows), sent=sent, failed=failed, dry_run=False)
+
+
+def dispatch_alert_batches(
+    app: ScaMonitorApp,
+    *,
+    webhook_url: str | None,
+    limit: int = 50,
+    dry_run: bool = False,
+    lock_owner: str | None = None,
+    lock_ttl_seconds: int = 300,
+    retry_backoff_seconds: int = 300,
+    iterations: int = 1,
+    interval_seconds: float = 0,
+    sender: Callable[[str, dict], None] | None = None,
+    sleeper: Callable[[float], None] | None = None,
+) -> list[AlertDispatchResult]:
+    if iterations < 0:
+        raise ValueError("iterations must be 0 or greater")
+    results = []
+    sleep = sleeper or time.sleep
+    iteration = 0
+    while iterations == 0 or iteration < iterations:
+        iteration += 1
+        result = dispatch_pending_alerts(
+            app,
+            webhook_url=webhook_url,
+            limit=limit,
+            dry_run=dry_run,
+            lock_owner=lock_owner,
+            lock_ttl_seconds=lock_ttl_seconds,
+            retry_backoff_seconds=retry_backoff_seconds,
+            sender=sender,
+        )
+        results.append(result)
+        if iterations != 0 and iteration >= iterations:
+            break
+        if interval_seconds > 0:
+            sleep(interval_seconds)
+    return results
 
 
 def alert_payload(row) -> dict:

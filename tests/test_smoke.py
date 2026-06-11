@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from backend.sca_monitor.alert_dispatch import dispatch_pending_alerts
+from backend.sca_monitor.alert_dispatch import dispatch_alert_batches, dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
 from backend.sca_monitor.db import Database, canonical_package_name
@@ -744,6 +744,27 @@ def test_expired_dispatch_lock_can_be_reclaimed(tmp_path):
     assert result.pending == 1
     assert result.claimed == 1
     assert result.sent == 1
+    assert len(delivered) == 1
+
+
+def test_dispatch_alert_batches_repeats_with_sleep(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    slept = []
+    delivered = []
+
+    results = dispatch_alert_batches(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        iterations=2,
+        interval_seconds=3,
+        sender=lambda url, payload: delivered.append(payload),
+        sleeper=lambda seconds: slept.append(seconds),
+    )
+
+    assert [result.sent for result in results] == [1, 0]
+    assert [result.pending for result in results] == [1, 0]
+    assert slept == [3]
     assert len(delivered) == 1
 
 
