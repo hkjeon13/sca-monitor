@@ -11,8 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SCA_MONITOR_POSTGRES_DOCKER_SMOKE: required
+      SCA_MONITOR_POSTGRES_DOCKER_SMOKE: disabled
       SCA_MONITOR_CI_HTTP_SMOKE: disabled
+      POSTGRES_SMOKE_DATABASE_URL: postgresql://sca_monitor:sca_monitor@127.0.0.1:5432/sca_monitor
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sca_monitor
+          POSTGRES_PASSWORD: sca_monitor
+          POSTGRES_DB: sca_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sca_monitor -d sca_monitor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +49,6 @@ jobs:
 
       - name: Run CI smoke gates
         run: bash scripts/ci_smoke.sh
+
+      - name: Run PostgreSQL service smoke
+        run: python3 scripts/postgres_integration_smoke.py --database-url "$POSTGRES_SMOKE_DATABASE_URL" --with-api-workflow --json

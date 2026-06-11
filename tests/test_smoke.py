@@ -1088,7 +1088,7 @@ def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):
     assert "http smoke required but SCA_MONITOR_SMOKE_BASE_URL or SCA_MONITOR_PUBLIC_URL is not configured" in result.stderr
 
 
-def test_github_actions_ci_runs_ci_smoke_with_postgres_docker_gate():
+def test_github_actions_ci_runs_ci_smoke_with_postgres_service_smoke():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert "pull_request:" in workflow
@@ -1096,10 +1096,13 @@ def test_github_actions_ci_runs_ci_smoke_with_postgres_docker_gate():
     assert "actions/checkout@v4" in workflow
     assert "actions/setup-python@v5" in workflow
     assert "actions/setup-node@v4" in workflow
-    assert "SCA_MONITOR_POSTGRES_DOCKER_SMOKE: required" in workflow
+    assert "SCA_MONITOR_POSTGRES_DOCKER_SMOKE: disabled" in workflow
     assert "SCA_MONITOR_CI_HTTP_SMOKE: disabled" in workflow
+    assert "postgres:16" in workflow
+    assert "POSTGRES_SMOKE_DATABASE_URL" in workflow
     assert "python -m pip install -e . pytest" in workflow
     assert "bash scripts/ci_smoke.sh" in workflow
+    assert 'postgres_integration_smoke.py --database-url "$POSTGRES_SMOKE_DATABASE_URL" --with-api-workflow --json' in workflow
 
 
 def test_pyproject_limits_setuptools_package_discovery():
