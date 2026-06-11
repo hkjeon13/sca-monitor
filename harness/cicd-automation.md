@@ -49,6 +49,26 @@ flowchart LR
 | frontend smoke 실패 | frontend rollback |
 | smoke test 실패 | 배포 실패 처리 |
 
+기본 CI smoke entrypoint:
+
+```bash
+bash scripts/ci_smoke.sh
+```
+
+Docker 기반 PostgreSQL adapter/API workflow smoke를 필수로 강제하려면 다음처럼 실행한다.
+
+```bash
+SCA_MONITOR_POSTGRES_DOCKER_SMOKE=required bash scripts/ci_smoke.sh
+```
+
+public URL까지 포함한 HTTP smoke를 필수로 강제하려면 다음처럼 실행한다.
+
+```bash
+SCA_MONITOR_CI_HTTP_SMOKE=required \
+SCA_MONITOR_SMOKE_BASE_URL="$SCA_MONITOR_PUBLIC_URL" \
+bash scripts/ci_smoke.sh
+```
+
 ## 4. Release Inputs
 
 필수 입력:

@@ -1058,6 +1058,35 @@ def test_postgres_docker_smoke_gate_documents_docker_workflow():
     assert "--json" in script
 
 
+def test_ci_smoke_runs_core_gates():
+    script = (REPO_ROOT / "scripts" / "ci_smoke.sh").read_text(encoding="utf-8")
+
+    assert "python3 -m pytest tests" in script
+    assert "node --check frontend/app.js" in script
+    assert "bash scripts/deploy_db_gate.sh" in script
+    assert "bash scripts/deploy_systemd_gate.sh" in script
+    assert "bash scripts/postgres_docker_smoke_gate.sh" in script
+    assert "scripts/http_smoke.py --base-url" in script
+    assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
+
+
+def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):
+    result = subprocess.run(
+        ["/bin/bash", "scripts/ci_smoke.sh"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": str(tmp_path),
+            "SCA_MONITOR_CI_HTTP_SMOKE": "required",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "http smoke required but SCA_MONITOR_SMOKE_BASE_URL or SCA_MONITOR_PUBLIC_URL is not configured" in result.stderr
+
+
 def test_web_console_renders_database_readiness_panel():
     html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
