@@ -79,6 +79,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-cisa-kev-sync.timer",
         "sca-monitor-osv-npm-sync.service",
         "sca-monitor-osv-npm-sync.timer",
+        "sca-monitor-openssf-malicious-sync.service",
+        "sca-monitor-openssf-malicious-sync.timer",
     }
     assert {path.name for path in unit_dir.iterdir()} == expected_units
     poller = (unit_dir / "sca-monitor-endpoint-poller.service").read_text(encoding="utf-8")
@@ -87,6 +89,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
     expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
     assert "OnUnitActiveSec=15min" in expiry_timer
+    openssf = (unit_dir / "sca-monitor-openssf-malicious-sync.service").read_text(encoding="utf-8")
+    assert "scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only" in openssf
 
 
 def test_systemd_scheduler_status_reports_generated_units(tmp_path):
@@ -119,9 +123,10 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 9, "present": 9, "valid": 9, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 11, "present": 11, "valid": 11, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
+    assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
 
 
 def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
@@ -136,7 +141,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 9
+    assert payload["summary"]["missing"] == 11
 
 
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
@@ -718,6 +723,17 @@ def test_parse_osv_uses_payload_severity_when_affected_specific_has_no_severity(
     advisories = parse_osv_advisories(payload)
 
     assert advisories[0].severity == "medium"
+
+
+def test_parse_malicious_osv_advisory_as_openssf_source():
+    advisories = parse_osv_advisories(malicious_osv_fixture())
+
+    assert len(advisories) == 1
+    advisory = advisories[0]
+    assert advisory.advisory_id == "MAL-2026-0001"
+    assert advisory.source == "OpenSSF"
+    assert advisory.is_malicious_package is True
+    assert advisory.severity == "critical"
 
 
 def test_import_osv_payload_updates_advisory_and_sync_state(tmp_path):
@@ -1376,6 +1392,46 @@ def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     assert app.overview()["advisory_sync"]["OSV"] == "ok"
 
 
+def test_sync_openssf_malicious_records_from_osv_zip(tmp_path):
+    app = make_test_app(tmp_path)
+    zip_path = tmp_path / "openssf-malicious.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("OSV-TEST-0001.json", json.dumps(osv_fixture()))
+        archive.writestr("MAL-2026-0001.json", json.dumps(malicious_osv_fixture()))
+
+    result = sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, source="OpenSSF", malicious_only=True)
+
+    assert result.source == "OpenSSF"
+    assert result.processed == 1
+    assert result.skipped == 1
+    assert result.imported_rows == 1
+    assert result.failed == 0
+    advisories = app.list_advisories({"source": ["OpenSSF"]})
+    imported = next(advisory for advisory in advisories if advisory["advisory_id"] == "MAL-2026-0001")
+    assert imported["is_malicious_package"] is True
+    assert app.overview()["advisory_sync"]["OpenSSF"] == "ok"
+
+
+def test_openssf_malicious_advisory_matches_as_critical_impact(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(malicious_osv_fixture())
+
+    app.push_snapshot(
+        {
+            "service_id": "malicious-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "bad-package", "version": "1.2.3"}],
+        }
+    )
+
+    impacts = app.search_impacts({"service_id": ["malicious-service"]})["impacts"]
+    assert len(impacts) == 1
+    assert impacts[0]["advisory_id"] == "MAL-2026-0001"
+    assert impacts[0]["risk_level"] == "critical"
+    assert impacts[0]["is_malicious_package"] is True
+    assert app.overview()["critical_impacts"] == 1
+
+
 def test_parse_cisa_kev_vulnerability_marks_known_exploited():
     advisory = parse_cisa_kev_vulnerability(cisa_kev_fixture()["vulnerabilities"][0], cisa_kev_fixture())
 
@@ -1857,6 +1913,19 @@ def osv_fixture():
             }
         ],
     }
+
+
+def malicious_osv_fixture():
+    payload = osv_fixture()
+    payload["id"] = "MAL-2026-0001"
+    payload["aliases"] = []
+    payload["summary"] = "Malicious package report for bad-package"
+    payload["details"] = "The package executes malicious install-time behavior."
+    payload["affected"][0]["package"]["name"] = "bad-package"
+    payload["affected"][0]["versions"] = ["1.2.3"]
+    payload["affected"][0]["ranges"] = [{"type": "SEMVER", "events": [{"introduced": "1.2.3"}, {"last_affected": "1.2.3"}]}]
+    payload["affected"][0]["database_specific"] = {"severity": "CRITICAL"}
+    return payload
 
 
 def cisa_kev_fixture():

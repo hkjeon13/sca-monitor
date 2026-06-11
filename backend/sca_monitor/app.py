@@ -860,14 +860,15 @@ class ScaMonitorApp:
         try:
             payload = fetch_osv_advisory(advisory_id)
             result = self.import_osv_payload(payload)
-            return {"source": "OSV", "advisory_id": advisory_id, **result}
+            return {"source": result["source"], "advisory_id": advisory_id, **result}
         except Exception as exc:
             self.record_advisory_sync("OSV", "error", advisory_id, str(exc))
             raise
 
-    def import_osv_payload(self, payload: dict) -> dict:
-        advisories = parse_osv_advisories(payload)
+    def import_osv_payload(self, payload: dict, source_override: str | None = None) -> dict:
+        advisories = parse_osv_advisories(payload, source_override=source_override)
         source_advisory_id = str(payload.get("id") or advisories[0].advisory_id)
+        sync_source = advisories[0].source
         changed_advisories: list[AdvisoryImport] = []
         rematched_impacts = 0
         with self.db.connect() as conn:
@@ -876,8 +877,9 @@ class ScaMonitorApp:
                     changed_advisories.append(advisory)
             for advisory in changed_advisories:
                 rematched_impacts += self.rematch_latest_snapshots_for_advisory(conn, advisory)
-            self.record_advisory_sync("OSV", "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
+            self.record_advisory_sync(sync_source, "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
         return {
+            "source": sync_source,
             "imported": len(advisories),
             "changed": len(changed_advisories),
             "rematched_impacts": rematched_impacts,
@@ -1446,7 +1448,7 @@ class ScaMonitorApp:
                 tuple(params + [limit, offset]),
             ).fetchall()
         return {
-            "impacts": [row_to_dict(row) for row in rows],
+            "impacts": [sanitize_service_impact(row_to_dict(row)) for row in rows],
             "pagination": {
                 "total": total,
                 "limit": limit,

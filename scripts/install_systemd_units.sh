@@ -216,6 +216,30 @@ Unit=${PREFIX}-osv-npm-sync.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-openssf-malicious-sync.service" <<EOF
+[Unit]
+Description=SCA Monitor OpenSSF malicious package sync job
+After=network-online.target
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --lock-owner systemd-openssf-malicious-sync --lock-ttl-seconds 3600
+EOF
+
+write_unit "${PREFIX}-openssf-malicious-sync.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor OpenSSF malicious package sync hourly
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=1h
+Unit=${PREFIX}-openssf-malicious-sync.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "dry-run: systemctl was not called"
   exit 0
@@ -234,7 +258,8 @@ if [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
-    "${PREFIX}-osv-npm-sync.timer"
+    "${PREFIX}-osv-npm-sync.timer" \
+    "${PREFIX}-openssf-malicious-sync.timer"
 else
   echo "unit files installed. Run with --enable to enable and start units."
 fi

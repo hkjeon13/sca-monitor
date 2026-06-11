@@ -72,6 +72,7 @@ Advisory worker command examples:
 
 ```bash
 python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
+python3 scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --limit 100 --lock-ttl-seconds 3600
 python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
 ```
 
@@ -188,6 +189,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-accepted-risk-expiry.timer` | accepted risk 만료 처리 | 15분 주기 oneshot |
 | `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
 | `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
+| `sca-monitor-openssf-malicious-sync.timer` | OpenSSF malicious package sync | 1시간 주기 oneshot |
 
 모든 unit은 repository의 `.env`를 `EnvironmentFile`로 읽는다.
 `SCA_MONITOR_DATABASE_URL`, `SCA_MONITOR_FRONTEND_DIR`, alert webhook 설정은 `.env`에서 유지한다.

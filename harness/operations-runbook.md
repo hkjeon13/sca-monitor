@@ -89,6 +89,15 @@ python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 중복 실행은 `advisory_sync_state.lock_owner`, `lock_expires_at` 기준으로 차단된다.
 테스트 또는 폐쇄망 검증에는 `--zip-path /path/to/osv-fixture.zip`을 사용할 수 있다.
 
+OpenSSF malicious package 수동 재시도 예시:
+
+```bash
+python3 scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --limit 100 --lock-ttl-seconds 3600
+```
+
+이 경로는 OSV-format `MAL-*` record만 수집해 `source=OpenSSF`, `is_malicious_package=true`로 저장한다.
+매칭된 impact는 risk scoring에서 Critical로 승격된다.
+
 CISA KEV 수동 재시도 예시:
 
 ```bash

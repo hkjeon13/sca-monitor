@@ -23,6 +23,7 @@ class OsvSyncResult:
     source: str
     ecosystem: str
     processed: int
+    skipped: int
     imported_rows: int
     failed: int
     dump_url: str
@@ -56,37 +57,57 @@ def sync_osv_ecosystem_dump(
     zip_path: Path | None = None,
     lock_owner: str | None = None,
     lock_ttl_seconds: int = 3600,
+    source: str = "OSV",
+    malicious_only: bool = False,
 ) -> OsvSyncResult:
     url = dump_url or osv_dump_url(ecosystem)
+    sync_source = normalize_sync_source(source)
     processed = 0
+    skipped = 0
     imported_rows = 0
     failed = 0
-    owner = lock_owner or default_lock_owner(ecosystem)
+    owner = lock_owner or default_lock_owner(f"{sync_source.lower()}-{ecosystem}")
 
     try:
-        with app.advisory_sync_lock("OSV", owner, ttl_seconds=lock_ttl_seconds):
+        with app.advisory_sync_lock(sync_source, owner, ttl_seconds=lock_ttl_seconds):
             for payload in iter_osv_dump_payloads(url=url, zip_path=zip_path):
+                advisory_id = str(payload.get("id") or "")
+                if malicious_only and not advisory_id.startswith("MAL-"):
+                    skipped += 1
+                    continue
                 if limit is not None and processed >= limit:
                     break
                 processed += 1
                 try:
-                    imported_rows += app.import_osv_payload(payload)["imported"]
+                    imported_rows += app.import_osv_payload(payload, source_override=sync_source)["imported"]
                 except Exception:
                     failed += 1
             status = "ok" if failed == 0 else "partial"
-            app.record_advisory_sync("OSV", status, f"{ecosystem}:dump", None, imported_count=0)
+            app.record_advisory_sync(sync_source, status, f"{ecosystem}:dump", None, imported_count=0)
     except Exception as exc:
-        app.record_advisory_sync("OSV", "error", f"{ecosystem}:dump", str(exc), imported_count=0)
+        app.record_advisory_sync(sync_source, "error", f"{ecosystem}:dump", str(exc), imported_count=0)
         raise
 
     return OsvSyncResult(
-        source="OSV",
+        source=sync_source,
         ecosystem=ecosystem,
         processed=processed,
+        skipped=skipped,
         imported_rows=imported_rows,
         failed=failed,
         dump_url=url,
     )
+
+
+def normalize_sync_source(source: str) -> str:
+    value = (source or "OSV").strip()
+    aliases = {
+        "osv": "OSV",
+        "openssf": "OpenSSF",
+        "openssf_malicious_packages": "OpenSSF",
+        "malicious": "OpenSSF",
+    }
+    return aliases.get(value.lower(), value)
 
 
 def sync_cisa_kev_catalog(

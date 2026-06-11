@@ -46,12 +46,13 @@ def fetch_osv_advisory(advisory_id: str, timeout_seconds: float = 10.0) -> dict[
         raise RuntimeError(f"OSV API request failed: {exc.reason}") from exc
 
 
-def parse_osv_advisories(payload: dict[str, Any]) -> list[AdvisoryImport]:
+def parse_osv_advisories(payload: dict[str, Any], source_override: str | None = None) -> list[AdvisoryImport]:
     advisory_id = str(payload.get("id") or "")
     if not advisory_id:
         raise ValueError("OSV payload id required")
 
     imports: list[AdvisoryImport] = []
+    source = source_override or ("OpenSSF" if advisory_id.startswith("MAL-") else "OSV")
     affected_items = payload.get("affected") or []
     package_count = sum(1 for affected in affected_items if (affected.get("package") or {}).get("ecosystem") and (affected.get("package") or {}).get("name"))
     for affected in affected_items:
@@ -66,7 +67,7 @@ def parse_osv_advisories(payload: dict[str, Any]) -> list[AdvisoryImport]:
         imports.append(
             AdvisoryImport(
                 advisory_id=row_advisory_id,
-                source="OSV",
+                source=source,
                 summary=str(payload.get("summary") or payload.get("details") or advisory_id),
                 severity=osv_severity(payload, affected),
                 ecosystem=ecosystem,

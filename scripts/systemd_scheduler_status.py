@@ -46,6 +46,19 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=1h", "Unit={prefix}-osv-npm-sync.service"],
         "kind": "timer",
     },
+    "openssf-malicious-sync.service": {
+        "required": [
+            "scripts/osv_sync.py",
+            "--source OpenSSF",
+            "--malicious-only",
+            "--lock-owner systemd-openssf-malicious-sync",
+        ],
+        "kind": "oneshot",
+    },
+    "openssf-malicious-sync.timer": {
+        "required": ["OnUnitActiveSec=1h", "Unit={prefix}-openssf-malicious-sync.service"],
+        "kind": "timer",
+    },
 }
 
 

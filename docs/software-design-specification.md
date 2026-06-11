@@ -198,6 +198,7 @@ references
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
 - 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
 - OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
+- OSV `MAL-*` record는 `source=OpenSSF`, `is_malicious_package=true`로 저장할 수 있으며, `scripts/osv_sync.py --source OpenSSF --malicious-only`는 OSV-format dump에서 malicious package record만 분리 수집한다.
 - `scripts/cisa_kev_sync.py`는 CISA KEV JSON catalog를 읽어 `source=CISA_KEV`, `is_known_exploited=true`, `severity=critical` advisory로 저장하고 `advisory_sync_state`에 sync 상태를 기록한다. KEV `cveID`가 기존 OSV/GHSA raw `aliases`에 있으면 해당 package advisory도 known-exploited critical로 보강하고 latest snapshot을 재매칭한다.
 - endpoint polling worker는 등록된 `status_endpoint_url`을 순회해 snapshot을 수집하고, `endpoint_poll_state` DB lease로 중복 실행을 차단한다.
 - endpoint polling CLI는 `--iterations`, `--interval-seconds`, `--worker-name`, `--lock-owner`, `--lock-ttl-seconds` 옵션을 지원한다.
@@ -392,6 +393,7 @@ modified
 설계 반영:
 
 - `MAL-*` ID를 malicious package advisory로 저장한다.
+- MVP는 OSV-format `MAL-*` record를 `OpenSSF` source로 분류하고 `scripts/osv_sync.py --source OpenSSF --malicious-only`로 ZIP dump 또는 OSV dump에서 수집한다.
 - 매칭된 운영 서비스 impact는 Critical로 우선 분류한다.
 - fixed version이 없는 경우 제거 또는 대체 패키지 사용을 action으로 제시한다.
 

@@ -52,7 +52,7 @@
 | REQ-DEP-SRC-002 | CISA KEV 수집 | ASSUMED | JSON/CSV catalog 주기 동기화 |
 | REQ-DEP-SRC-003 | GitHub Advisory API | REQUIRED | GitHub API token 사용 여부와 rate limit 정책 |
 | REQ-DEP-SRC-004 | NVD API | REQUIRED | NVD API key 사용 여부 |
-| REQ-DEP-SRC-005 | OpenSSF malicious packages | ASSUMED | GitHub repository 또는 OSV `MAL-*` record 수집 |
+| REQ-DEP-SRC-005 | OpenSSF malicious packages | PARTIAL | OSV-format `MAL-*` record를 `scripts/osv_sync.py --source OpenSSF --malicious-only`로 수집하는 경로는 구현됨. GitHub repository mirror 직접 수집 여부는 결정 필요 |
 | REQ-DEP-SRC-006 | 상용 threat intelligence | REQUIRED | Snyk, Mend, Socket, Checkmarx 등 사용 여부 |
 
 ## 5. 데이터베이스 요구사항
