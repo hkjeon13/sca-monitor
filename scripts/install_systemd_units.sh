@@ -288,6 +288,7 @@ if [[ "$ENABLE_API_ONLY" == "1" ]]; then
   fi
   "${SYSTEMCTL[@]}" daemon-reload
   "${SYSTEMCTL[@]}" enable --now "${PREFIX}-api.service"
+  "${SYSTEMCTL[@]}" restart "${PREFIX}-api.service"
 elif [[ "$ENABLE_POLLER_ONLY" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
@@ -296,6 +297,9 @@ elif [[ "$ENABLE_POLLER_ONLY" == "1" ]]; then
   fi
   "${SYSTEMCTL[@]}" daemon-reload
   "${SYSTEMCTL[@]}" enable --now \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service"
+  "${SYSTEMCTL[@]}" restart \
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service"
 elif [[ "$ENABLE_DISPATCHER_DRY_RUN" == "1" ]]; then
@@ -310,6 +314,10 @@ elif [[ "$ENABLE_DISPATCHER_DRY_RUN" == "1" ]]; then
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service" \
     "${PREFIX}-alert-dispatcher-dry-run.service"
+  "${SYSTEMCTL[@]}" restart \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service" \
+    "${PREFIX}-alert-dispatcher-dry-run.service"
 elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
@@ -319,6 +327,14 @@ elif [[ "$ENABLE" == "1" ]]; then
   "${SYSTEMCTL[@]}" daemon-reload
   "${SYSTEMCTL[@]}" disable --now "${PREFIX}-alert-dispatcher-dry-run.service" 2>/dev/null || true
   "${SYSTEMCTL[@]}" enable --now \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service" \
+    "${PREFIX}-alert-dispatcher.service" \
+    "${PREFIX}-accepted-risk-expiry.timer" \
+    "${PREFIX}-cisa-kev-sync.timer" \
+    "${PREFIX}-osv-npm-sync.timer" \
+    "${PREFIX}-openssf-malicious-sync.timer"
+  "${SYSTEMCTL[@]}" restart \
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service" \
     "${PREFIX}-alert-dispatcher.service" \

@@ -440,6 +440,7 @@ exit 0
     assert payload["status"] == "ok"
     assert payload["systemctl"]["sca-monitor-api.service"] == {"enabled": "enabled", "active": "active"}
     assert "--user enable --now sca-monitor-api.service" in log_text
+    assert "--user restart sca-monitor-api.service" in restart_lines(log_text)
     assert "--user enable --now sca-monitor-endpoint-poller.service" not in log_text
     assert "--user enable --now sca-monitor-alert-dispatcher.service" not in log_text
 
@@ -486,6 +487,7 @@ exit 0
     assert payload["systemctl"]["sca-monitor-api.service"] == {"enabled": "enabled", "active": "active"}
     assert payload["systemctl"]["sca-monitor-endpoint-poller.service"] == {"enabled": "enabled", "active": "active"}
     assert "--user enable --now sca-monitor-api.service sca-monitor-endpoint-poller.service" in log_text
+    assert "--user restart sca-monitor-api.service sca-monitor-endpoint-poller.service" in restart_lines(log_text)
     assert "sca-monitor-alert-dispatcher.service" not in enabled_now_lines(log_text)
 
 
@@ -531,6 +533,10 @@ exit 0
     assert payload["systemctl"]["sca-monitor-alert-dispatcher-dry-run.service"] == {"enabled": "enabled", "active": "active"}
     assert "sca-monitor-alert-dispatcher-dry-run.service" in enabled_now_lines(log_text)
     assert "sca-monitor-alert-dispatcher.service" not in enabled_now_lines(log_text)
+    assert "sca-monitor-api.service" in restart_lines(log_text)
+    assert "sca-monitor-endpoint-poller.service" in restart_lines(log_text)
+    assert "sca-monitor-alert-dispatcher-dry-run.service" in restart_lines(log_text)
+    assert "sca-monitor-alert-dispatcher.service" not in restart_lines(log_text)
 
 
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
@@ -657,6 +663,10 @@ def test_remote_deploy_uses_db_gate():
 
 def enabled_now_lines(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if " enable --now " in line)
+
+
+def restart_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if " restart " in line)
 
 
 def test_postgres_sql_translates_placeholders_outside_string_literals():
