@@ -1237,6 +1237,69 @@ def test_configure_runtime_inputs_merges_database_env_file_without_leaking_urls(
     assert "postgresql://worker:secret" not in result.stdout
 
 
+def test_validate_database_env_file_accepts_split_postgres_without_leaking_urls(tmp_path):
+    database_env_file = tmp_path / "postgres.env"
+    database_env_file.write_text(
+        "\n".join(
+            [
+                "MIGRATION_DATABASE_URL=postgresql://migration:secret@db.internal:5432/sca",
+                "API_DATABASE_URL=postgresql://api:secret@db.internal:5432/sca",
+                "WORKER_DATABASE_URL=postgresql://worker:secret@db.internal:5432/sca",
+                "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required",
+                "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true",
+                "SCA_MONITOR_API_AUTO_MIGRATE=false",
+                "SCA_MONITOR_WORKER_AUTO_MIGRATE=false",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/validate_database_env_file.py", "--database-env-file", str(database_env_file), "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["cutover"]["status"] == "ready"
+    assert payload["summary"]["allowed_keys"] == 7
+    assert "postgresql://migration:secret" not in result.stdout
+    assert "postgresql://api:secret" not in result.stdout
+    assert "postgresql://worker:secret" not in result.stdout
+
+
+def test_postgres_env_example_is_placeholder_and_blocked_by_validator():
+    example = (REPO_ROOT / "deploy" / "postgres.env.example").read_text(encoding="utf-8")
+    assert "MIGRATION_DATABASE_URL=postgresql://<migration_user>:<password>@<host>:5432/<database>" in example
+    assert "API_DATABASE_URL=postgresql://<api_user>:<password>@<host>:5432/<database>" in example
+    assert "WORKER_DATABASE_URL=postgresql://<worker_user>:<password>@<host>:5432/<database>" in example
+    assert "SCA_MONITOR_AUTO_MIGRATE=false" in example
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/validate_database_env_file.py",
+            "--database-env-file",
+            "deploy/postgres.env.example",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert any(check["id"] == "placeholder_values" and check["status"] == "blocker" for check in payload["checks"])
+    assert "postgresql://<migration_user>" not in result.stdout
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1601,6 +1664,7 @@ def test_ci_smoke_runs_core_gates():
 
     assert "python3 -m pytest tests" in script
     assert "scripts/deployment_input_readiness.py" in script
+    assert "scripts/validate_database_env_file.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "node --check frontend/app.js" in script
@@ -1637,6 +1701,8 @@ def test_harness_documents_deployment_input_readiness():
         assert "scripts/deployment_input_readiness.py" in text
     assert "--require-postgres --require-split" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
+    assert "deploy/postgres.env.example" in database_doc
+    assert "scripts/validate_database_env_file.py" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
 
