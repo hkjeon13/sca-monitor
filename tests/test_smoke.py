@@ -1580,8 +1580,36 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert "sca_monitor_endpoint_poll_success_rate 1.000000" in metrics
     assert "sca_monitor_alert_delivery_success_rate 1.000000" in metrics
     assert "sca_monitor_alert_outbox_pending_count 0" in metrics
+    assert "sca_monitor_alert_readiness_ready 0" in metrics
     assert "sca_monitor_stale_services 0" in metrics
     assert "sca_monitor_sla_overdue_impacts 0" in metrics
+
+
+def test_overview_exposes_alert_readiness_summary(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+
+    overview = app.overview()
+
+    assert overview["alert_readiness"]["status"] == "action_required"
+    assert overview["alert_readiness"]["default_channel_configured"] is True
+    assert overview["alert_readiness"]["default_channel_placeholder"] is True
+    assert overview["alert_readiness"]["default_channel_target_masked"] == "https://alerts.example.test/..."
+    assert overview["alert_readiness"]["pending_count"] == 1
+    assert overview["alert_readiness"]["dead_letter_count"] == 0
+
+
+def test_overview_alert_readiness_ready_with_real_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+
+    overview = app.overview()
+
+    assert overview["alert_readiness"]["status"] == "ready"
+    assert overview["alert_readiness"]["default_channel_configured"] is True
+    assert overview["alert_readiness"]["default_channel_placeholder"] is False
+    assert overview["alert_readiness"]["pending_count"] == 0
 
 
 def test_impacts_expose_sla_deadline_and_overdue_metrics(tmp_path):

@@ -160,6 +160,11 @@ button:disabled {
   padding: 14px;
 }
 
+.metric.warning {
+  border-color: #f4b183;
+  background: #fff8f0;
+}
+
 .metric strong {
   display: block;
   font-size: 28px;

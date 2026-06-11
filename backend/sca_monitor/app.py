@@ -419,6 +419,7 @@ class ScaMonitorApp:
             unhealthy = conn.execute("SELECT COUNT(*) AS c FROM endpoint_health WHERE collection_status != 'ok'").fetchone()["c"]
             advisory_sync = self.advisory_sync_overview(conn)
             sla_overdue = self.sla_overdue_count(conn)
+            alert_readiness = self.alert_readiness_overview(conn)
         return {
             "service_count": service_count,
             "open_impacts": open_impacts,
@@ -426,6 +427,7 @@ class ScaMonitorApp:
             "high_impacts": high,
             "endpoint_unhealthy": unhealthy,
             "sla_overdue_impacts": sla_overdue,
+            "alert_readiness": alert_readiness,
             "advisory_sync": advisory_sync,
             "system": {"environment": self.settings.app_env},
         }
@@ -451,6 +453,31 @@ class ScaMonitorApp:
         for row in rows:
             sync[row["source"]] = row["status"]
         return sync
+
+    def alert_readiness_overview(self, conn) -> dict:
+        from .alert_preflight import default_channel_summary
+
+        rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM alert_events
+            GROUP BY status
+            """
+        ).fetchall()
+        counts = {row["status"]: int(row["count"]) for row in rows}
+        channel = default_channel_summary(self)
+        channel_ready = bool(channel.get("configured")) and not channel.get("placeholder_target", True)
+        dead_letter = counts.get("dead_letter", 0)
+        status = "ready" if channel_ready and dead_letter == 0 else "action_required"
+        return {
+            "status": status,
+            "default_channel_configured": bool(channel.get("configured")),
+            "default_channel_placeholder": bool(channel.get("placeholder_target", True)) if channel.get("configured") else True,
+            "default_channel_target_masked": channel.get("target_url_masked"),
+            "pending_count": counts.get("pending", 0),
+            "failed_count": counts.get("failed", 0),
+            "dead_letter_count": dead_letter,
+        }
 
     def list_services(self) -> list[dict]:
         active_status_filter = ",".join("?" for _ in ACTIVE_IMPACT_STATUSES)
@@ -2304,6 +2331,7 @@ class ScaMonitorApp:
             f"sca_monitor_high_impacts {overview['high_impacts']}",
             f"sca_monitor_endpoint_unhealthy {overview['endpoint_unhealthy']}",
             f"sca_monitor_sla_overdue_impacts {overview['sla_overdue_impacts']}",
+            f"sca_monitor_alert_readiness_ready {1 if overview['alert_readiness']['status'] == 'ready' else 0}",
         ]
         lines.extend(self.operational_metric_lines())
         lines.append("")

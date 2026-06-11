@@ -154,6 +154,8 @@ Alert outbox 확인:
 python3 scripts/dispatch_alerts.py --dry-run --limit 50
 ```
 
+Overview의 Alert Pending, Dead Letters, Alert Readiness 카드에서도 outbox 처리 지연과 default channel 준비 상태를 확인한다.
+
 Live dispatcher preflight:
 
 ```bash

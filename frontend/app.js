@@ -114,14 +114,24 @@ function metric(label, value) {
   return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
+function alertReadinessMetric(readiness) {
+  const status = readiness?.status || "unknown";
+  const channel = readiness?.default_channel_target_masked || "no default channel";
+  return `<div class="metric ${status === "ready" ? "" : "warning"}"><strong>${escapeHtml(status)}</strong><span>${escapeHtml(channel)}</span></div>`;
+}
+
 async function loadOverview() {
   const overview = await api.get("/api/v1/overview");
+  const alertReadiness = overview.alert_readiness || {};
   document.querySelector("#metrics").innerHTML = [
     metric("Services", overview.service_count),
     metric("Open Impacts", overview.open_impacts),
     metric("Critical", overview.critical_impacts),
     metric("High", overview.high_impacts),
     metric("SLA Overdue", overview.sla_overdue_impacts || 0),
+    metric("Alert Pending", alertReadiness.pending_count || 0),
+    metric("Dead Letters", alertReadiness.dead_letter_count || 0),
+    alertReadinessMetric(alertReadiness),
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
 }
