@@ -1225,6 +1225,7 @@ def test_web_console_renders_database_readiness_panel():
     assert "applyCanonicalization" in script
     assert "URL Source" in script
     assert "Split Ready" in script
+    assert "Split Required" in script
     assert "Preflight Checks" in script
     assert "Next Action" in script
 

@@ -186,6 +186,8 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Cutover Mode", cutover.mode || "unknown")}
       ${detailRow("Current Cutover", cutover.status || "unknown")}
       ${detailRow("PostgreSQL Required", required.status || "unknown")}
+      ${detailRow("Split Required", required.require_split ? "yes" : "no")}
+      ${detailRow("Required Mode", preflight.required_mode || required.mode || "unknown")}
       ${detailRow("PostgreSQL Configured", cutover.postgres_configured ? "yes" : "no")}
       ${detailRow("Split Ready", preflight.split_ready ? "yes" : "no")}
       ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
