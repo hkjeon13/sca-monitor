@@ -142,7 +142,7 @@ bash scripts/deploy_db_gate.sh
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.
-`scripts/postgres_docker_smoke_gate.sh`는 CI/stage에서 Docker가 있으면 `--use-docker --with-api-workflow` smoke를 실행하고, `SCA_MONITOR_POSTGRES_DOCKER_SMOKE=auto`에서는 Docker 미설치 시 skip, `required`에서는 배포 stop condition으로 처리한다.
+`scripts/postgres_docker_smoke_gate.sh`는 CI/stage에서 Docker가 있으면 `--use-docker --with-api-workflow` smoke를 실행하고, `SCA_MONITOR_POSTGRES_DOCKER_SMOKE=auto`에서는 Docker executable 미설치 또는 daemon unavailable 시 skip, `required`에서는 배포 stop condition으로 처리한다.
 `SCA_MONITOR_POSTGRES_DOCKER_IMAGE`, `SCA_MONITOR_POSTGRES_DOCKER_API_WORKFLOW`, `SCA_MONITOR_POSTGRES_DOCKER_TIMEOUT_SECONDS`로 이미지, API workflow 실행 여부, startup timeout을 조정한다.
 `--with-api-workflow`는 synthetic service 등록과 snapshot push까지 실행하므로 CI 또는 stage DB에서 사용하고, 운영 DB에서는 승인된 synthetic service 정책이 있을 때만 사용한다.
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.

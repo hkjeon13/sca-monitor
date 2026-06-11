@@ -28,6 +28,17 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 0
 fi
 
+if ! docker_info_output="$(docker info 2>&1)"; then
+  if [ "$MODE" = "required" ]; then
+    echo "postgres docker smoke required but docker daemon is not available" >&2
+    echo "$docker_info_output" >&2
+    exit 2
+  fi
+  echo "postgres docker smoke skipped: docker daemon is not available"
+  echo "$docker_info_output"
+  exit 0
+fi
+
 extra_args=()
 case "$WITH_API_WORKFLOW" in
   true|1|yes|on|"")

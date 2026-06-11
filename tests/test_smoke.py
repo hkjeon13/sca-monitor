@@ -1301,6 +1301,51 @@ def test_postgres_docker_smoke_gate_requires_docker_when_required(tmp_path):
     assert "postgres docker smoke required but docker executable was not found" in result.stderr
 
 
+def test_postgres_docker_smoke_gate_skips_when_docker_daemon_unavailable(tmp_path):
+    docker = tmp_path / "docker"
+    docker.write_text("#!/usr/bin/env bash\necho 'docker daemon unavailable' >&2\nexit 1\n", encoding="utf-8")
+    docker.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", "scripts/postgres_docker_smoke_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "SCA_MONITOR_POSTGRES_DOCKER_SMOKE": "auto",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "postgres docker smoke skipped: docker daemon is not available" in result.stdout
+    assert "docker daemon unavailable" in result.stdout
+
+
+def test_postgres_docker_smoke_gate_requires_docker_daemon_when_required(tmp_path):
+    docker = tmp_path / "docker"
+    docker.write_text("#!/usr/bin/env bash\necho 'docker daemon unavailable' >&2\nexit 1\n", encoding="utf-8")
+    docker.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", "scripts/postgres_docker_smoke_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "SCA_MONITOR_POSTGRES_DOCKER_SMOKE": "required",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "postgres docker smoke required but docker daemon is not available" in result.stderr
+    assert "docker daemon unavailable" in result.stderr
+
+
 def test_postgres_docker_smoke_gate_documents_docker_workflow():
     script = (REPO_ROOT / "scripts" / "postgres_docker_smoke_gate.sh").read_text(encoding="utf-8")
 
