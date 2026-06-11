@@ -18,6 +18,7 @@ class Settings:
     auth_mode: str = "disabled"
     max_snapshot_payload_bytes: int = 10 * 1024 * 1024
     max_snapshot_dependencies: int = 10000
+    max_snapshot_pushes_per_minute: int = 30
 
 
 def load_settings() -> Settings:
@@ -41,4 +42,5 @@ def load_settings() -> Settings:
         auth_mode=os.getenv("SCA_MONITOR_AUTH_MODE", "disabled"),
         max_snapshot_payload_bytes=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES", str(10 * 1024 * 1024))),
         max_snapshot_dependencies=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES", "10000")),
+        max_snapshot_pushes_per_minute=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE", "30")),
     )

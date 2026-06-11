@@ -49,6 +49,10 @@ class SnapshotConflictError(ValueError):
     pass
 
 
+class RateLimitError(ValueError):
+    pass
+
+
 class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -211,6 +215,8 @@ class ScaMonitorApp:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         except SnapshotConflictError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.CONFLICT)
+        except RateLimitError as exc:
+            return self.json_response(request, {"error": str(exc)}, HTTPStatus.TOO_MANY_REQUESTS)
         except ValueError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except PermissionError as exc:
@@ -1188,8 +1194,9 @@ class ScaMonitorApp:
             raise ValueError("dependencies must be a list")
         if len(dependencies) > self.settings.max_snapshot_dependencies:
             raise ValueError(f"dependencies exceed maximum count of {self.settings.max_snapshot_dependencies}")
+        credential_id = None
         if authorization:
-            self.validate_push_authorization(authorization, service_id, environment)
+            credential_id = self.validate_push_authorization(authorization, service_id, environment)
         service = self.create_service(
             {
                 "service_id": service_id,
@@ -1206,6 +1213,8 @@ class ScaMonitorApp:
         now = utcnow()
         artifact = body.get("artifact") or {}
         with self.db.connect() as conn:
+            rate_limit_key = f"push_credential:{credential_id}" if credential_id else f"service:{service['id']}"
+            self.enforce_snapshot_push_rate_limit(conn, rate_limit_key, now)
             existing = conn.execute(
                 "SELECT id, content_hash FROM dependency_snapshots WHERE service_pk = ? AND snapshot_id = ?",
                 (service["id"], snapshot_id),
@@ -1287,7 +1296,40 @@ class ScaMonitorApp:
             "idempotency_status": "created",
         }
 
-    def validate_push_authorization(self, authorization: str, service_id: str, environment: str) -> None:
+    def enforce_snapshot_push_rate_limit(self, conn, rate_limit_key: str, now: str) -> None:
+        limit = self.settings.max_snapshot_pushes_per_minute
+        if limit <= 0:
+            return
+        window_start = datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
+        row = conn.execute(
+            "SELECT window_start, request_count FROM snapshot_push_rate_limits WHERE rate_limit_key = ?",
+            (rate_limit_key,),
+        ).fetchone()
+        if not row or row["window_start"] != window_start:
+            conn.execute(
+                """
+                INSERT INTO snapshot_push_rate_limits (rate_limit_key, window_start, request_count, updated_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(rate_limit_key) DO UPDATE SET
+                    window_start = excluded.window_start,
+                    request_count = excluded.request_count,
+                    updated_at = excluded.updated_at
+                """,
+                (rate_limit_key, window_start, now),
+            )
+            return
+        if row["request_count"] >= limit:
+            raise RateLimitError(f"snapshot push rate limit exceeded: {limit} requests per minute")
+        conn.execute(
+            """
+            UPDATE snapshot_push_rate_limits
+            SET request_count = request_count + 1, updated_at = ?
+            WHERE rate_limit_key = ?
+            """,
+            (now, rate_limit_key),
+        )
+
+    def validate_push_authorization(self, authorization: str, service_id: str, environment: str) -> str:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise PermissionError("invalid authorization scheme")
@@ -1315,6 +1357,7 @@ class ScaMonitorApp:
             if row["service_id"] != service_id or row["environment"] != environment:
                 raise PermissionError("push credential is not bound to this service environment")
             conn.execute("UPDATE push_credentials SET last_used_at = ? WHERE id = ?", (now, row["id"]))
+            return row["id"]
 
     def match_impacts(self, conn, service_pk: str, snapshot_pk: str) -> int:
         service = conn.execute("SELECT * FROM services WHERE id = ?", (service_pk,)).fetchone()

@@ -47,6 +47,7 @@ def test_sqlite_migration_records_version(tmp_path):
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit_logs'").fetchone()
         snapshot_columns = {row["name"] for row in conn.execute("PRAGMA table_info(dependency_snapshots)").fetchall()}
         assert "last_confirmed_at" in snapshot_columns
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_push_rate_limits'").fetchone()
 
 
 def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
@@ -323,6 +324,97 @@ def test_snapshot_push_route_returns_200_for_replay_and_409_for_conflict(tmp_pat
     assert created["idempotency_status"] == "created"
     assert confirmed["idempotency_status"] == "confirmed"
     assert conflict["error"] == "snapshot_id already exists with different content_hash"
+
+
+def test_snapshot_push_rate_limit_rejects_excess_service_pushes(tmp_path):
+    app = make_test_app(tmp_path, max_snapshot_pushes_per_minute=2)
+
+    app.push_snapshot(
+        {
+            "service_id": "rate-limited-service",
+            "environment": "prod",
+            "snapshot_id": "first",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    app.push_snapshot(
+        {
+            "service_id": "rate-limited-service",
+            "environment": "prod",
+            "snapshot_id": "second",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.2"}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="snapshot push rate limit exceeded: 2 requests per minute"):
+        app.push_snapshot(
+            {
+                "service_id": "rate-limited-service",
+                "environment": "prod",
+                "snapshot_id": "third",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.3"}],
+            }
+        )
+
+
+def test_snapshot_push_rate_limit_is_scoped_to_push_credential(tmp_path):
+    app = make_test_app(tmp_path, max_snapshot_pushes_per_minute=1)
+    app.create_service({"service_id": "credential-rate-a", "environment": "prod", "owner_team": "platform"})
+    app.create_service({"service_id": "credential-rate-b", "environment": "prod", "owner_team": "platform"})
+    token_a = app.create_push_credential("credential-rate-a", {"environment": "prod"})["token"]
+    token_b = app.create_push_credential("credential-rate-b", {"environment": "prod"})["token"]
+
+    app.push_snapshot(
+        {
+            "service_id": "credential-rate-a",
+            "environment": "prod",
+            "snapshot_id": "first",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        },
+        f"Bearer {token_a}",
+    )
+    app.push_snapshot(
+        {
+            "service_id": "credential-rate-b",
+            "environment": "prod",
+            "snapshot_id": "first",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        },
+        f"Bearer {token_b}",
+    )
+
+    with pytest.raises(ValueError, match="snapshot push rate limit exceeded: 1 requests per minute"):
+        app.push_snapshot(
+            {
+                "service_id": "credential-rate-a",
+                "environment": "prod",
+                "snapshot_id": "second",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.2"}],
+            },
+            f"Bearer {token_a}",
+        )
+
+
+def test_snapshot_push_route_returns_429_for_rate_limit(tmp_path):
+    app = make_test_app(tmp_path, max_snapshot_pushes_per_minute=1)
+    body = {
+        "service_id": "route-rate-limited-service",
+        "environment": "prod",
+        "snapshot_id": "first",
+        "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+    }
+
+    with run_test_server(app) as base_url:
+        created = http_json(f"{base_url}/api/v1/snapshots", method="POST", body=body, expect_status=201)
+        limited = http_json(
+            f"{base_url}/api/v1/snapshots",
+            method="POST",
+            body={**body, "snapshot_id": "second"},
+            expect_status=429,
+        )
+
+    assert created["idempotency_status"] == "created"
+    assert limited["error"] == "snapshot push rate limit exceeded: 1 requests per minute"
 
 
 def test_push_credential_rejects_service_environment_spoofing(tmp_path):

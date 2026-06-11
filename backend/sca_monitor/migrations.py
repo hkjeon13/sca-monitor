@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-REQUIRED_MIGRATION_VERSION = 12
+REQUIRED_MIGRATION_VERSION = 13
 MINIMUM_SUPPORTED_MIGRATION_VERSION = 1
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

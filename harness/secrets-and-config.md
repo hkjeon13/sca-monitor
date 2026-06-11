@@ -46,6 +46,7 @@ OIDC_REDIRECT_URI
 CORS_ALLOWED_ORIGINS
 SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES
 SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES
+SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE
 ```
 
 `CORS_ALLOWED_ORIGINS`는 frontend와 API가 split domain일 때만 필수이다.
@@ -66,9 +67,10 @@ Snapshot push 보호 기본값:
 ```text
 SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES=10485760
 SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES=10000
+SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE=30
 ```
 
-운영 환경에서 service dependency 규모가 더 크면 먼저 stage에서 push smoke를 통과시킨 뒤 상향한다.
+운영 환경에서 service dependency 규모가 더 크거나 CI/CD fan-out이 큰 경우 먼저 stage에서 push smoke와 rate-limit 동작을 통과시킨 뒤 상향한다.
 
 ### Worker
 
