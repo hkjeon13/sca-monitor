@@ -24,6 +24,7 @@ Target production: postgresql://...
 ```
 
 PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, credential, network access, migration dry-run이 먼저 완료되어야 한다.
+전환 직전에는 `scripts/postgres_cutover_readiness.py --require-postgres --json`을 실행해 DB URL 조합, PostgreSQL 여부, integration smoke 설정, runtime auto-migrate 비활성화 여부를 먼저 확인한다.
 
 ## 2. Migration
 
@@ -120,6 +121,8 @@ python3 scripts/db_smoke.py --json
 실제 PostgreSQL 연결 검증:
 
 ```bash
+python3 scripts/postgres_cutover_readiness.py --json
+python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
 python3 scripts/postgres_integration_smoke.py --use-docker --with-api-workflow --json
@@ -131,7 +134,15 @@ bash scripts/deploy_db_gate.sh
 `--with-api-workflow`는 synthetic service 등록과 snapshot push까지 실행하므로 CI 또는 stage DB에서 사용하고, 운영 DB에서는 승인된 synthetic service 정책이 있을 때만 사용한다.
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
 `MIGRATION_DATABASE_URL`이 설정되면 migration owner URL로 migration smoke를 실행하고, `API_DATABASE_URL`은 `--skip-migrate` runtime smoke, `WORKER_DATABASE_URL`은 `--skip-migrate --read-only` smoke로 분리 검증한다.
+`SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required`이면 `deploy_db_gate.sh`는 smoke 실행 전에 `scripts/postgres_cutover_readiness.py --require-postgres`를 stop gate로 실행한다.
 runtime auto-migrate를 끈 환경에서는 이 migration/gate 단계가 API/worker 시작 전 필수 stop gate이다.
+
+PostgreSQL split credential cutover ready 조건:
+
+- `SCA_MONITOR_DATABASE_URL`은 비워 둔다.
+- `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`은 모두 `postgresql://` 또는 `postgres://` URL이어야 한다.
+- `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE`는 `auto` 또는 `required`이어야 한다. 운영 전환 gate에서는 `required`를 권장한다.
+- `SCA_MONITOR_AUTO_MIGRATE=false` 또는 `SCA_MONITOR_API_AUTO_MIGRATE=false`와 `SCA_MONITOR_WORKER_AUTO_MIGRATE=false`를 설정해 runtime DDL을 비활성화한다.
 
 SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:
 

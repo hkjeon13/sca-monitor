@@ -6,6 +6,21 @@ DATABASE_URL="${SCA_MONITOR_DATABASE_URL:-${API_DATABASE_URL:-}}"
 MIGRATION_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}"
 WORKER_URL="${WORKER_DATABASE_URL:-}"
 
+case "$MODE" in
+  disabled|skip|false|0|required|auto|"")
+    ;;
+  *)
+    echo "invalid SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE: $MODE" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$MODE" = "required" ]; then
+  python3 scripts/postgres_cutover_readiness.py --require-postgres
+else
+  python3 scripts/postgres_cutover_readiness.py
+fi
+
 python3 scripts/db_smoke.py --component api
 if [ -n "${WORKER_DATABASE_URL:-}" ] && [ -z "${SCA_MONITOR_DATABASE_URL:-}" ]; then
   python3 scripts/db_smoke.py --component worker --read-only
@@ -59,9 +74,5 @@ case "$MODE" in
     if [ -n "$WORKER_URL" ] && [ -z "${SCA_MONITOR_DATABASE_URL:-}" ]; then
       run_postgres_smoke "$WORKER_URL" worker "--skip-migrate --read-only"
     fi
-    ;;
-  *)
-    echo "invalid SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE: $MODE" >&2
-    exit 2
     ;;
 esac

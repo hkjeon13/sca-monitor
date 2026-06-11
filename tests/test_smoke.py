@@ -725,6 +725,68 @@ def test_deploy_db_gate_rejects_invalid_postgres_smoke_mode(tmp_path):
     assert "invalid SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE" in result.stderr
 
 
+def test_postgres_cutover_readiness_allows_sqlite_fallback(tmp_path):
+    result = subprocess.run(
+        ["python3", "scripts/postgres_cutover_readiness.py", "--json"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "sqlite_fallback"
+    assert payload["mode"] == "sqlite_fallback"
+    assert any(check["id"] == "database_url_mode" for check in payload["checks"])
+
+
+def test_postgres_cutover_readiness_requires_postgres_url(tmp_path):
+    result = subprocess.run(
+        ["python3", "scripts/postgres_cutover_readiness.py", "--require-postgres", "--json"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert any(check["id"] == "database_url_mode" and check["status"] == "blocker" for check in payload["checks"])
+
+
+def test_postgres_cutover_readiness_accepts_split_postgres_urls(tmp_path):
+    result = subprocess.run(
+        ["python3", "scripts/postgres_cutover_readiness.py", "--require-postgres", "--require-split", "--json"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_DATA_DIR": str(tmp_path),
+            "MIGRATION_DATABASE_URL": "postgresql://migrator:secret@db/sca",
+            "API_DATABASE_URL": "postgresql://api:secret@db/sca",
+            "WORKER_DATABASE_URL": "postgresql://worker:secret@db/sca",
+            "SCA_MONITOR_AUTO_MIGRATE": "false",
+            "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE": "required",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert payload["mode"] == "split"
+    assert payload["postgres_configured"] is True
+
+
 def test_remote_deploy_uses_db_gate():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
@@ -754,6 +816,7 @@ def test_remote_deploy_uses_db_gate():
 def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
     script = (REPO_ROOT / "scripts" / "deploy_db_gate.sh").read_text(encoding="utf-8")
 
+    assert "scripts/postgres_cutover_readiness.py --require-postgres" in script
     assert 'MIGRATION_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}"' in script
     assert 'run_postgres_smoke "$MIGRATION_URL" migration' in script
     assert 'run_postgres_smoke "${API_DATABASE_URL:-}" api "--skip-migrate"' in script
