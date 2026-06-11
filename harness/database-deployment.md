@@ -188,6 +188,15 @@ SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true \
 scripts/deploy_remote.sh
 ```
 
+원격 배포 자동화로 protected env template만 먼저 만들고 종료하려면 다음 입력을 사용한다.
+이 모드는 repository를 최신화한 뒤 `scripts/prepare_database_env_file.py`를 실행하고, `.env` 병합, migration, runtime restart는 수행하지 않는다.
+기존 파일은 기본적으로 덮어쓰지 않으며, 의도적으로 재생성해야 할 때만 `SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE=true`를 함께 지정한다.
+
+```bash
+SCA_MONITOR_PREPARE_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+scripts/deploy_remote.sh
+```
+
 `scripts/configure_runtime_inputs.py`는 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`과 PostgreSQL 전환 flag만 allowlist로 병합하며,
 배포 로그에는 DB URL 원문을 출력하지 않는다.
 `scripts/prepare_database_env_file.py`는 `deploy/postgres.env.example`을 mode `0600`의 protected file로 생성하고, 기본값으로 기존 secret 파일을 덮어쓰지 않는다.

@@ -2431,6 +2431,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/configure_runtime_inputs.py" in script
     assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
+    assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in script
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
@@ -2441,6 +2442,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
     assert "--database-env-file" in script
+    assert "scripts/prepare_database_env_file.py --database-env-file" in script
+    assert "database env file prepared; edit it before enabling PostgreSQL cutover" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
     assert "scripts/database_env_dry_run_gate.py --database-env-file" in script
@@ -2456,6 +2459,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
     assert script.index("scripts/validate_database_env_file.py") < script.index("scripts/configure_runtime_inputs.py")
+    assert script.index("scripts/prepare_database_env_file.py --database-env-file") < script.index("set -a")
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
@@ -2475,6 +2479,7 @@ def test_harness_documents_deployment_input_readiness():
         assert "scripts/deployment_input_readiness.py" in text
     assert "--require-postgres --require-split" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
+    assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/prepare_database_env_file.py" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc

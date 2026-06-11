@@ -12,6 +12,8 @@ REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
 GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
+PREPARE_DATABASE_ENV_FILE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FILE:-}"
+PREPARE_DATABASE_ENV_FORCE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE:-false}"
 DATABASE_ENV_DRY_RUN="${SCA_MONITOR_DATABASE_ENV_DRY_RUN:-disabled}"
 ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
 ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
@@ -34,7 +36,30 @@ ssh "$REMOTE" "set -euo pipefail
   PUBLIC_URL_OVERRIDE='$PUBLIC_URL_OVERRIDE'
   GENERATE_SMOKE_TOKEN='$GENERATE_SMOKE_TOKEN'
   DATABASE_ENV_FILE='$DATABASE_ENV_FILE'
+  PREPARE_DATABASE_ENV_FILE='$PREPARE_DATABASE_ENV_FILE'
+  PREPARE_DATABASE_ENV_FORCE='$PREPARE_DATABASE_ENV_FORCE'
   DATABASE_ENV_DRY_RUN='$DATABASE_ENV_DRY_RUN'
+  if [ -n \"\$PREPARE_DATABASE_ENV_FILE\" ]; then
+    case \"\$PREPARE_DATABASE_ENV_FILE\" in
+      true|1|yes|on)
+        PREPARE_DATABASE_ENV_FILE='.secrets/postgres.env'
+        ;;
+    esac
+    case \"\$PREPARE_DATABASE_ENV_FORCE\" in
+      true|1|yes|on)
+        python3 scripts/prepare_database_env_file.py --database-env-file \"\$PREPARE_DATABASE_ENV_FILE\" --json --force
+        ;;
+      false|0|no|off|'')
+        python3 scripts/prepare_database_env_file.py --database-env-file \"\$PREPARE_DATABASE_ENV_FILE\" --json
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE: \$PREPARE_DATABASE_ENV_FORCE\" >&2
+        exit 2
+        ;;
+    esac
+    echo 'database env file prepared; edit it before enabling PostgreSQL cutover'
+    exit 0
+  fi
   runtime_input_args=''
   case \"\$DATABASE_ENV_DRY_RUN\" in
     disabled|skip|false|0|'')
