@@ -1685,9 +1685,11 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
     assert "--database-env-file" in script
+    assert "scripts/validate_database_env_file.py" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
+    assert script.index("scripts/validate_database_env_file.py") < script.index("scripts/configure_runtime_inputs.py")
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
 
@@ -1703,6 +1705,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
+    assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
 

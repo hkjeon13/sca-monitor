@@ -28,6 +28,7 @@ ssh "$REMOTE" "set -euo pipefail
     runtime_input_args=\"\$runtime_input_args --public-url \$PUBLIC_URL_OVERRIDE\"
   fi
   if [ -n \"\$DATABASE_ENV_FILE\" ]; then
+    python3 scripts/validate_database_env_file.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
     runtime_input_args=\"\$runtime_input_args --database-env-file \$DATABASE_ENV_FILE\"
   fi
   case \"\$GENERATE_SMOKE_TOKEN\" in
