@@ -4,6 +4,7 @@ set -euo pipefail
 BASE_URL="${SCA_MONITOR_SMOKE_BASE_URL:-${SCA_MONITOR_PUBLIC_URL:-}}"
 RUN_HTTP_SMOKE="${SCA_MONITOR_CI_HTTP_SMOKE:-auto}"
 EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
+EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 DEPLOYMENT_ENV_FILE="${SCA_MONITOR_DEPLOYMENT_ENV_FILE:-deploy/sca-monitor.env.example}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 
@@ -49,6 +50,9 @@ case "$RUN_HTTP_SMOKE" in
     if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
       http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
     fi
+    if [ -n "$EXPECT_ADVISORY_SYNC_READY" ]; then
+      http_smoke_args+=(--expect-advisory-sync-ready "$EXPECT_ADVISORY_SYNC_READY")
+    fi
     python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     ;;
   auto|"")
@@ -56,6 +60,9 @@ case "$RUN_HTTP_SMOKE" in
       http_smoke_args=(--base-url "$BASE_URL")
       if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
         http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
+      fi
+      if [ -n "$EXPECT_ADVISORY_SYNC_READY" ]; then
+        http_smoke_args+=(--expect-advisory-sync-ready "$EXPECT_ADVISORY_SYNC_READY")
       fi
       python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     else

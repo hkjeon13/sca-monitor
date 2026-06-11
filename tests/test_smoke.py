@@ -514,6 +514,151 @@ def test_http_smoke_can_expect_postgres_split_required_value():
     }
 
 
+def test_http_smoke_can_expect_advisory_sync_ready():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/v1/overview":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "advisory_sync_readiness": {
+                                "status": "ready",
+                                "required_count": 3,
+                                "initialized_count": 3,
+                            },
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            if self.path in {"/health", "/ready"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-advisory-sync-ready",
+                "true",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["advisory_sync_readiness"] == {
+        "expected_ready": True,
+        "overview_status": "ready",
+        "initialized_count": 3,
+        "required_count": 3,
+        "ok": True,
+    }
+
+
+def test_http_smoke_fails_when_advisory_sync_not_ready_but_expected():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/v1/overview":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "advisory_sync_readiness": {
+                                "status": "initializing",
+                                "required_count": 3,
+                                "initialized_count": 1,
+                            },
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            if self.path in {"/health", "/ready"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-advisory-sync-ready",
+                "true",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["advisory_sync_readiness"] == {
+        "expected_ready": True,
+        "overview_status": "initializing",
+        "initialized_count": 1,
+        "required_count": 3,
+        "ok": False,
+    }
+
+
 def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     result = subprocess.run(
         ["python3", "scripts/systemd_scheduler_status.py", "--unit-dir", str(tmp_path), "--json"],
@@ -1822,6 +1967,8 @@ def test_ci_smoke_runs_core_gates():
     assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" in script
     assert "--expect-postgres-split-required" in script
+    assert "SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY" in script
+    assert "--expect-advisory-sync-ready" in script
 
 
 def test_deploy_remote_runs_deployment_input_readiness_before_migration():

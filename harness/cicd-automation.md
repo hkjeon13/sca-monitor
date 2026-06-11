@@ -108,6 +108,7 @@ GET /ready
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-postgres-split-metrics --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-advisory-sync-ready true --json
 python3 scripts/deployment_input_readiness.py --env-file .env --json
 python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
 python3 scripts/db_smoke.py --json
@@ -129,6 +130,9 @@ GET /api/v1/impacts
 `SCA_MONITOR_DEPLOYMENT_ENV_FILE=.env`처럼 명시한다.
 운영 승격 단계에서 public URL과 smoke token placeholder까지 stop gate로 강제하려면
 `SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true`를 함께 설정한다.
+bootstrap 완료 또는 운영 승격 단계에서 advisory source 초기 동기화까지 강제하려면
+`SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY=true`를 설정한다.
+초기 bootstrap 중에는 이 값을 설정하지 않아 기본 health/readiness smoke만 수행한다.
 원격 `.env`에 runtime input을 반영해야 하는 배포에서는 다음처럼 public URL을 주입하고, placeholder smoke token은 원격에서 생성한다.
 
 ```bash

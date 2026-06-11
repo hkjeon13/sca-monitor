@@ -173,6 +173,30 @@ def check_postgres_split_consistency(base_url: str, timeout: float, expected_spl
         }
 
 
+def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready: bool) -> dict[str, Any]:
+    try:
+        status, overview = fetch_json(base_url, "/api/v1/overview", timeout)
+        readiness = overview.get("advisory_sync_readiness") or {}
+        overview_status = readiness.get("status")
+        is_ready = overview_status == "ready"
+        return {
+            "expected_ready": expected_ready,
+            "overview_status": overview_status,
+            "initialized_count": readiness.get("initialized_count"),
+            "required_count": readiness.get("required_count"),
+            "ok": status == 200 and is_ready == expected_ready,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "expected_ready": expected_ready,
+            "overview_status": None,
+            "initialized_count": None,
+            "required_count": None,
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def run_smoke(
     base_url: str,
     paths: list[str],
@@ -180,6 +204,7 @@ def run_smoke(
     *,
     require_postgres_split_metrics: bool = False,
     expect_postgres_split_required: bool | None = None,
+    expect_advisory_sync_ready: bool | None = None,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
         paths = [*paths, "/metrics"]
@@ -213,6 +238,19 @@ def run_smoke(
             if consistency.get("error"):
                 result["postgres_split_consistency"]["error"] = consistency["error"]
             result["status"] = "failed"
+    if expect_advisory_sync_ready is not None:
+        readiness = check_advisory_sync_readiness(base_url, timeout, expect_advisory_sync_ready)
+        result["advisory_sync_readiness"] = {
+            "expected_ready": readiness["expected_ready"],
+            "overview_status": readiness["overview_status"],
+            "initialized_count": readiness["initialized_count"],
+            "required_count": readiness["required_count"],
+            "ok": readiness["ok"],
+        }
+        if not readiness["ok"]:
+            if readiness.get("error"):
+                result["advisory_sync_readiness"]["error"] = readiness["error"]
+            result["status"] = "failed"
     return result
 
 
@@ -227,6 +265,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=10.0, help="Request timeout in seconds.")
     parser.add_argument("--require-postgres-split-metrics", action="store_true", help="Fail unless /metrics exposes PostgreSQL split cutover gauges.")
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
+    parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -240,6 +279,7 @@ def main() -> int:
         args.timeout,
         require_postgres_split_metrics=args.require_postgres_split_metrics,
         expect_postgres_split_required=args.expect_postgres_split_required,
+        expect_advisory_sync_ready=args.expect_advisory_sync_ready,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
