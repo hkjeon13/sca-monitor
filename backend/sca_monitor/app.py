@@ -635,9 +635,20 @@ class ScaMonitorApp:
             """
         ).fetchall()
         counts = {row["status"]: int(row["count"]) for row in rows}
+        system_rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM alert_events
+            WHERE impact_pk IS NULL
+              AND reason LIKE 'system_%'
+            GROUP BY status
+            """
+        ).fetchall()
+        system_counts = {row["status"]: int(row["count"]) for row in system_rows}
         channel = default_channel_summary(self)
         channel_ready = bool(channel.get("configured")) and not channel.get("placeholder_target", True)
         dead_letter = counts.get("dead_letter", 0)
+        system_dead_letter = system_counts.get("dead_letter", 0)
         status = "ready" if channel_ready and dead_letter == 0 else "action_required"
         return {
             "status": status,
@@ -647,6 +658,9 @@ class ScaMonitorApp:
             "pending_count": counts.get("pending", 0),
             "failed_count": counts.get("failed", 0),
             "dead_letter_count": dead_letter,
+            "system_pending_count": system_counts.get("pending", 0),
+            "system_failed_count": system_counts.get("failed", 0),
+            "system_dead_letter_count": system_dead_letter,
         }
 
     def list_services(self) -> list[dict]:

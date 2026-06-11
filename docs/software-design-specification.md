@@ -1485,7 +1485,7 @@ GET /api/v1/audit-logs
 
 구현 완료:
 
-- Overview dashboard: `GET /api/v1/overview` 기반 service/open impact/critical/high/SLA overdue/endpoint unhealthy count와 alert readiness 요약을 표시한다. alert readiness는 default channel 설정/placeholder 여부, pending/failed/dead-letter outbox count를 포함한다
+- Overview dashboard: `GET /api/v1/overview` 기반 service/open impact/critical/high/SLA overdue/endpoint unhealthy count와 alert readiness 요약을 표시한다. alert readiness는 default channel 설정/placeholder 여부, pending/failed/dead-letter outbox count, system alert pending count를 포함한다
 - Services: `GET /api/v1/services` 기반 등록 서비스 목록과 open impact count 표시
 - Service Detail: `GET /api/v1/services/{service_id}`와 Web Console Services 선택 패널에서 endpoint health, latest snapshot, dependency summary, dependency 목록, service impact를 조회한다
 - Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록

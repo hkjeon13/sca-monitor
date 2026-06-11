@@ -153,6 +153,7 @@ async function loadOverview() {
     metric("High", overview.high_impacts),
     metric("SLA Overdue", overview.sla_overdue_impacts || 0),
     metric("Alert Pending", alertReadiness.pending_count || 0),
+    metric("System Alerts", alertReadiness.system_pending_count || 0),
     metric("Dead Letters", alertReadiness.dead_letter_count || 0),
     alertReadinessMetric(alertReadiness),
     advisorySyncReadinessMetric(advisorySyncReadiness),

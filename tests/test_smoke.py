@@ -1366,6 +1366,7 @@ def test_web_console_renders_database_readiness_panel():
     assert "/api/v1/operations/database-readiness" in script
     assert "/api/v1/operations/canonicalization" in script
     assert "/api/v1/operations/canonicalization/apply" in script
+    assert "System Alerts" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
@@ -2544,6 +2545,17 @@ def test_advisory_sync_error_enqueues_deduplicated_system_alert(tmp_path):
     assert payload["source"] == "GHSA"
     assert payload["advisory_id"] == "GHSA-TEST"
     assert payload["error_message"] == "rate limit"
+
+
+def test_overview_counts_pending_system_alerts(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST", "rate limit")
+
+    overview = app.overview()
+
+    assert overview["alert_readiness"]["pending_count"] == 1
+    assert overview["alert_readiness"]["system_pending_count"] == 1
 
 
 def test_overview_exposes_alert_readiness_summary(tmp_path):

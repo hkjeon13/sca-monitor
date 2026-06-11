@@ -10,6 +10,7 @@
 - endpoint polling 또는 push 방식 설정
 - endpoint test
 - 전체 보안 현황 모니터링
+- system alert pending 현황 모니터링
 - service impact 조회
 - service detail: MVP는 Services 화면에서 endpoint health, latest snapshot, dependency summary, service impact 조회 지원
 - impact 상태 변경
