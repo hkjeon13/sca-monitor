@@ -127,6 +127,15 @@ def test_sqlite_migration_records_version(tmp_path):
         assert {"cursor", "last_run_at", "records_processed"}.issubset(sync_columns)
 
 
+def test_sqlite_connections_wait_for_short_lived_locks(tmp_path):
+    database = Database(tmp_path / "busy-timeout.sqlite3")
+
+    with database.connect() as conn:
+        busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert busy_timeout >= 30000
+
+
 def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
     monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)

@@ -19,6 +19,8 @@ from .migrations import (
 
 
 BEGIN_RE = re.compile(r"^BEGIN(?:\s+IMMEDIATE)?\s*;?$", re.IGNORECASE)
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+SQLITE_BUSY_TIMEOUT_MS = int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)
 
 
 def utcnow() -> str:
@@ -124,10 +126,11 @@ class Database:
                 yield conn
             return
         assert self.path is not None
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_SECONDS)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
             yield conn
             conn.commit()
         finally:
