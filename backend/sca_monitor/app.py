@@ -690,9 +690,18 @@ class ScaMonitorApp:
             row = conn.execute("SELECT * FROM services WHERE service_id = ? AND environment = ?", (service_id, environment)).fetchone()
             conn.execute(
                 """
-                INSERT OR REPLACE INTO endpoint_health (
-                    service_pk, collection_status, freshness_status, updated_at
-                ) VALUES (?, 'ok', 'fresh', ?)
+                INSERT INTO endpoint_health (
+                    service_pk, collection_status, freshness_status, last_successful_poll_at,
+                    last_error_code, last_error_message, snapshot_age_seconds, updated_at
+                ) VALUES (?, 'ok', 'fresh', NULL, NULL, NULL, 0, ?)
+                ON CONFLICT(service_pk) DO UPDATE SET
+                    collection_status=excluded.collection_status,
+                    freshness_status=excluded.freshness_status,
+                    last_successful_poll_at=excluded.last_successful_poll_at,
+                    last_error_code=excluded.last_error_code,
+                    last_error_message=excluded.last_error_message,
+                    snapshot_age_seconds=excluded.snapshot_age_seconds,
+                    updated_at=excluded.updated_at
                 """,
                 (row["id"], now),
             )
