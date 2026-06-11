@@ -40,6 +40,9 @@ GET /metrics
 
 ## 4. Logs
 
+MVP는 상태 변경 감사 추적을 위해 `GET /api/v1/audit-logs`를 제공한다.
+운영자는 impact status 변경, alert channel 설정 변경, alert event requeue를 actor/action/target 기준으로 조회할 수 있다.
+
 로그는 다음 필드를 포함한다.
 
 ```text

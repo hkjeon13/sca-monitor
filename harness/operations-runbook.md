@@ -32,6 +32,13 @@
 
 ## 3. 장애 대응
 
+감사 로그 확인:
+
+```bash
+curl -fsS "$SCA_MONITOR_PUBLIC_URL/api/v1/audit-logs?limit=20"
+curl -fsS "$SCA_MONITOR_PUBLIC_URL/api/v1/audit-logs?target_type=impact&target_id=<impact_id>"
+```
+
 ### API down
 
 1. load balancer health 확인

@@ -32,6 +32,8 @@ def test_sqlite_migration_records_version(tmp_path):
     assert readiness["database"] == "ok"
     assert readiness["database_backend"] == "sqlite"
     assert readiness["migration"]["compatible"] is True
+    with database.connect() as conn:
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit_logs'").fetchone()
 
 
 def test_push_credential_issue_and_bound_snapshot_push(tmp_path):
@@ -157,6 +159,30 @@ def test_alert_channel_update_default_and_disable(tmp_path):
     assert disabled["channel"]["is_default"] is False
     assert app.default_alert_webhook_url() is None
     assert app.update_alert_channel(first["id"], {"name": "first-renamed"})["channel"]["name"] == "first-renamed"
+
+
+def test_alert_channel_changes_are_audited_without_secret_target(tmp_path):
+    app = make_test_app(tmp_path)
+
+    channel = app.create_alert_channel(
+        {
+            "name": "audit-channel",
+            "target_url": "https://alerts.example.test/hooks/sensitive-token",
+            "is_default": True,
+            "actor": "security-admin",
+            "reason": "initial setup",
+        }
+    )["channel"]
+    app.update_alert_channel(channel["id"], {"enabled": False, "actor": "security-admin", "reason": "rotation"})
+
+    page = app.search_audit_logs({"target_type": ["alert_channel"], "target_id": [channel["id"]]})
+
+    assert page["pagination"]["total"] == 2
+    assert [item["action"] for item in page["audit_logs"]] == ["alert_channel.update", "alert_channel.upsert"]
+    assert page["audit_logs"][0]["actor"] == "security-admin"
+    assert page["audit_logs"][0]["reason"] == "rotation"
+    assert "sensitive-token" not in json.dumps(page)
+    assert page["audit_logs"][0]["before"]["target_url_masked"] == "https://alerts.example.test/..."
 
 
 def test_service_endpoint_test_records_healthy_status(tmp_path):
@@ -582,6 +608,11 @@ def test_impact_detail_includes_advisory_context_and_status_history(tmp_path):
     assert detail["history"][0]["to_status"] == "acknowledged"
     assert detail["history"][0]["actor"] == "tester"
     assert detail["history"][0]["reason"] == "triaged"
+    audit = app.search_audit_logs({"target_type": ["impact"], "target_id": [impact_id]})
+    assert audit["pagination"]["total"] == 1
+    assert audit["audit_logs"][0]["action"] == "impact.status.update"
+    assert audit["audit_logs"][0]["before"]["status"] == "open"
+    assert audit["audit_logs"][0]["after"]["status"] == "acknowledged"
 
 
 def test_impact_status_rejects_unknown_status(tmp_path):
@@ -900,6 +931,25 @@ def test_requeue_dead_letter_alert_event(tmp_path):
     assert result["alert_event"]["next_attempt_at"] is None
     assert result["alert_event"]["payload"]["requeued_by"] == "security"
     assert result["alert_event"]["payload"]["requeue_reason"] == "target fixed"
+    audit = app.search_audit_logs({"target_type": ["alert_event"], "target_id": [alert_id]})
+    assert audit["pagination"]["total"] == 1
+    assert audit["audit_logs"][0]["action"] == "alert_event.requeue"
+    assert audit["audit_logs"][0]["before"]["status"] == "dead_letter"
+    assert audit["audit_logs"][0]["after"]["status"] == "pending"
+
+
+def test_search_audit_logs_filters_by_actor_and_query(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+    app.update_impact_status(impact_id, {"status": "acknowledged", "actor": "auditor", "reason": "triaged for audit"})
+
+    by_actor = app.search_audit_logs({"actor": ["auditor"]})
+    by_query = app.search_audit_logs({"q": ["triaged for audit"], "limit": ["5"]})
+
+    assert by_actor["pagination"]["total"] == 1
+    assert by_query["pagination"]["total"] == 1
+    assert by_query["audit_logs"][0]["target_id"] == impact_id
 
 
 def test_bulk_requeue_dead_letter_alert_events_filters_and_limits(tmp_path):

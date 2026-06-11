@@ -129,6 +129,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
                 return self.json_response(request, self.bulk_requeue_alert_events(self.read_json(request)))
+            if path == "/api/v1/audit-logs" and method == "GET":
+                return self.json_response(request, self.search_audit_logs(parse_qs(parsed.query)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
                 impact_id = path.split("/")[-1]
                 return self.json_response(request, self.get_impact(impact_id))
@@ -337,6 +339,17 @@ class ScaMonitorApp:
                 (channel_id, name, channel_type, target_url, enabled, is_default, now, now),
             )
             row = conn.execute("SELECT * FROM alert_channels WHERE name = ?", (name,)).fetchone()
+            self.write_audit_log(
+                conn,
+                actor=body.get("actor", "system"),
+                action="alert_channel.upsert",
+                target_type="alert_channel",
+                target_id=row["id"],
+                reason=body.get("reason"),
+                before=None,
+                after=sanitize_alert_channel(row_to_dict(row)),
+                occurred_at=now,
+            )
         return {"channel": sanitize_alert_channel(row_to_dict(row))}
 
     def update_alert_channel(self, channel_id: str, body: dict) -> dict:
@@ -345,6 +358,7 @@ class ScaMonitorApp:
             current = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
             if not current:
                 raise ValueError("alert channel not found")
+            before = sanitize_alert_channel(row_to_dict(current))
             name = body.get("name", current["name"])
             channel_type = body.get("channel_type", current["channel_type"])
             if channel_type != "webhook":
@@ -367,6 +381,17 @@ class ScaMonitorApp:
                 (name, channel_type, target_url, enabled, is_default, now, channel_id),
             )
             row = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
+            self.write_audit_log(
+                conn,
+                actor=body.get("actor", "system"),
+                action="alert_channel.update",
+                target_type="alert_channel",
+                target_id=channel_id,
+                reason=body.get("reason"),
+                before=before,
+                after=sanitize_alert_channel(row_to_dict(row)),
+                occurred_at=now,
+            )
         return {"channel": sanitize_alert_channel(row_to_dict(row))}
 
     def default_alert_webhook_url(self) -> str | None:
@@ -1236,13 +1261,25 @@ class ScaMonitorApp:
         actor = body.get("actor", "system")
         now = utcnow()
         with self.db.connect() as conn:
-            current = conn.execute("SELECT status FROM impacts WHERE id = ?", (impact_id,)).fetchone()
+            current = conn.execute("SELECT id, status, risk_level, package_name, resolved_version FROM impacts WHERE id = ?", (impact_id,)).fetchone()
             if not current:
                 raise ValueError("impact not found")
             conn.execute("UPDATE impacts SET status = ?, resolved_at = CASE WHEN ? = 'fixed' THEN ? ELSE resolved_at END, updated_at = ? WHERE id = ?", (status, status, now, now, impact_id))
             conn.execute(
                 "INSERT INTO impact_history (id, impact_pk, from_status, to_status, actor, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(uuid.uuid4()), impact_id, current["status"], status, actor, reason, now),
+            )
+            updated = conn.execute("SELECT id, status, risk_level, package_name, resolved_version FROM impacts WHERE id = ?", (impact_id,)).fetchone()
+            self.write_audit_log(
+                conn,
+                actor=actor,
+                action="impact.status.update",
+                target_type="impact",
+                target_id=impact_id,
+                reason=reason,
+                before=row_to_dict(current),
+                after=row_to_dict(updated),
+                occurred_at=now,
             )
         return {"impact_id": impact_id, "status": status}
 
@@ -1271,6 +1308,17 @@ class ScaMonitorApp:
                 (json.dumps(payload, ensure_ascii=False), alert_event_id),
             )
             updated = conn.execute("SELECT id, status, retry_count, next_attempt_at, payload FROM alert_events WHERE id = ?", (alert_event_id,)).fetchone()
+            self.write_audit_log(
+                conn,
+                actor=actor,
+                action="alert_event.requeue",
+                target_type="alert_event",
+                target_id=alert_event_id,
+                reason=reason,
+                before={"id": row["id"], "status": row["status"], "retry_count": row["retry_count"], "next_attempt_at": row["next_attempt_at"]},
+                after={key: updated[key] for key in updated.keys() if key != "payload"},
+                occurred_at=now,
+            )
         result = row_to_dict(updated)
         result["payload"] = json.loads(result["payload"] or "{}")
         return {"alert_event": result}
@@ -1299,6 +1347,89 @@ class ScaMonitorApp:
             "matched": page["pagination"]["total"],
             "limit": limit,
             "alert_events": requeued,
+        }
+
+    def write_audit_log(
+        self,
+        conn,
+        *,
+        actor: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        reason: str | None = None,
+        before: dict | None = None,
+        after: dict | None = None,
+        occurred_at: str | None = None,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO audit_logs (
+                id, actor, action, target_type, target_id, reason,
+                before_state, after_state, occurred_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                actor or "system",
+                action,
+                target_type,
+                target_id,
+                reason,
+                json.dumps(before, ensure_ascii=False) if before is not None else None,
+                json.dumps(after, ensure_ascii=False) if after is not None else None,
+                occurred_at or utcnow(),
+            ),
+        )
+
+    def search_audit_logs(self, query: dict[str, list[str]]) -> dict:
+        where = []
+        params = []
+        for key in ("actor", "action", "target_type", "target_id"):
+            if value := query.get(key, [None])[0]:
+                where.append(f"{key} = ?")
+                params.append(value)
+        if search := query.get("q", [None])[0]:
+            like = f"%{search.lower()}%"
+            where.append(
+                """
+                (
+                    lower(actor) LIKE ?
+                    OR lower(action) LIKE ?
+                    OR lower(target_type) LIKE ?
+                    OR lower(target_id) LIKE ?
+                    OR lower(COALESCE(reason, '')) LIKE ?
+                )
+                """
+            )
+            params.extend([like] * 5)
+        sql_where = "WHERE " + " AND ".join(where) if where else ""
+        limit = bounded_int(query.get("limit", [None])[0], default=50, minimum=1, maximum=200)
+        offset = bounded_int(query.get("offset", [None])[0], default=0, minimum=0, maximum=1_000_000)
+        with self.db.connect() as conn:
+            total = conn.execute(f"SELECT COUNT(*) AS c FROM audit_logs {sql_where}", tuple(params)).fetchone()["c"]
+            rows = conn.execute(
+                f"""
+                SELECT id, actor, action, target_type, target_id, reason,
+                       before_state, after_state, occurred_at
+                FROM audit_logs
+                {sql_where}
+                ORDER BY occurred_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params + [limit, offset]),
+            ).fetchall()
+        logs = [sanitize_audit_log(row_to_dict(row)) for row in rows]
+        return {
+            "audit_logs": logs,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "returned": len(logs),
+                "next_offset": offset + limit if offset + limit < total else None,
+                "prev_offset": max(offset - limit, 0) if offset > 0 else None,
+            },
         }
 
     def metrics(self) -> str:
@@ -1398,6 +1529,24 @@ def sanitize_alert_channel(channel: dict | None) -> dict | None:
     sanitized["enabled"] = bool(sanitized.get("enabled"))
     sanitized["is_default"] = bool(sanitized.get("is_default"))
     return sanitized
+
+
+def sanitize_audit_log(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    sanitized = dict(row)
+    sanitized["before"] = parse_json_field(sanitized.pop("before_state", None))
+    sanitized["after"] = parse_json_field(sanitized.pop("after_state", None))
+    return sanitized
+
+
+def parse_json_field(value):
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return value
 
 
 def mask_url(value: str | None) -> str | None:
