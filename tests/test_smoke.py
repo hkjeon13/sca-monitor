@@ -33,6 +33,53 @@ def test_sqlite_migration_records_version(tmp_path):
     assert readiness["migration"]["compatible"] is True
 
 
+def test_push_credential_issue_and_bound_snapshot_push(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
+
+    issued = app.create_push_credential("credential-service", {"environment": "prod", "ttl_days": 30})
+    token = issued["token"]
+
+    assert token.startswith("sca_")
+    assert issued["credential"]["token_prefix"] == token[:12]
+    credentials = app.list_push_credentials("credential-service", {"environment": ["prod"]})
+    assert credentials[0]["token_prefix"] == token[:12]
+    assert "token" not in credentials[0]
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT token_hash, last_used_at FROM push_credentials").fetchone()
+        assert row["token_hash"] != token
+        assert row["last_used_at"] is None
+
+    result = app.push_snapshot(
+        {
+            "service_id": "credential-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        },
+        f"Bearer {token}",
+    )
+
+    assert result["impacts_created_or_updated"] == 0
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT last_used_at FROM push_credentials").fetchone()["last_used_at"] is not None
+
+
+def test_push_credential_rejects_service_environment_spoofing(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
+    token = app.create_push_credential("credential-service", {"environment": "prod"})["token"]
+
+    with pytest.raises(PermissionError, match="not bound"):
+        app.push_snapshot(
+            {
+                "service_id": "other-service",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            f"Bearer {token}",
+        )
+
+
 def test_parse_osv_advisory_fixture():
     advisories = parse_osv_advisories(osv_fixture())
 

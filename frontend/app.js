@@ -4,10 +4,10 @@ const api = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
-  async send(path, method, body) {
+  async send(path, method, body, extraHeaders = {}) {
     const res = await fetch(path, {
       method,
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", ...extraHeaders},
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -249,9 +249,24 @@ document.querySelector("#service-form").addEventListener("submit", async (event)
   await refreshAll();
 });
 
+document.querySelector("#credential-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const data = await api.send(`/api/v1/services/${encodeURIComponent(form.service_id)}/push-credentials`, "POST", {
+    environment: form.environment,
+    ttl_days: form.ttl_days,
+  });
+  document.querySelector("#credential-result").innerHTML = `
+    <p><strong>Token issued for ${escapeHtml(data.credential.service_id)} / ${escapeHtml(data.credential.environment)}</strong></p>
+    <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
+    <p>Prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
+  `;
+});
+
 document.querySelector("#snapshot-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const headers = form.token ? {"Authorization": `Bearer ${form.token}`} : {};
   await api.send("/api/v1/snapshots", "POST", {
     schema_version: "1.0",
     service_id: form.service_id,
@@ -269,7 +284,7 @@ document.querySelector("#snapshot-form").addEventListener("submit", async (event
         source: "demo",
       },
     ],
-  });
+  }, headers);
   await refreshAll();
 });
 

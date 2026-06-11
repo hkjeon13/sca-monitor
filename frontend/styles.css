@@ -316,7 +316,7 @@ th {
 
 .split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
   gap: 18px;
 }
 
@@ -338,6 +338,17 @@ input, select {
   border-radius: 6px;
   padding: 10px 11px;
   font: inherit;
+}
+
+input[readonly] {
+  background: #f4f7f8;
+  color: var(--text);
+}
+
+.credential-result {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 pre {

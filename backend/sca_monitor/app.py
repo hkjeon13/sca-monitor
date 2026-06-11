@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import secrets
 from contextlib import contextmanager
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -90,6 +91,12 @@ class ScaMonitorApp:
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
                 return self.json_response(request, self.create_service(self.read_json(request)), HTTPStatus.CREATED)
+            if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "GET":
+                service_id = path.split("/")[-2]
+                return self.json_response(request, {"credentials": self.list_push_credentials(service_id, parse_qs(parsed.query))})
+            if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "POST":
+                service_id = path.split("/")[-2]
+                return self.json_response(request, self.create_push_credential(service_id, self.read_json(request)), HTTPStatus.CREATED)
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
@@ -98,7 +105,7 @@ class ScaMonitorApp:
             if path == "/api/v1/advisories/osv/import" and method == "POST":
                 return self.json_response(request, self.import_osv_advisory(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/snapshots" and method == "POST":
-                return self.json_response(request, self.push_snapshot(self.read_json(request)), HTTPStatus.CREATED)
+                return self.json_response(request, self.push_snapshot(self.read_json(request), request.headers.get("Authorization")), HTTPStatus.CREATED)
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
@@ -112,6 +119,8 @@ class ScaMonitorApp:
             return self.serve_static(request, path)
         except ValueError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except PermissionError as exc:
+            return self.json_response(request, {"error": str(exc)}, HTTPStatus.FORBIDDEN)
         except Exception as exc:  # noqa: BLE001 - keep MVP server alive and visible.
             return self.json_response(request, {"error": "internal_error", "detail": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -254,6 +263,75 @@ class ScaMonitorApp:
                 (row["id"], now),
             )
         return {"service": row_to_dict(row)}
+
+    def list_push_credentials(self, service_id: str, query: dict[str, list[str]]) -> list[dict]:
+        environment = query.get("environment", ["prod"])[0]
+        with self.db.connect() as conn:
+            service = conn.execute(
+                "SELECT id FROM services WHERE service_id = ? AND environment = ?",
+                (service_id, environment),
+            ).fetchone()
+            if not service:
+                raise ValueError("service not found")
+            rows = conn.execute(
+                """
+                SELECT id, token_prefix, scopes, expires_at, revoked_at, last_used_at, created_at
+                FROM push_credentials
+                WHERE service_pk = ?
+                ORDER BY created_at DESC
+                """,
+                (service["id"],),
+            ).fetchall()
+        credentials = []
+        for row in rows:
+            item = row_to_dict(row)
+            item["scopes"] = json.loads(item["scopes"]) if isinstance(item["scopes"], str) else item["scopes"]
+            credentials.append(item)
+        return credentials
+
+    def create_push_credential(self, service_id: str, body: dict) -> dict:
+        environment = body.get("environment", "prod")
+        scopes = body.get("scopes") or ["snapshot:push"]
+        if not isinstance(scopes, list) or "snapshot:push" not in scopes:
+            raise ValueError("scopes must include snapshot:push")
+        ttl_days = bounded_int(body.get("ttl_days"), default=90, minimum=1, maximum=3650)
+        now = utcnow()
+        expires_at = utcnow_after_seconds(ttl_days * 24 * 60 * 60)
+        token = f"sca_{secrets.token_urlsafe(32)}"
+        token_hash = hash_token(token)
+        credential_id = str(uuid.uuid4())
+        with self.db.connect() as conn:
+            service = conn.execute(
+                "SELECT id, service_id, environment FROM services WHERE service_id = ? AND environment = ?",
+                (service_id, environment),
+            ).fetchone()
+            if not service:
+                raise ValueError("service not found")
+            conn.execute(
+                """
+                INSERT INTO push_credentials (
+                    id, service_pk, token_hash, token_prefix, scopes, expires_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (credential_id, service["id"], token_hash, token[:12], json.dumps(scopes), expires_at, now),
+            )
+        credential = {
+            "id": credential_id,
+            "service_id": service_id,
+            "environment": environment,
+            "token_prefix": token[:12],
+            "scopes": scopes,
+            "expires_at": expires_at,
+            "created_at": now,
+        }
+        return {
+            "credential": credential,
+            "token": token,
+            "usage": {
+                "header": "Authorization: Bearer <token>",
+                "curl": f"curl -X POST /api/v1/snapshots -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' --data @snapshot.json",
+            },
+        }
 
     def list_advisories(self, query: dict[str, list[str]]) -> list[dict]:
         where = []
@@ -499,12 +577,14 @@ class ScaMonitorApp:
             impacts = conn.execute("SELECT * FROM impacts WHERE service_pk = ? ORDER BY updated_at DESC", (service["id"],)).fetchall()
         return {"service": row_to_dict(service), "impacts": [row_to_dict(row) for row in impacts]}
 
-    def push_snapshot(self, body: dict) -> dict:
+    def push_snapshot(self, body: dict, authorization: str | None = None) -> dict:
         service_id = required(body, "service_id")
         environment = body.get("environment", "prod")
         dependencies = body.get("dependencies") or []
         if not dependencies:
             raise ValueError("dependencies required")
+        if authorization:
+            self.validate_push_authorization(authorization, service_id, environment)
         service = self.create_service(
             {
                 "service_id": service_id,
@@ -582,6 +662,35 @@ class ScaMonitorApp:
                     )
             impacts = self.match_impacts(conn, service["id"], snapshot_pk)
         return {"snapshot_id": snapshot_id, "content_hash": content_hash, "impacts_created_or_updated": impacts}
+
+    def validate_push_authorization(self, authorization: str, service_id: str, environment: str) -> None:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            raise PermissionError("invalid authorization scheme")
+        now = utcnow()
+        token_hash = hash_token(token)
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT pc.id, pc.scopes, pc.expires_at, pc.revoked_at, s.service_id, s.environment
+                FROM push_credentials pc
+                JOIN services s ON s.id = pc.service_pk
+                WHERE pc.token_hash = ?
+                """,
+                (token_hash,),
+            ).fetchone()
+            if not row:
+                raise PermissionError("invalid push credential")
+            if row["revoked_at"]:
+                raise PermissionError("push credential revoked")
+            if row["expires_at"] and row["expires_at"] <= now:
+                raise PermissionError("push credential expired")
+            scopes = json.loads(row["scopes"])
+            if "snapshot:push" not in scopes:
+                raise PermissionError("push credential lacks snapshot:push scope")
+            if row["service_id"] != service_id or row["environment"] != environment:
+                raise PermissionError("push credential is not bound to this service environment")
+            conn.execute("UPDATE push_credentials SET last_used_at = ? WHERE id = ?", (now, row["id"]))
 
     def match_impacts(self, conn, service_pk: str, snapshot_pk: str) -> int:
         service = conn.execute("SELECT * FROM services WHERE id = ?", (service_pk,)).fetchone()
@@ -843,6 +952,10 @@ def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(number, maximum))
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def utcnow_after_seconds(seconds: int) -> str:

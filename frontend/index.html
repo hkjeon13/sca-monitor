@@ -143,9 +143,26 @@
             </form>
           </div>
           <div>
+            <h2>Issue Push Credential</h2>
+            <form id="credential-form">
+              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
+              <label>Environment
+                <select name="environment">
+                  <option value="prod">prod</option>
+                  <option value="stage">stage</option>
+                  <option value="dev">dev</option>
+                </select>
+              </label>
+              <label>TTL Days<input name="ttl_days" type="number" value="90" min="1" max="3650" /></label>
+              <button type="submit">Issue Credential</button>
+            </form>
+            <div id="credential-result" class="credential-result"></div>
+          </div>
+          <div>
             <h2>Push Demo Snapshot</h2>
             <form id="snapshot-form">
               <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
+              <label>Push Token<input name="token" placeholder="optional bearer token" /></label>
               <label>Package<input name="package_name" value="lodash" required /></label>
               <label>Version<input name="version" value="4.17.20" required /></label>
               <button type="submit">Push Snapshot</button>
