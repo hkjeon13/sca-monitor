@@ -26,6 +26,13 @@ from .versioning import version_is_affected
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
 INITIAL_ADVISORY_SYNC_SOURCES = ("OSV", "CISA_KEV", "OpenSSF")
+RISK_RANK = {
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 3,
+    "info": 4,
+}
 DEFAULT_SLA_HOURS = {
     "critical": 24,
     "high": 72,
@@ -1715,6 +1722,7 @@ class ScaMonitorApp:
         scanned = 0
         candidates = 0
         updated = 0
+        merged = 0
         conflicts = 0
         unchanged = 0
         items = []
@@ -1760,10 +1768,21 @@ class ScaMonitorApp:
                     "from_alert_suppression_key": row["alert_suppression_key"],
                     "to_alert_suppression_key": next_alert_key,
                     "conflict_impact_id": conflict["id"] if conflict else None,
+                    "action": "merge" if conflict else "update",
                 }
                 items.append(item)
                 if conflict:
-                    conflicts += 1
+                    if dry_run:
+                        continue
+                    self.merge_canonical_impact_conflict(
+                        conn,
+                        source_impact_id=row["id"],
+                        target_impact_id=conflict["id"],
+                        canonical_identity=next_identity,
+                        actor=actor,
+                        now=now,
+                    )
+                    merged += 1
                     continue
                 if dry_run:
                     continue
@@ -1796,11 +1815,117 @@ class ScaMonitorApp:
             "scanned": scanned,
             "candidates": candidates,
             "updated": 0 if dry_run else updated,
+            "merged": 0 if dry_run else merged,
             "conflicts": conflicts,
             "unchanged": unchanged,
             "dry_run": dry_run,
             "items": items,
         }
+
+    def merge_canonical_impact_conflict(
+        self,
+        conn,
+        *,
+        source_impact_id: str,
+        target_impact_id: str,
+        canonical_identity: str,
+        actor: str,
+        now: str,
+    ) -> None:
+        source = conn.execute("SELECT * FROM impacts WHERE id = ?", (source_impact_id,)).fetchone()
+        target = conn.execute("SELECT * FROM impacts WHERE id = ?", (target_impact_id,)).fetchone()
+        if not source or not target:
+            raise ValueError("source and target impacts are required for canonical merge")
+
+        source_dict = row_to_dict(source)
+        target_dict = row_to_dict(target)
+        current_row = source_dict if str(source_dict["last_seen_at"]) > str(target_dict["last_seen_at"]) else target_dict
+        risk_row = self.higher_risk_impact(source_dict, target_dict)
+        merged_risk = risk_row["risk_level"]
+        merged_alert_key = ":".join([canonical_identity, merged_risk, "open"])
+        merged_status = self.merge_impact_status(source_dict["status"], target_dict["status"])
+        first_detected_at = min(str(source_dict["first_detected_at"]), str(target_dict["first_detected_at"]))
+        last_seen_at = max(str(source_dict["last_seen_at"]), str(target_dict["last_seen_at"]))
+
+        target_active = conn.execute(
+            "SELECT id FROM accepted_risks WHERE impact_pk = ? AND revoked_at IS NULL",
+            (target_impact_id,),
+        ).fetchone()
+        source_active = conn.execute(
+            "SELECT id FROM accepted_risks WHERE impact_pk = ? AND revoked_at IS NULL",
+            (source_impact_id,),
+        ).fetchone()
+        if target_active and source_active:
+            conn.execute("UPDATE accepted_risks SET revoked_at = ? WHERE id = ?", (now, source_active["id"]))
+
+        conn.execute("UPDATE accepted_risks SET impact_pk = ? WHERE impact_pk = ?", (target_impact_id, source_impact_id))
+        conn.execute("UPDATE impact_history SET impact_pk = ? WHERE impact_pk = ?", (target_impact_id, source_impact_id))
+        conn.execute("UPDATE alert_events SET impact_pk = ? WHERE impact_pk = ?", (target_impact_id, source_impact_id))
+        conn.execute(
+            """
+            UPDATE alert_events
+            SET alert_suppression_key = ?
+            WHERE impact_pk = ?
+              AND alert_suppression_key IN (?, ?)
+            """,
+            (merged_alert_key, target_impact_id, source_dict["alert_suppression_key"], target_dict["alert_suppression_key"]),
+        )
+        conn.execute(
+            """
+            UPDATE impacts
+            SET dependency_pk = ?, snapshot_pk = ?, resolved_version = ?, fixed_version = ?,
+                risk_level = ?, risk_reason = ?, status = ?, first_detected_at = ?,
+                last_seen_at = ?, resolved_at = NULL, freshness_status = ?, artifact_digest = ?,
+                impact_identity = ?, alert_suppression_key = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                current_row["dependency_pk"],
+                current_row["snapshot_pk"],
+                current_row["resolved_version"],
+                current_row["fixed_version"],
+                merged_risk,
+                risk_row["risk_reason"],
+                merged_status,
+                first_detected_at,
+                last_seen_at,
+                current_row["freshness_status"],
+                current_row["artifact_digest"],
+                canonical_identity,
+                merged_alert_key,
+                now,
+                target_impact_id,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO impact_history (id, impact_pk, from_status, to_status, actor, reason, created_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                target_impact_id,
+                merged_status,
+                actor,
+                f"canonical impact merge from {source_impact_id}",
+                now,
+            ),
+        )
+        conn.execute("DELETE FROM impacts WHERE id = ?", (source_impact_id,))
+
+    @staticmethod
+    def higher_risk_impact(left: dict, right: dict) -> dict:
+        left_rank = RISK_RANK.get(str(left.get("risk_level") or "info").lower(), RISK_RANK["info"])
+        right_rank = RISK_RANK.get(str(right.get("risk_level") or "info").lower(), RISK_RANK["info"])
+        return left if left_rank < right_rank else right
+
+    @staticmethod
+    def merge_impact_status(source_status: str, target_status: str) -> str:
+        if target_status in ACTIVE_IMPACT_STATUSES:
+            return target_status
+        if source_status in ACTIVE_IMPACT_STATUSES:
+            return source_status
+        return target_status
 
     def list_impacts(self, query: dict[str, list[str]]) -> list[dict]:
         return self.search_impacts(query)["impacts"]

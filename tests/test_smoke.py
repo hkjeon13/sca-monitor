@@ -2649,6 +2649,61 @@ def test_backfill_canonical_impact_keys_updates_legacy_identity_and_alert(tmp_pa
     assert history["reason"] == "canonical impact key backfill"
 
 
+def test_backfill_canonical_impact_keys_merges_conflicting_legacy_impact(tmp_path):
+    app = make_test_app(tmp_path)
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+    app.push_snapshot(
+        {
+            "service_id": "merge-canonical-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    with app.db.connect() as conn:
+        legacy = conn.execute("SELECT id FROM impacts WHERE impact_identity LIKE '%GHSA-xxxx-yyyy-zzzz%'").fetchone()
+    app.update_impact_status(legacy["id"], {"status": "acknowledged", "actor": "analyst", "reason": "triage started"})
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "merge-canonical-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+
+    dry_run = app.backfill_canonical_impact_keys(limit=10, dry_run=True)
+    result = app.backfill_canonical_impact_keys(limit=10, actor="merge-backfill")
+
+    assert dry_run["candidates"] == 1
+    assert dry_run["items"][0]["action"] == "merge"
+    assert dry_run["merged"] == 0
+    assert result["status"] == "ok"
+    assert result["merged"] == 1
+    assert result["conflicts"] == 0
+    with app.db.connect() as conn:
+        impacts = conn.execute("SELECT id, impact_identity, alert_suppression_key, status FROM impacts").fetchall()
+        alert_events = conn.execute("SELECT impact_pk, alert_suppression_key FROM alert_events").fetchall()
+        history = conn.execute(
+            """
+            SELECT actor, reason
+            FROM impact_history
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+    assert len(impacts) == 1
+    impact = impacts[0]
+    assert impact["impact_identity"] == "merge-canonical-service:prod:OSV-TEST-0001:example-package"
+    assert impact["alert_suppression_key"] == "merge-canonical-service:prod:OSV-TEST-0001:example-package:high:open"
+    assert impact["status"] == "open"
+    assert len(alert_events) == 2
+    assert {row["impact_pk"] for row in alert_events} == {impact["id"]}
+    assert {row["alert_suppression_key"] for row in alert_events} == {impact["alert_suppression_key"]}
+    assert any(row["actor"] == "analyst" and row["reason"] == "triage started" for row in history)
+    assert any(row["actor"] == "merge-backfill" and row["reason"].startswith("canonical impact merge from ") for row in history)
+
+
 def test_service_detail_includes_snapshot_dependencies_and_impacts(tmp_path):
     app = make_test_app(tmp_path)
     app.import_osv_payload(osv_fixture())

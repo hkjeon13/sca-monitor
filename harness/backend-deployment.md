@@ -81,6 +81,8 @@ python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100 --
 python3 scripts/backfill_canonical_impact_keys.py --dry-run --limit 100
 ```
 
+`backfill_canonical_impact_keys.py`는 dry-run 결과의 `action`이 `update`인 항목은 key만 갱신하고, `merge`인 항목은 apply 시 target impact로 alert event, impact history, accepted risk를 이관한 뒤 legacy impact를 제거한다.
+
 확인 항목:
 
 - DB 연결
