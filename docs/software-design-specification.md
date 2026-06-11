@@ -251,7 +251,9 @@ notes
 - `vendorProject/product`, `requiredAction`, `dueDate`, `knownRansomwareCampaignUse`, `notes`, `cwes`는 `raw_payload`에 보존한다.
 - 기존 OSV/GHSA row를 덮어쓰지 않기 위해 source-specific advisory ID를 사용한다.
 - 기존 OSV/GHSA raw payload의 `aliases`에 같은 CVE가 있으면 기존 package advisory를 `is_known_exploited=true`, `severity=critical`로 보강하고 기존 package impact를 재평가한다.
-- 별도 `advisory_aliases` 테이블은 구현되어 advisory import 시 CVE/GHSA/OSV/MAL alias를 저장하고 advisory list/detail API에 노출한다. canonical advisory row 병합은 FR-027 후속 범위이다.
+- 별도 `advisory_aliases` 테이블은 구현되어 advisory import 시 CVE/GHSA/OSV/MAL alias를 저장하고 advisory list/detail API에 노출한다.
+- impact 생성 시 같은 ecosystem/package에서 alias가 겹치는 advisory는 source 우선순위 기반 canonical advisory key를 `impact_identity`와 `alert_suppression_key`에 사용해 중복 impact/alert 생성을 억제한다.
+- canonical advisory row 병합과 기존 impact의 full backfill은 FR-027 후속 범위이다.
 
 ### 5.4 GitHub Security Advisory 수집 방식
 
@@ -1110,7 +1112,7 @@ create index idx_dependencies_purl
 canonicalization 규칙:
 
 - OSV, GHSA, NVD가 같은 CVE/GHSA/OSV alias를 공유하면 하나의 canonical advisory로 병합한다.
-- canonical source 우선순위는 `OSV > GHSA > NVD`이다.
+- canonical source 우선순위는 현재 impact identity 계산에서 `OSV > OpenSSF > GHSA > NVD > CISA_KEV`이다. 최종 canonical row 병합 정책은 `OSV > GHSA > NVD` 기본 우선순위에 malicious package 우선순위를 함께 반영한다.
 - KEV와 NVD는 가능하면 신규 advisory row를 만들지 않고 기존 canonical advisory의 enrichment로 반영한다.
 - OpenSSF `MAL-*`과 GitHub `type=malware` advisory가 같은 package/version/alias를 가리키면 malicious canonical advisory로 병합한다.
 - impact 생성과 alert suppression은 canonical advisory 기준으로 수행한다.

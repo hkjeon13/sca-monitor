@@ -106,6 +106,7 @@ Phase 0 착수 전 선행 조건:
 - `scripts/ghsa_sync.py` 기반 GitHub Security Advisory reviewed/malware parser/import CLI 추가
 - `scripts/nvd_cve_sync.py` 기반 NVD CVE 2.0 단건 및 CVE 목록 batch parser/import CLI 추가
 - `advisory_aliases` migration과 advisory import 시 CVE/GHSA/OSV/MAL alias 저장 및 API 노출 추가
+- alias가 겹치는 같은 package advisory의 impact identity와 alert suppression key를 canonical advisory key 기준으로 계산
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
 - `scripts/dispatch_alerts.py` webhook alert outbox dispatcher CLI 추가
@@ -147,7 +148,7 @@ Phase 0 착수 전 선행 조건:
 - endpoint polling worker
 - snapshot normalization
 - advisory feed-sync worker
-- advisory canonicalization row merge 및 canonical impact/suppression key 전환
+- advisory canonicalization row merge 및 기존 impact/suppression key backfill
 - impact matcher
 - risk scoring
 - alert outbox dispatcher

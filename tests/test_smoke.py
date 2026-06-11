@@ -2587,6 +2587,33 @@ def test_advisory_import_rematches_existing_latest_snapshot(tmp_path):
     assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
 
 
+def test_alias_related_advisories_share_canonical_impact_identity(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+
+    result = app.push_snapshot(
+        {
+            "service_id": "canonical-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+
+    assert result["impacts_created_or_updated"] == 2
+    impacts = app.search_impacts({"service_id": ["canonical-service"]})["impacts"]
+    assert len(impacts) == 1
+    assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
+    assert impacts[0]["alert_suppression_key"].startswith("canonical-service:prod:OSV-TEST-0001:example-package:")
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM alert_events").fetchone()["c"] == 1
+        row = conn.execute("SELECT impact_identity, alert_suppression_key FROM impacts").fetchone()
+    assert row["impact_identity"] == "canonical-service:prod:OSV-TEST-0001:example-package"
+    assert row["alert_suppression_key"] == "canonical-service:prod:OSV-TEST-0001:example-package:high:open"
+
+
 def test_service_detail_includes_snapshot_dependencies_and_impacts(tmp_path):
     app = make_test_app(tmp_path)
     app.import_osv_payload(osv_fixture())

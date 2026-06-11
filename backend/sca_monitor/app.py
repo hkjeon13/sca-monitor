@@ -1607,7 +1607,8 @@ class ScaMonitorApp:
                 if not version_is_affected(dep["resolved_version"], affected_versions, affected_ranges):
                     continue
                 risk = "critical" if adv["is_malicious_package"] or adv["is_known_exploited"] or adv["severity"] == "critical" else adv["severity"]
-                identity = ":".join([service["service_id"], service["environment"], adv["advisory_id"], dep["canonical_package_name"]])
+                canonical_advisory_key = self.canonical_advisory_key(conn, adv)
+                identity = ":".join([service["service_id"], service["environment"], canonical_advisory_key, dep["canonical_package_name"]])
                 alert_key = ":".join([identity, risk, "open"])
                 impact_pk = str(uuid.uuid4())
                 existing = conn.execute("SELECT id FROM impacts WHERE impact_identity = ?", (identity,)).fetchone()
@@ -1676,6 +1677,38 @@ class ScaMonitorApp:
                     )
                 count += 1
         return count
+
+    def canonical_advisory_key(self, conn, advisory_row) -> str:
+        aliases = conn.execute(
+            """
+            SELECT alias_value
+            FROM advisory_aliases
+            WHERE advisory_pk = ?
+            """,
+            (advisory_row["id"],),
+        ).fetchall()
+        alias_values = [row["alias_value"] for row in aliases]
+        if not alias_values:
+            return advisory_row["advisory_id"]
+        placeholders = ", ".join("?" for _ in alias_values)
+        candidates = conn.execute(
+            f"""
+            SELECT DISTINCT a.advisory_id, a.source
+            FROM advisories a
+            JOIN advisory_aliases aa ON aa.advisory_pk = a.id
+            WHERE aa.alias_value IN ({placeholders})
+              AND a.ecosystem = ?
+              AND a.canonical_package_name = ?
+            """,
+            (*alias_values, advisory_row["ecosystem"], advisory_row["canonical_package_name"]),
+        ).fetchall()
+        if not candidates:
+            return advisory_row["advisory_id"]
+        best = min(
+            candidates,
+            key=lambda row: (canonical_source_priority(row["source"]), row["advisory_id"]),
+        )
+        return best["advisory_id"]
 
     def list_impacts(self, query: dict[str, list[str]]) -> list[dict]:
         return self.search_impacts(query)["impacts"]
@@ -2739,6 +2772,17 @@ def parse_iso_datetime(value: str) -> datetime:
 
 def metric_label(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def canonical_source_priority(source: str) -> int:
+    priorities = {
+        "OSV": 0,
+        "OpenSSF": 1,
+        "GHSA": 2,
+        "NVD": 3,
+        "CISA_KEV": 4,
+    }
+    return priorities.get(str(source), 100)
 
 
 def advisory_import_from_row(row: dict) -> AdvisoryImport:
