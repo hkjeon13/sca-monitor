@@ -17,6 +17,7 @@ from backend.sca_monitor.advisory_sync import (
     parse_nvd_cve_vulnerability,
     sync_cisa_kev_catalog,
     sync_nvd_cve,
+    sync_nvd_cves,
     sync_osv_ecosystem_dump,
 )
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
@@ -3331,6 +3332,36 @@ def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
     assert app.overview()["advisory_sync"]["NVD"] == "ok"
 
 
+def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
+    app = make_test_app(tmp_path)
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    first = nvd_cve_fixture()
+    second = nvd_cve_fixture("CVE-2026-0002", product="example-client", severity="HIGH")
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(first), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(json.dumps(second), encoding="utf-8")
+
+    result = sync_nvd_cves(
+        app,
+        ["cve-2026-0001", "CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"],
+        json_dir=json_dir,
+        limit=2,
+    )
+
+    assert result.source == "NVD"
+    assert result.processed == 2
+    assert result.imported_rows == 2
+    assert result.failed == 0
+    assert [item["cve_id"] for item in result.results] == ["CVE-2026-0001", "CVE-2026-0002"]
+    advisories = app.list_advisories({"source": ["NVD"]})
+    assert {advisory["advisory_id"] for advisory in advisories} == {"CVE-2026-0001", "CVE-2026-0002"}
+    assert {advisory["package_name"] for advisory in advisories} == {
+        "example/example-client",
+        "example/example-server",
+    }
+    assert app.overview()["advisory_sync"]["NVD"] == "ok"
+
+
 def test_nvd_cve_sync_cli_imports_local_json(tmp_path):
     json_path = tmp_path / "nvd-cve.json"
     json_path.write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
@@ -3349,6 +3380,47 @@ def test_nvd_cve_sync_cli_imports_local_json(tmp_path):
     assert payload["source"] == "NVD"
     assert payload["cve_id"] == "CVE-2026-0001"
     assert payload["imported_rows"] == 1
+
+
+def test_nvd_cve_sync_cli_imports_list_file_from_json_dir(tmp_path):
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(
+        json.dumps(nvd_cve_fixture("CVE-2026-0002", product="example-client", severity="HIGH")),
+        encoding="utf-8",
+    )
+    cve_list_path = tmp_path / "cves.txt"
+    cve_list_path.write_text(
+        "\n".join(["# reported CVEs", "cve-2026-0001", "CVE-2026-0001", "CVE-2026-0002"]),
+        encoding="utf-8",
+    )
+    database_url = f"sqlite:///{tmp_path / 'nvd-list-cli.sqlite3'}"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/nvd_cve_sync.py",
+            "--cve-list-path",
+            str(cve_list_path),
+            "--json-dir",
+            str(json_dir),
+            "--limit",
+            "2",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "NVD"
+    assert payload["processed"] == 2
+    assert payload["imported_rows"] == 2
+    assert payload["failed"] == 0
+    assert [item["cve_id"] for item in payload["results"]] == ["CVE-2026-0001", "CVE-2026-0002"]
 
 
 def test_cisa_kev_sync_enriches_matching_osv_alias_and_rematches_impacts(tmp_path):
@@ -4207,7 +4279,8 @@ def cisa_kev_fixture():
     }
 
 
-def nvd_cve_fixture():
+def nvd_cve_fixture(cve_id: str = "CVE-2026-0001", *, product: str = "example-server", severity: str = "CRITICAL"):
+    description_product = product.replace("-", " ").title()
     return {
         "resultsPerPage": 1,
         "startIndex": 0,
@@ -4217,11 +4290,11 @@ def nvd_cve_fixture():
         "vulnerabilities": [
             {
                 "cve": {
-                    "id": "CVE-2026-0001",
+                    "id": cve_id,
                     "published": "2026-01-01T00:00:00.000",
                     "lastModified": "2026-01-02T00:00:00.000",
                     "descriptions": [
-                        {"lang": "en", "value": "Example Server contains a remote code execution vulnerability."}
+                        {"lang": "en", "value": f"{description_product} contains a remote code execution vulnerability."}
                     ],
                     "metrics": {
                         "cvssMetricV31": [
@@ -4230,7 +4303,7 @@ def nvd_cve_fixture():
                                     "version": "3.1",
                                     "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
                                     "baseScore": 9.8,
-                                    "baseSeverity": "CRITICAL",
+                                    "baseSeverity": severity,
                                 }
                             }
                         ]
@@ -4243,7 +4316,7 @@ def nvd_cve_fixture():
                                     "cpeMatch": [
                                         {
                                             "vulnerable": True,
-                                            "criteria": "cpe:2.3:a:example:example-server:*:*:*:*:*:*:*:*",
+                                            "criteria": f"cpe:2.3:a:example:{product}:*:*:*:*:*:*:*:*",
                                             "versionStartIncluding": "1.0.0",
                                             "versionEndExcluding": "2.0.0",
                                         }

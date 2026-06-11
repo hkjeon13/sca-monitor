@@ -55,6 +55,17 @@ class NvdCveSyncResult:
     api_url: str
 
 
+@dataclass(frozen=True)
+class NvdCveBatchSyncResult:
+    source: str
+    processed: int
+    imported_rows: int
+    rematched_impacts: int
+    failed: int
+    results: list[dict[str, Any]]
+    api_url: str
+
+
 def osv_dump_url(ecosystem: str) -> str:
     if not ecosystem:
         raise ValueError("ecosystem required")
@@ -282,6 +293,58 @@ def sync_nvd_cve(
         error_message = None if imported_rows else f"NVD CVE not found: {cve_id}"
         app.record_advisory_sync("NVD", status, cve_id, error_message, imported_count=imported_rows)
     return NvdCveSyncResult(source="NVD", cve_id=cve_id, imported_rows=imported_rows, rematched_impacts=rematched_impacts, api_url=api_url)
+
+
+def sync_nvd_cves(
+    app: ScaMonitorApp,
+    cve_ids: list[str],
+    *,
+    api_url: str = NVD_CVE_API_URL,
+    api_key: str | None = None,
+    json_dir: Path | None = None,
+    limit: int | None = None,
+    lock_ttl_seconds: int = 3600,
+) -> NvdCveBatchSyncResult:
+    processed = 0
+    imported_rows = 0
+    rematched_impacts = 0
+    failed = 0
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_cve_id in cve_ids:
+        cve_id = raw_cve_id.strip().upper()
+        if not cve_id or cve_id in seen:
+            continue
+        if limit is not None and processed >= limit:
+            break
+        seen.add(cve_id)
+        processed += 1
+        json_path = json_dir / f"{cve_id}.json" if json_dir else None
+        try:
+            result = sync_nvd_cve(
+                app,
+                cve_id,
+                api_url=api_url,
+                api_key=api_key,
+                json_path=json_path if json_path and json_path.exists() else None,
+                lock_owner=default_lock_owner(f"nvd-cve-{cve_id.lower()}"),
+                lock_ttl_seconds=lock_ttl_seconds,
+            )
+            imported_rows += result.imported_rows
+            rematched_impacts += result.rematched_impacts
+            results.append(result.__dict__)
+        except Exception as exc:  # noqa: BLE001 - batch sync should report per-CVE failures.
+            failed += 1
+            results.append({"source": "NVD", "cve_id": cve_id, "status": "failed", "error": exc.__class__.__name__, "detail": str(exc)})
+    return NvdCveBatchSyncResult(
+        source="NVD",
+        processed=processed,
+        imported_rows=imported_rows,
+        rematched_impacts=rematched_impacts,
+        failed=failed,
+        results=results,
+        api_url=api_url,
+    )
 
 
 def vulnerable_cpe_matches(configurations: list[dict[str, Any]]) -> list[dict[str, Any]]:
