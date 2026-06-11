@@ -28,6 +28,8 @@ GET /metrics
 | sca_monitor_advisory_sync_ready | 필수 advisory source initial sync 완료 여부 |
 | sca_monitor_advisory_sync_initialized | source별 initial sync 완료 여부 |
 | sca_monitor_advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |
+| sca_monitor_advisory_sync_failed | source별 마지막 동기화 실패 여부 |
+| sca_monitor_advisory_sync_last_error_age_seconds | source별 마지막 동기화 오류 이후 경과 |
 | sca_monitor_endpoint_poll_success_rate | 등록 endpoint polling 성공률 |
 | new_advisory_to_alert_latency_seconds | 신규 advisory 수집부터 alert 발송까지 지연 |
 | sca_monitor_alert_delivery_success_rate | alert 발송 성공률 |
@@ -48,7 +50,7 @@ GET /metrics
 | sca_monitor_postgres_split_ready | split credential cutover 준비 완료 여부 |
 | sca_monitor_worker_lease_acquire_failures | worker lease 획득 실패 수 |
 
-현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_ready`, `sca_monitor_advisory_sync_initialized`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_worker_lease_acquire_failures`, `new_advisory_to_alert_latency_seconds`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`, DB readiness/migration/PostgreSQL cutover metric을 노출한다.
+현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_ready`, `sca_monitor_advisory_sync_initialized`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_advisory_sync_failed`, `sca_monitor_advisory_sync_last_error_age_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_worker_lease_acquire_failures`, `new_advisory_to_alert_latency_seconds`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`, DB readiness/migration/PostgreSQL cutover metric을 노출한다.
 
 ## 4. Logs
 

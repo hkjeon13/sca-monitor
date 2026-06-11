@@ -3050,7 +3050,11 @@ class ScaMonitorApp:
         lines = []
         with self.db.connect() as conn:
             advisory_rows = conn.execute(
-                "SELECT source, status, last_success_at, lease_acquire_failures FROM advisory_sync_state ORDER BY source"
+                """
+                SELECT source, status, last_success_at, last_error_at, lease_acquire_failures
+                FROM advisory_sync_state
+                ORDER BY source
+                """
             ).fetchall()
             poll_rows = conn.execute(
                 """
@@ -3090,6 +3094,11 @@ class ScaMonitorApp:
             lag = seconds_since(row["last_success_at"], now)
             if lag is not None:
                 lines.append(f'sca_monitor_advisory_sync_lag_seconds{{source="{metric_label(row["source"])}"}} {lag}')
+            failed = 1 if row["status"] == "error" else 0
+            lines.append(f'sca_monitor_advisory_sync_failed{{source="{metric_label(row["source"])}"}} {failed}')
+            error_age = seconds_since(row["last_error_at"], now)
+            if error_age is not None:
+                lines.append(f'sca_monitor_advisory_sync_last_error_age_seconds{{source="{metric_label(row["source"])}"}} {error_age}')
         for row in advisory_rows:
             failures = int(row["lease_acquire_failures"] or 0)
             if failures:
