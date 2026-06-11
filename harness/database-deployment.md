@@ -160,8 +160,9 @@ bash scripts/deploy_db_gate.sh
 원격 서버에 root/user 권한으로 보호된 env file을 먼저 준비하고, 배포 시 remote path만 지정한다.
 
 ```bash
-install -m 700 -d /data/psyche/Projects/sca-monitor/.secrets
-cp deploy/postgres.env.example /data/psyche/Projects/sca-monitor/.secrets/postgres.env
+python3 scripts/prepare_database_env_file.py \
+  --database-env-file /data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+  --json
 $EDITOR /data/psyche/Projects/sca-monitor/.secrets/postgres.env
 python3 scripts/validate_database_env_file.py --database-env-file /data/psyche/Projects/sca-monitor/.secrets/postgres.env --json
 
@@ -172,6 +173,8 @@ scripts/deploy_remote.sh
 
 `scripts/configure_runtime_inputs.py`는 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`과 PostgreSQL 전환 flag만 allowlist로 병합하며,
 배포 로그에는 DB URL 원문을 출력하지 않는다.
+`scripts/prepare_database_env_file.py`는 `deploy/postgres.env.example`을 mode `0600`의 protected file로 생성하고, 기본값으로 기존 secret 파일을 덮어쓰지 않는다.
+생성 직후 validator 결과는 placeholder 때문에 `blocked`가 정상이며, 운영자가 실제 값을 입력한 뒤 `validate_database_env_file.py`가 `ok`가 되어야 배포 병합을 진행한다.
 `scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정된 `scripts/deploy_remote.sh` 실행은 `.env` 병합 전에 이 validator를 stop gate로 먼저 실행한다.
 

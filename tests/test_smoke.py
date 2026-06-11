@@ -1581,6 +1581,54 @@ def test_validate_database_env_file_accepts_split_postgres_without_leaking_urls(
     assert "postgresql://worker:secret" not in result.stdout
 
 
+def test_prepare_database_env_file_creates_protected_placeholder_without_overwrite(tmp_path):
+    target = tmp_path / ".secrets" / "postgres.env"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/prepare_database_env_file.py",
+            "--database-env-file",
+            str(target),
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    text = target.read_text(encoding="utf-8")
+    assert payload["status"] == "created"
+    assert payload["database_env_file"] == "configured"
+    assert payload["mode"] == "0o600"
+    assert payload["validator"]["status"] == "blocked"
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert "MIGRATION_DATABASE_URL=postgresql://<migration_user>:<password>@<host>:5432/<database>" in text
+    assert "postgresql://<migration_user>" not in result.stdout
+    assert "<password>" not in result.stdout
+
+    second = subprocess.run(
+        [
+            "python3",
+            "scripts/prepare_database_env_file.py",
+            "--database-env-file",
+            str(target),
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    second_payload = json.loads(second.stdout)
+    assert second.returncode == 2
+    assert second_payload["status"] == "blocked"
+    assert any(check["id"] == "existing_file" and check["status"] == "blocker" for check in second_payload["checks"])
+
+
 def test_postgres_env_example_is_placeholder_and_blocked_by_validator():
     example = (REPO_ROOT / "deploy" / "postgres.env.example").read_text(encoding="utf-8")
     assert "MIGRATION_DATABASE_URL=postgresql://<migration_user>:<password>@<host>:5432/<database>" in example
@@ -2118,6 +2166,7 @@ def test_ci_smoke_runs_core_gates():
     assert "python3 -m pytest tests" in script
     assert "scripts/deployment_input_readiness.py" in script
     assert "scripts/validate_database_env_file.py" in script
+    assert "scripts/prepare_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py" in script
     assert "scripts/backup_database.py" in script
     assert "scripts/advisory_source_preflight.py" in script
@@ -2183,6 +2232,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "--require-postgres --require-split" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
     assert "deploy/postgres.env.example" in database_doc
+    assert "scripts/prepare_database_env_file.py" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
     assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "stop gate로 먼저 실행" in database_doc
