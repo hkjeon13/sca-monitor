@@ -47,6 +47,14 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=15min", "Unit={prefix}-sla-escalation.service"],
         "kind": "timer",
     },
+    "daily-digest.service": {
+        "required": ["scripts/create_daily_digest.py", "--timezone Asia/Seoul", "--actor digest-scheduler"],
+        "kind": "oneshot",
+    },
+    "daily-digest.timer": {
+        "required": ["OnCalendar=*-*-* 09:00:00", "Unit={prefix}-daily-digest.service"],
+        "kind": "timer",
+    },
     "cisa-kev-sync.service": {
         "required": ["scripts/cisa_kev_sync.py", "--lock-owner systemd-cisa-kev-sync"],
         "kind": "oneshot",

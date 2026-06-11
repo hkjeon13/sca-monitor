@@ -167,21 +167,17 @@ def dispatch_alert_batches(
 
 def alert_payload(row) -> dict:
     base_payload = json_column(row["payload"], {})
-    return {
-        **base_payload,
+    payload = {
         "alert_event_id": row["id"],
         "impact_id": row["impact_pk"],
         "alert_suppression_key": row["alert_suppression_key"],
         "reason": row["reason"],
-        "service_id": row["service_id"],
-        "service_name": row["service_name"],
-        "environment": row["environment"],
-        "advisory_id": row["advisory_id"],
-        "summary": row["summary"],
-        "risk_level": row["risk_level"],
-        "package_name": row["package_name"],
-        "resolved_version": row["resolved_version"],
     }
+    for key in ("service_id", "service_name", "environment", "advisory_id", "summary", "risk_level", "package_name", "resolved_version"):
+        value = row[key]
+        if value is not None:
+            payload[key] = value
+    return {**base_payload, **payload}
 
 
 def alert_headers(row) -> dict[str, str]:

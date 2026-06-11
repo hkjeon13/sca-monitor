@@ -226,6 +226,29 @@ Unit=${PREFIX}-sla-escalation.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-daily-digest.service" <<EOF
+[Unit]
+Description=SCA Monitor Daily Digest job
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/create_daily_digest.py --limit 100 --timezone Asia/Seoul --actor digest-scheduler
+EOF
+
+write_unit "${PREFIX}-daily-digest.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor Daily Digest daily
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+Unit=${PREFIX}-daily-digest.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 write_unit "${PREFIX}-cisa-kev-sync.service" <<EOF
 [Unit]
 Description=SCA Monitor CISA KEV sync job
@@ -355,6 +378,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
     "${PREFIX}-sla-escalation.timer" \
+    "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"
@@ -364,6 +388,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
     "${PREFIX}-sla-escalation.timer" \
+    "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"

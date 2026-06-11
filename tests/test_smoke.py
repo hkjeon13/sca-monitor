@@ -140,6 +140,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-accepted-risk-expiry.timer",
         "sca-monitor-sla-escalation.service",
         "sca-monitor-sla-escalation.timer",
+        "sca-monitor-daily-digest.service",
+        "sca-monitor-daily-digest.timer",
         "sca-monitor-cisa-kev-sync.service",
         "sca-monitor-cisa-kev-sync.timer",
         "sca-monitor-osv-npm-sync.service",
@@ -158,6 +160,10 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler" in sla_service
     sla_timer = (unit_dir / "sca-monitor-sla-escalation.timer").read_text(encoding="utf-8")
     assert "Unit=sca-monitor-sla-escalation.service" in sla_timer
+    digest_service = (unit_dir / "sca-monitor-daily-digest.service").read_text(encoding="utf-8")
+    assert "scripts/create_daily_digest.py --limit 100 --timezone Asia/Seoul --actor digest-scheduler" in digest_service
+    digest_timer = (unit_dir / "sca-monitor-daily-digest.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=*-*-* 09:00:00" in digest_timer
     openssf = (unit_dir / "sca-monitor-openssf-malicious-sync.service").read_text(encoding="utf-8")
     assert "scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only" in openssf
     dispatcher_dry_run = (unit_dir / "sca-monitor-alert-dispatcher-dry-run.service").read_text(encoding="utf-8")
@@ -195,8 +201,9 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 14, "present": 14, "valid": 14, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 16, "present": 16, "valid": 16, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
+    assert payload["units"]["sca-monitor-daily-digest.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
 
@@ -265,7 +272,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 14
+    assert payload["summary"]["missing"] == 16
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -287,7 +294,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 14, "present": 14, "valid": 14, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 16, "present": 16, "valid": 16, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -331,7 +338,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 14
+    assert payload["summary"]["valid"] == 16
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -400,7 +407,7 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 14
+    assert payload["summary"]["valid"] == 16
     assert api_status == {"enabled": "enabled", "active": "active"}
     assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
 
@@ -1699,6 +1706,80 @@ def test_evaluate_sla_escalations_cli(tmp_path):
     assert payload["enqueued"] == 1
     with app.db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'sla_expired'").fetchone()["c"] == 1
+
+
+def test_daily_digest_enqueues_pending_alert_once_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        impact_id = conn.execute("SELECT id FROM impacts").fetchone()["id"]
+        conn.execute("UPDATE impacts SET risk_level = 'medium', status = 'open' WHERE id = ?", (impact_id,))
+
+    dry_run = app.enqueue_daily_digest_alert(now="2026-01-03T00:00:00+00:00", dry_run=True, actor="digest-scheduler")
+    result = app.enqueue_daily_digest_alert(now="2026-01-03T00:00:00+00:00", actor="digest-scheduler")
+    second = app.enqueue_daily_digest_alert(now="2026-01-03T00:00:00+00:00", actor="digest-scheduler")
+
+    assert dry_run["digest_date"] == "2026-01-03"
+    assert dry_run["matched"] == 1
+    assert dry_run["enqueued"] == 0
+    assert result["matched"] == 1
+    assert result["enqueued"] == 1
+    assert second["matched"] == 1
+    assert second["enqueued"] == 0
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT impact_pk, reason, status, alert_suppression_key, payload FROM alert_events WHERE reason = 'daily_digest'").fetchone()
+    assert row["impact_pk"] is None
+    assert row["status"] == "pending"
+    assert row["alert_suppression_key"] == "daily_digest:2026-01-03:all"
+    payload = json.loads(row["payload"])
+    assert payload["reason"] == "daily_digest"
+    assert payload["digest"]["date"] == "2026-01-03"
+    assert payload["items"][0]["impact_id"] == impact_id
+    assert payload["items"][0]["risk_level"] == "medium"
+    audit = app.search_audit_logs({"action": ["daily_digest.enqueue"], "target_id": ["daily_digest:2026-01-03:all"]})
+    assert audit["pagination"]["total"] == 1
+
+
+def test_daily_digest_includes_non_production_high_impact(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE services SET environment = 'stage'")
+        conn.execute("UPDATE impacts SET risk_level = 'high', environment = 'stage', status = 'open'")
+
+    result = app.enqueue_daily_digest_alert(now="2026-01-03T00:00:00+00:00", actor="digest-scheduler")
+
+    assert result["matched"] == 1
+    assert result["enqueued"] == 1
+    assert result["items"][0]["risk_level"] == "high"
+    assert result["items"][0]["environment"] == "stage"
+
+
+def test_create_daily_digest_cli(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE impacts SET risk_level = 'low', status = 'open'")
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/create_daily_digest.py", "--now", "2026-01-03T00:00:00+00:00", "--actor", "digest-scheduler"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["enqueued"] == 1
+    assert payload["digest_date"] == "2026-01-03"
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'daily_digest'").fetchone()["c"] == 1
 
 
 def test_parse_osv_advisory_fixture():

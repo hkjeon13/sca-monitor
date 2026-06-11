@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, json_column, row_to_dict, utcnow
@@ -2016,6 +2017,109 @@ class ScaMonitorApp:
             "impacts": candidates,
         }
 
+    def enqueue_daily_digest_alert(
+        self,
+        *,
+        now: str | None = None,
+        digest_date: str | None = None,
+        timezone_name: str = "Asia/Seoul",
+        limit: int = 100,
+        dry_run: bool = False,
+        actor: str = "system",
+    ) -> dict:
+        checked_at = now or utcnow()
+        limit = bounded_int(limit, default=100, minimum=1, maximum=1000)
+        digest_date = digest_date or local_date_for_timestamp(checked_at, timezone_name)
+        suppression_key = f"daily_digest:{digest_date}:all"
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT i.id, i.alert_suppression_key, i.risk_level, i.status,
+                       i.first_detected_at, i.last_seen_at, i.package_name,
+                       i.resolved_version, i.fixed_version, i.freshness_status,
+                       s.service_id, s.service_name, s.owner_team, s.environment,
+                       a.advisory_id, a.summary, a.source, a.severity,
+                       a.is_known_exploited, a.is_malicious_package
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                JOIN advisories a ON a.id = i.advisory_pk
+                WHERE i.status IN ({",".join("?" for _ in ACTIVE_IMPACT_STATUSES)})
+                  AND (
+                    i.risk_level IN ('medium', 'low', 'info')
+                    OR LOWER(s.environment) NOT IN ('prod', 'production')
+                  )
+                ORDER BY
+                  CASE i.risk_level
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'medium' THEN 3
+                    WHEN 'low' THEN 4
+                    ELSE 5
+                  END ASC,
+                  i.first_detected_at ASC
+                LIMIT ?
+                """,
+                (*ACTIVE_IMPACT_STATUSES, limit),
+            ).fetchall()
+            existing = conn.execute(
+                """
+                SELECT id, status
+                FROM alert_events
+                WHERE reason = 'daily_digest' AND alert_suppression_key = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (suppression_key,),
+            ).fetchone()
+            items = [daily_digest_item(row) for row in rows]
+            result = {
+                "checked_at": checked_at,
+                "digest_date": digest_date,
+                "timezone": timezone_name,
+                "matched": len(rows),
+                "enqueued": 0,
+                "dry_run": dry_run,
+                "alert_suppression_key": suppression_key,
+                "existing_alert_event_id": existing["id"] if existing else None,
+                "existing_alert_event_status": existing["status"] if existing else None,
+                "items": items,
+            }
+            if dry_run or existing or not items:
+                return result
+            payload = {
+                "digest": {
+                    "date": digest_date,
+                    "timezone": timezone_name,
+                    "scope": "all",
+                    "matched": len(items),
+                    "criteria": "active medium-or-lower impacts plus active non-production impacts",
+                },
+                "items": items,
+                "reason": "daily_digest",
+            }
+            alert_event_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO alert_events (id, impact_pk, alert_suppression_key, reason, status, payload, created_at)
+                VALUES (?, NULL, ?, 'daily_digest', 'pending', ?, ?)
+                """,
+                (alert_event_id, suppression_key, json.dumps(payload, ensure_ascii=False), checked_at),
+            )
+            self.write_audit_log(
+                conn,
+                actor=actor,
+                action="daily_digest.enqueue",
+                target_type="alert_digest",
+                target_id=suppression_key,
+                reason="daily digest alert enqueued",
+                before=None,
+                after={"alert_event_id": alert_event_id, "digest_date": digest_date, "matched": len(items)},
+                occurred_at=checked_at,
+            )
+            result["enqueued"] = 1
+            result["alert_event_id"] = alert_event_id
+            return result
+
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")
         reason = body.get("reason", "requeue dead-letter alert")
@@ -2501,6 +2605,38 @@ def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(number, maximum))
+
+
+def local_date_for_timestamp(timestamp: str, timezone_name: str) -> str:
+    try:
+        zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"unknown timezone: {timezone_name}") from exc
+    return parse_iso_datetime(timestamp).astimezone(zone).date().isoformat()
+
+
+def daily_digest_item(row) -> dict:
+    return {
+        "impact_id": row["id"],
+        "service_id": row["service_id"],
+        "service_name": row["service_name"],
+        "owner_team": row["owner_team"],
+        "environment": row["environment"],
+        "advisory_id": row["advisory_id"],
+        "source": row["source"],
+        "summary": row["summary"],
+        "severity": row["severity"],
+        "risk_level": row["risk_level"],
+        "status": row["status"],
+        "package_name": row["package_name"],
+        "resolved_version": row["resolved_version"],
+        "fixed_version": row["fixed_version"],
+        "freshness_status": row["freshness_status"],
+        "first_detected_at": row["first_detected_at"],
+        "last_seen_at": row["last_seen_at"],
+        "known_exploited": bool(row["is_known_exploited"]),
+        "malicious_package": bool(row["is_malicious_package"]),
+    }
 
 
 def parse_csv_header(value: str | None) -> set[str]:

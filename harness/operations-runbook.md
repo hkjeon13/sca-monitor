@@ -204,6 +204,16 @@ python3 scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler
 첫 명령은 active impact 중 SLA가 초과된 항목만 확인한다.
 두 번째 명령은 중복되지 않는 `sla_expired` alert outbox row를 생성한다.
 
+Daily Digest 후보 생성:
+
+```bash
+python3 scripts/create_daily_digest.py --dry-run --limit 100 --timezone Asia/Seoul
+python3 scripts/create_daily_digest.py --limit 100 --timezone Asia/Seoul --actor digest-scheduler
+```
+
+Daily Digest는 active impact 중 Medium 이하 또는 비운영 환경 이슈를 `reason=daily_digest` outbox row 하나로 묶는다.
+기본 중복 억제 key는 `daily_digest:{YYYY-MM-DD}:all`이며, VM systemd timer는 매일 09:00 `Asia/Seoul` 운영 기준으로 실행하도록 설치된다.
+
 Dead-letter 재처리:
 
 ```bash
