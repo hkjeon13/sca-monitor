@@ -45,6 +45,10 @@ class PayloadTooLargeError(ValueError):
     pass
 
 
+class SnapshotConflictError(ValueError):
+    pass
+
+
 class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -165,13 +169,15 @@ class ScaMonitorApp:
             if path == "/api/v1/advisories/osv/import" and method == "POST":
                 return self.json_response(request, self.import_osv_advisory(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/snapshots" and method == "POST":
+                result = self.push_snapshot(
+                    self.read_json(request, max_length=self.settings.max_snapshot_payload_bytes),
+                    request.headers.get("Authorization"),
+                )
+                status = HTTPStatus.OK if result.get("idempotency_status") == "confirmed" else HTTPStatus.CREATED
                 return self.json_response(
                     request,
-                    self.push_snapshot(
-                        self.read_json(request, max_length=self.settings.max_snapshot_payload_bytes),
-                        request.headers.get("Authorization"),
-                    ),
-                    HTTPStatus.CREATED,
+                    result,
+                    status,
                 )
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
@@ -203,6 +209,8 @@ class ScaMonitorApp:
             return self.serve_static(request, path)
         except PayloadTooLargeError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        except SnapshotConflictError as exc:
+            return self.json_response(request, {"error": str(exc)}, HTTPStatus.CONFLICT)
         except ValueError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except PermissionError as exc:
@@ -1199,11 +1207,24 @@ class ScaMonitorApp:
         artifact = body.get("artifact") or {}
         with self.db.connect() as conn:
             existing = conn.execute(
-                "SELECT id FROM dependency_snapshots WHERE service_pk = ? AND snapshot_id = ?",
+                "SELECT id, content_hash FROM dependency_snapshots WHERE service_pk = ? AND snapshot_id = ?",
                 (service["id"], snapshot_id),
             ).fetchone()
             if existing:
                 snapshot_pk = existing["id"]
+                if existing["content_hash"] != content_hash:
+                    raise SnapshotConflictError("snapshot_id already exists with different content_hash")
+                conn.execute(
+                    "UPDATE dependency_snapshots SET last_confirmed_at = ? WHERE id = ?",
+                    (now, snapshot_pk),
+                )
+                conn.execute("UPDATE services SET updated_at = ? WHERE id = ?", (now, service["id"]))
+                return {
+                    "snapshot_id": snapshot_id,
+                    "content_hash": content_hash,
+                    "impacts_created_or_updated": 0,
+                    "idempotency_status": "confirmed",
+                }
             else:
                 conn.execute("UPDATE dependency_snapshots SET is_latest = 0 WHERE service_pk = ?", (service["id"],))
                 conn.execute(
@@ -1211,8 +1232,8 @@ class ScaMonitorApp:
                     INSERT INTO dependency_snapshots (
                         id, snapshot_id, service_pk, schema_version, environment, generated_at,
                         collected_at, source_type, freshness_status, content_hash, is_latest,
-                        artifact_type, artifact_name, artifact_digest, raw_payload
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'push', 'fresh', ?, 1, ?, ?, ?, ?)
+                        artifact_type, artifact_name, artifact_digest, raw_payload, last_confirmed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'push', 'fresh', ?, 1, ?, ?, ?, ?, ?)
                     """,
                     (
                         snapshot_pk,
@@ -1227,6 +1248,7 @@ class ScaMonitorApp:
                         artifact.get("name"),
                         artifact.get("digest"),
                         json.dumps(body, ensure_ascii=False),
+                        now,
                     ),
                 )
                 conn.execute("UPDATE services SET latest_snapshot_id = ?, updated_at = ? WHERE id = ?", (snapshot_pk, now, service["id"]))
@@ -1258,7 +1280,12 @@ class ScaMonitorApp:
                         ),
                     )
             impacts = self.match_impacts(conn, service["id"], snapshot_pk)
-        return {"snapshot_id": snapshot_id, "content_hash": content_hash, "impacts_created_or_updated": impacts}
+        return {
+            "snapshot_id": snapshot_id,
+            "content_hash": content_hash,
+            "impacts_created_or_updated": impacts,
+            "idempotency_status": "created",
+        }
 
     def validate_push_authorization(self, authorization: str, service_id: str, environment: str) -> None:
         scheme, _, token = authorization.partition(" ")

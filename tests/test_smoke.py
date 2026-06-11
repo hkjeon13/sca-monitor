@@ -45,6 +45,8 @@ def test_sqlite_migration_records_version(tmp_path):
     assert readiness["migration"]["compatible"] is True
     with database.connect() as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit_logs'").fetchone()
+        snapshot_columns = {row["name"] for row in conn.execute("PRAGMA table_info(dependency_snapshots)").fetchall()}
+        assert "last_confirmed_at" in snapshot_columns
 
 
 def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
@@ -245,6 +247,82 @@ def test_snapshot_push_route_rejects_oversized_payload(tmp_path):
         )
 
     assert response["error"] == "payload exceeds maximum size of 120 bytes"
+
+
+def test_snapshot_push_idempotent_replay_updates_last_confirmed(tmp_path):
+    app = make_test_app(tmp_path)
+    body = {
+        "service_id": "idempotent-service",
+        "environment": "prod",
+        "snapshot_id": "build-2026-06-11",
+        "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+    }
+
+    created = app.push_snapshot(body)
+    with app.db.connect() as conn:
+        snapshot_pk = conn.execute(
+            "SELECT id FROM dependency_snapshots WHERE snapshot_id = ?",
+            (body["snapshot_id"],),
+        ).fetchone()["id"]
+        conn.execute("UPDATE dependency_snapshots SET last_confirmed_at = ? WHERE id = ?", ("2000-01-01T00:00:00+00:00", snapshot_pk))
+
+    confirmed = app.push_snapshot(body)
+
+    assert created["idempotency_status"] == "created"
+    assert confirmed["idempotency_status"] == "confirmed"
+    assert confirmed["impacts_created_or_updated"] == 0
+    with app.db.connect() as conn:
+        snapshot = conn.execute("SELECT content_hash, last_confirmed_at FROM dependency_snapshots WHERE id = ?", (snapshot_pk,)).fetchone()
+        dependency_count = conn.execute("SELECT COUNT(*) AS c FROM dependencies WHERE snapshot_pk = ?", (snapshot_pk,)).fetchone()["c"]
+    assert snapshot["content_hash"] == created["content_hash"]
+    assert snapshot["last_confirmed_at"] != "2000-01-01T00:00:00+00:00"
+    assert dependency_count == 1
+
+
+def test_snapshot_push_conflicts_on_same_snapshot_id_with_different_hash(tmp_path):
+    app = make_test_app(tmp_path)
+    body = {
+        "service_id": "conflict-service",
+        "environment": "prod",
+        "snapshot_id": "build-2026-06-11",
+        "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+    }
+    app.push_snapshot(body)
+
+    with pytest.raises(ValueError, match="snapshot_id already exists with different content_hash"):
+        app.push_snapshot(
+            {
+                **body,
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "2.0.0"}],
+            }
+        )
+
+
+def test_snapshot_push_route_returns_200_for_replay_and_409_for_conflict(tmp_path):
+    app = make_test_app(tmp_path)
+    body = {
+        "service_id": "route-idempotent-service",
+        "environment": "prod",
+        "snapshot_id": "route-build-2026-06-11",
+        "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+    }
+
+    with run_test_server(app) as base_url:
+        created = http_json(f"{base_url}/api/v1/snapshots", method="POST", body=body, expect_status=201)
+        confirmed = http_json(f"{base_url}/api/v1/snapshots", method="POST", body=body, expect_status=200)
+        conflict = http_json(
+            f"{base_url}/api/v1/snapshots",
+            method="POST",
+            body={
+                **body,
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "2.0.0"}],
+            },
+            expect_status=409,
+        )
+
+    assert created["idempotency_status"] == "created"
+    assert confirmed["idempotency_status"] == "confirmed"
+    assert conflict["error"] == "snapshot_id already exists with different content_hash"
 
 
 def test_push_credential_rejects_service_environment_spoofing(tmp_path):
