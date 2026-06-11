@@ -225,6 +225,7 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 운영에서 실제 unit 파일만 설치하려면 `SCA_MONITOR_SYSTEMD_MODE=install`, API service만 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-api`, API와 endpoint poller만 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-poller`, dry-run dispatcher까지 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run`, live dispatcher와 timer까지 전체 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable`을 명시한다.
 `enable-api`, `enable-poller`, `enable-dispatcher-dry-run`, `enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
 이미 active 상태인 unit도 새 코드와 unit 파일을 반영하도록 `enable --now` 이후 대상 service/timer를 명시적으로 restart한다.
+live dispatcher를 포함하는 `enable` 전환 전에는 `python3 scripts/alert_dispatcher_preflight.py --json`으로 default webhook channel과 dry-run dispatcher 상태를 확인한다.
 `off`, `validate`, `install` 모드에서는 기존 nohup API runtime을 유지한다.
 `enable-api`, `enable-poller`, `enable-dispatcher-dry-run`, `enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
 systemd deploy gate가 실패하면 원격 배포 스크립트는 legacy nohup API runtime을 다시 시작하고 실패를 반환한다.

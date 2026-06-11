@@ -154,6 +154,14 @@ Alert outbox 확인:
 python3 scripts/dispatch_alerts.py --dry-run --limit 50
 ```
 
+Live dispatcher preflight:
+
+```bash
+python3 scripts/alert_dispatcher_preflight.py --json
+```
+
+이 검증은 DB readiness, enabled default webhook channel, dry-run dispatcher 결과, alert outbox 상태를 확인하며 실제 alert 발송이나 row update는 수행하지 않는다.
+
 Webhook endpoint smoke:
 
 ```bash

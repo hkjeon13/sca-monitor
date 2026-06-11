@@ -137,6 +137,12 @@ live dispatcher 전환 전 webhook endpoint 자체는 synthetic payload로 별�
 ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" python3 scripts/alert_webhook_smoke.py --json
 ```
 
+live dispatcher enable 전에는 DB/default channel/dry-run dispatcher preflight를 통과해야 한다.
+
+```bash
+python3 scripts/alert_dispatcher_preflight.py --json
+```
+
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
 

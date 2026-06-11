@@ -2547,6 +2547,64 @@ def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):
         assert row["status"] == "pending"
 
 
+def test_alert_dispatcher_preflight_requires_default_channel(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/alert_dispatcher_preflight.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["checks"]["database_ready"] is True
+    assert payload["checks"]["default_alert_channel_configured"] is False
+    assert payload["default_alert_channel"] == {"configured": False}
+
+
+def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_update_rows(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/alert_dispatcher_preflight.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["checks"] == {
+        "database_ready": True,
+        "default_alert_channel_configured": True,
+        "dispatcher_dry_run_ok": True,
+    }
+    assert payload["default_alert_channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    assert payload["dry_run"]["pending"] == 1
+    assert payload["dry_run"]["claimed"] == 0
+    assert payload["alert_events"]["pending"] == 1
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT status FROM alert_events").fetchone()["status"] == "pending"
+
+
 def test_alert_webhook_smoke_posts_synthetic_payload(tmp_path):
     received = []
 
