@@ -17,6 +17,19 @@ from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .versioning import version_is_affected
 
 
+ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
+IMPACT_STATUSES = {
+    "open",
+    "acknowledged",
+    "in_progress",
+    "fixed",
+    "accepted_risk",
+    "false_positive",
+    "not_affected",
+    "resolved_by_advisory_update",
+}
+
+
 class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -144,11 +157,18 @@ class ScaMonitorApp:
         request.wfile.write(payload)
 
     def overview(self) -> dict:
+        active_status_filter = ",".join("?" for _ in ACTIVE_IMPACT_STATUSES)
         with self.db.connect() as conn:
             service_count = conn.execute("SELECT COUNT(*) AS c FROM services").fetchone()["c"]
-            open_impacts = conn.execute("SELECT COUNT(*) AS c FROM impacts WHERE status != 'fixed'").fetchone()["c"]
-            critical = conn.execute("SELECT COUNT(*) AS c FROM impacts WHERE status != 'fixed' AND risk_level = 'critical'").fetchone()["c"]
-            high = conn.execute("SELECT COUNT(*) AS c FROM impacts WHERE status != 'fixed' AND risk_level = 'high'").fetchone()["c"]
+            open_impacts = conn.execute(f"SELECT COUNT(*) AS c FROM impacts WHERE status IN ({active_status_filter})", ACTIVE_IMPACT_STATUSES).fetchone()["c"]
+            critical = conn.execute(
+                f"SELECT COUNT(*) AS c FROM impacts WHERE status IN ({active_status_filter}) AND risk_level = 'critical'",
+                ACTIVE_IMPACT_STATUSES,
+            ).fetchone()["c"]
+            high = conn.execute(
+                f"SELECT COUNT(*) AS c FROM impacts WHERE status IN ({active_status_filter}) AND risk_level = 'high'",
+                ACTIVE_IMPACT_STATUSES,
+            ).fetchone()["c"]
             unhealthy = conn.execute("SELECT COUNT(*) AS c FROM endpoint_health WHERE collection_status != 'ok'").fetchone()["c"]
             advisory_sync = self.advisory_sync_overview(conn)
         return {
@@ -172,15 +192,17 @@ class ScaMonitorApp:
         return sync
 
     def list_services(self) -> list[dict]:
+        active_status_filter = ",".join("?" for _ in ACTIVE_IMPACT_STATUSES)
         with self.db.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT s.*, eh.collection_status, eh.freshness_status,
-                       (SELECT COUNT(*) FROM impacts i WHERE i.service_pk = s.id AND i.status != 'fixed') AS open_impacts
+                       (SELECT COUNT(*) FROM impacts i WHERE i.service_pk = s.id AND i.status IN ({active_status_filter})) AS open_impacts
                 FROM services s
                 LEFT JOIN endpoint_health eh ON eh.service_pk = s.id
                 ORDER BY s.updated_at DESC
-                """
+                """,
+                ACTIVE_IMPACT_STATUSES,
             ).fetchall()
         return [row_to_dict(row) for row in rows]
 
@@ -677,7 +699,8 @@ class ScaMonitorApp:
         with self.db.connect() as conn:
             row = conn.execute(
                 """
-                SELECT i.*, s.service_id, s.service_name, a.advisory_id, a.summary, a.source
+                SELECT i.*, s.service_id, s.service_name, a.advisory_id, a.summary, a.source,
+                       a.affected_versions, a.affected_ranges
                 FROM impacts i
                 JOIN services s ON s.id = i.service_pk
                 JOIN advisories a ON a.id = i.advisory_pk
@@ -685,12 +708,26 @@ class ScaMonitorApp:
                 """,
                 (impact_id,),
             ).fetchone()
+            history_rows = conn.execute(
+                """
+                SELECT from_status, to_status, actor, reason, created_at
+                FROM impact_history
+                WHERE impact_pk = ?
+                ORDER BY created_at DESC
+                """,
+                (impact_id,),
+            ).fetchall()
         if not row:
             raise ValueError("impact not found")
-        return {"impact": row_to_dict(row)}
+        impact = row_to_dict(row)
+        impact["affected_versions"] = json.loads(impact["affected_versions"] or "[]")
+        impact["affected_ranges"] = json.loads(impact["affected_ranges"] or "[]")
+        return {"impact": impact, "history": [row_to_dict(history) for history in history_rows]}
 
     def update_impact_status(self, impact_id: str, body: dict) -> dict:
         status = required(body, "status")
+        if status not in IMPACT_STATUSES:
+            raise ValueError(f"status must be one of {', '.join(sorted(IMPACT_STATUSES))}")
         reason = body.get("reason")
         actor = body.get("actor", "system")
         now = utcnow()

@@ -161,6 +161,12 @@ Phase 0 착수 전 선행 조건:
 - impact list/detail/action panel
 - settings and integration guide
 
+현재 MVP 구현 상태:
+
+- 완료: shell/navigation, overview dashboard, service list, basic service registration, integration guide, impact list, impact detail, impact status action panel
+- 부분 완료: service registration wizard는 기본 등록 form만 제공하며 endpoint test/push credential 발급은 미구현
+- 미구현: service detail, settings, role-aware UI, impact search/filter/pagination, accepted risk 승인자/만료일 workflow
+
 검증:
 
 - role-aware UI test

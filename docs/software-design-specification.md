@@ -1413,7 +1413,31 @@ POST /api/v1/settings/alert-channels
 조회 API는 pagination, sorting, filtering을 지원해야 한다.
 목록 화면은 서버 사이드 필터링을 기본으로 하고, 프론트엔드는 선택된 필터 상태를 URL query로 유지한다.
 
-### 14.6 UI 상태
+### 14.6 MVP 구현 상태
+
+현재 Web Console MVP는 정적 frontend와 API 서버를 같은 origin에서 제공한다.
+
+구현 완료:
+
+- Overview dashboard: `GET /api/v1/overview` 기반 service/open impact/critical/high/endpoint unhealthy count 표시
+- Services: `GET /api/v1/services` 기반 등록 서비스 목록과 open impact count 표시
+- Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록
+- Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
+- Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
+- Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시
+- Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록
+- Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
+
+남은 구현:
+
+- role-aware UI와 API 인가 연동
+- accepted risk 승인자/만료일 workflow
+- service detail과 endpoint test/push credential 발급
+- advisory detail
+- impact 조건별 검색/필터/pagination
+- settings/alert channel 관리 화면
+
+### 14.7 UI 상태
 
 각 주요 화면은 다음 상태를 제공한다.
 

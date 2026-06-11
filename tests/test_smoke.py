@@ -159,6 +159,45 @@ def test_unchanged_advisory_import_does_not_rematch(tmp_path):
     assert second["rematched_impacts"] == 0
 
 
+def test_impact_detail_includes_advisory_context_and_status_history(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    app.update_impact_status(impact_id, {"status": "acknowledged", "actor": "tester", "reason": "triaged"})
+    detail = app.get_impact(impact_id)
+
+    assert detail["impact"]["id"] == impact_id
+    assert detail["impact"]["advisory_id"] == "OSV-TEST-0001"
+    assert detail["impact"]["affected_ranges"] == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
+    assert detail["history"][0]["from_status"] == "open"
+    assert detail["history"][0]["to_status"] == "acknowledged"
+    assert detail["history"][0]["actor"] == "tester"
+    assert detail["history"][0]["reason"] == "triaged"
+
+
+def test_impact_status_rejects_unknown_status(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    with pytest.raises(ValueError, match="status must be one of"):
+        app.update_impact_status(impact_id, {"status": "waiting_for_magic"})
+
+
+def test_closed_workflow_statuses_are_excluded_from_open_counts(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    assert app.overview()["open_impacts"] == 1
+
+    app.update_impact_status(impact_id, {"status": "not_affected", "actor": "tester"})
+
+    assert app.overview()["open_impacts"] == 0
+    assert app.list_services()[0]["open_impacts"] == 0
+
+
 def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     app = make_test_app(tmp_path)
     zip_path = tmp_path / "osv-fixture.zip"
