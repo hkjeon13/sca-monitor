@@ -1070,6 +1070,45 @@ def test_deployment_input_readiness_requires_split_postgres_inputs(tmp_path):
     assert "sqlite:////tmp" not in result.stdout
 
 
+def test_deployment_input_readiness_requires_runtime_inputs(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_DATABASE_URL=sqlite:////tmp/sca-monitor.sqlite3",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run",
+                "SMOKE_TEST_TOKEN=change-me",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/deployment_input_readiness.py",
+            "--env-file",
+            str(env_file),
+            "--require-runtime-inputs",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert any(check["id"] == "public_url" and check["status"] == "blocker" for check in payload["checks"])
+    assert any(check["id"] == "smoke_token" and check["status"] == "blocker" for check in payload["checks"])
+    assert "sqlite:////tmp" not in result.stdout
+
+
 def test_deployment_input_readiness_env_overrides_env_file(tmp_path):
     env_file = tmp_path / "sca.env"
     env_file.write_text(
@@ -1466,6 +1505,7 @@ def test_ci_smoke_runs_core_gates():
     assert "python3 -m pytest tests" in script
     assert "scripts/deployment_input_readiness.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
+    assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "node --check frontend/app.js" in script
     assert "bash scripts/deploy_db_gate.sh" in script
     assert "bash scripts/deploy_systemd_gate.sh" in script
@@ -1481,6 +1521,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
+    assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
+    assert "--require-runtime-inputs" in script
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
 
 

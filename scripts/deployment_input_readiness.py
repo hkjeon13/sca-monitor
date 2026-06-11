@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env-file", help="Read deployment inputs from a .env-style file.")
     parser.add_argument("--require-postgres", action="store_true", help="Fail unless PostgreSQL cutover inputs are ready.")
     parser.add_argument("--require-split", action="store_true", help="Fail unless split PostgreSQL credentials are ready.")
+    parser.add_argument(
+        "--require-runtime-inputs",
+        action="store_true",
+        help="Fail unless runtime deployment inputs such as public URL and smoke token are production-ready.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -47,10 +52,11 @@ def check(status: str, check_id: str, detail: str) -> dict[str, str]:
     return {"id": check_id, "status": status, "detail": detail}
 
 
-def public_url_check(env: dict[str, str]) -> dict[str, str]:
+def public_url_check(env: dict[str, str], *, required: bool) -> dict[str, str]:
     if env.get("SCA_MONITOR_PUBLIC_URL") or env.get("FRONTEND_PUBLIC_URL"):
         return check("ok", "public_url", "public URL configured")
-    return check("warning", "public_url", "SCA_MONITOR_PUBLIC_URL or FRONTEND_PUBLIC_URL is not configured")
+    status = "blocker" if required else "warning"
+    return check(status, "public_url", "SCA_MONITOR_PUBLIC_URL or FRONTEND_PUBLIC_URL is not configured")
 
 
 def port_check(env: dict[str, str]) -> dict[str, str]:
@@ -71,24 +77,31 @@ def systemd_mode_check(env: dict[str, str]) -> dict[str, str]:
     return check("blocker", "systemd_mode", f"invalid SCA_MONITOR_SYSTEMD_MODE: {mode}")
 
 
-def smoke_token_check(env: dict[str, str]) -> dict[str, str]:
+def smoke_token_check(env: dict[str, str], *, required: bool) -> dict[str, str]:
     token = env.get("SMOKE_TEST_TOKEN", "")
     if not token:
-        return check("warning", "smoke_token", "SMOKE_TEST_TOKEN is not configured")
+        return check("blocker" if required else "warning", "smoke_token", "SMOKE_TEST_TOKEN is not configured")
     if env.get("APP_ENV") == "prod" and token == "change-me":
-        return check("warning", "smoke_token", "SMOKE_TEST_TOKEN still uses placeholder value")
+        status = "blocker" if required else "warning"
+        return check(status, "smoke_token", "SMOKE_TEST_TOKEN still uses placeholder value")
     return check("ok", "smoke_token", "SMOKE_TEST_TOKEN configured")
 
 
-def readiness(env: dict[str, str], *, require_postgres: bool, require_split: bool) -> dict[str, Any]:
+def readiness(
+    env: dict[str, str],
+    *,
+    require_postgres: bool,
+    require_split: bool,
+    require_runtime_inputs: bool,
+) -> dict[str, Any]:
     cutover = assess_cutover(env, require_postgres=False, require_split=False)
     required_cutover = assess_cutover(env, require_postgres=require_postgres, require_split=require_split)
     postgres_summary = summarize_preflight(cutover, required_cutover)
     checks = [
-        public_url_check(env),
+        public_url_check(env, required=require_runtime_inputs),
         port_check(env),
         systemd_mode_check(env),
-        smoke_token_check(env),
+        smoke_token_check(env, required=require_runtime_inputs),
     ]
     postgres_status = required_cutover["status"]
     checks.append(
@@ -105,6 +118,7 @@ def readiness(env: dict[str, str], *, require_postgres: bool, require_split: boo
         "env_file": "configured" if env.get("_SCA_MONITOR_ENV_FILE_LOADED") else "not_configured",
         "require_postgres": require_postgres,
         "require_split": require_split,
+        "require_runtime_inputs": require_runtime_inputs,
         "checks": checks,
         "postgres": {
             "status": required_cutover["status"],
@@ -122,7 +136,12 @@ def main() -> int:
         file_env["_SCA_MONITOR_ENV_FILE_LOADED"] = "1"
     env = file_env
     env.update(os.environ)
-    result = readiness(env, require_postgres=args.require_postgres, require_split=args.require_split)
+    result = readiness(
+        env,
+        require_postgres=args.require_postgres,
+        require_split=args.require_split,
+        require_runtime_inputs=args.require_runtime_inputs,
+    )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

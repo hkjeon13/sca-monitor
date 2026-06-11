@@ -8,6 +8,7 @@ SYSTEMD_MODE_OVERRIDE="${SCA_MONITOR_SYSTEMD_MODE:-}"
 SYSTEMD_SCOPE_OVERRIDE="${SCA_MONITOR_SYSTEMD_SCOPE:-}"
 SYSTEMD_PREFIX_OVERRIDE="${SCA_MONITOR_SYSTEMD_PREFIX:-}"
 SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"
+REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -23,6 +24,7 @@ ssh "$REMOTE" "set -euo pipefail
   SYSTEMD_SCOPE_OVERRIDE='$SYSTEMD_SCOPE_OVERRIDE'
   SYSTEMD_PREFIX_OVERRIDE='$SYSTEMD_PREFIX_OVERRIDE'
   SYSTEMD_PYTHON_OVERRIDE='$SYSTEMD_PYTHON_OVERRIDE'
+  REQUIRE_RUNTIME_INPUTS='$REQUIRE_RUNTIME_INPUTS'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -40,7 +42,19 @@ ssh "$REMOTE" "set -euo pipefail
   export SCA_MONITOR_SYSTEMD_SCOPE=\"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\"
   export SCA_MONITOR_SYSTEMD_PREFIX=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\"
   export SCA_MONITOR_SYSTEMD_PYTHON=\"\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\"
-  python3 scripts/deployment_input_readiness.py --env-file .env --json
+  deployment_readiness_args=''
+  case \"\$REQUIRE_RUNTIME_INPUTS\" in
+    true|1|yes|on)
+      deployment_readiness_args='--require-runtime-inputs'
+      ;;
+    false|0|no|off|'')
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_REQUIRE_RUNTIME_INPUTS: \$REQUIRE_RUNTIME_INPUTS\" >&2
+      exit 2
+      ;;
+  esac
+  python3 scripts/deployment_input_readiness.py --env-file .env --json \$deployment_readiness_args
   systemd_worker_units_for_migration() {
     case \"\$SYSTEMD_MODE\" in
       enable-poller)

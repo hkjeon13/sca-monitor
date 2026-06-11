@@ -124,6 +124,8 @@ GET /api/v1/impacts
 `scripts/ci_smoke.sh`는 기본값으로 `SCA_MONITOR_DEPLOYMENT_ENV_FILE=deploy/sca-monitor.env.example`을 사용해
 `scripts/deployment_input_readiness.py`를 실행한다. 배포 자동화가 실제 원격 `.env`를 검증해야 할 때는
 `SCA_MONITOR_DEPLOYMENT_ENV_FILE=.env`처럼 명시한다.
+운영 승격 단계에서 public URL과 smoke token placeholder까지 stop gate로 강제하려면
+`SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true`를 함께 설정한다.
 
 `SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
