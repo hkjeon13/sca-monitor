@@ -84,6 +84,7 @@ python3 scripts/db_smoke.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --production-preflight --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
+SCA_MONITOR_POSTGRES_DOCKER_SMOKE=required bash scripts/postgres_docker_smoke_gate.sh
 SCA_MONITOR_SYSTEMD_MODE=validate bash scripts/deploy_systemd_gate.sh
 GET /api/v1/overview
 GET frontend /

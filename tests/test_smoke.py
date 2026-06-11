@@ -1015,6 +1015,49 @@ def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
     assert "postgres integration smoke required for $label but database URL is not configured" in script
 
 
+def test_postgres_docker_smoke_gate_skips_when_docker_missing(tmp_path):
+    result = subprocess.run(
+        ["/bin/bash", "scripts/postgres_docker_smoke_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": str(tmp_path),
+            "SCA_MONITOR_POSTGRES_DOCKER_SMOKE": "auto",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "postgres docker smoke skipped: docker executable not found" in result.stdout
+
+
+def test_postgres_docker_smoke_gate_requires_docker_when_required(tmp_path):
+    result = subprocess.run(
+        ["/bin/bash", "scripts/postgres_docker_smoke_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": str(tmp_path),
+            "SCA_MONITOR_POSTGRES_DOCKER_SMOKE": "required",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "postgres docker smoke required but docker executable was not found" in result.stderr
+
+
+def test_postgres_docker_smoke_gate_documents_docker_workflow():
+    script = (REPO_ROOT / "scripts" / "postgres_docker_smoke_gate.sh").read_text(encoding="utf-8")
+
+    assert "SCA_MONITOR_POSTGRES_DOCKER_SMOKE" in script
+    assert "SCA_MONITOR_POSTGRES_DOCKER_API_WORKFLOW" in script
+    assert "--use-docker" in script
+    assert "--with-api-workflow" in script
+    assert "--json" in script
+
+
 def test_web_console_renders_database_readiness_panel():
     html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
