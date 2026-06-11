@@ -69,7 +69,8 @@ registry.example.com/sca-monitor-web:<git_sha>
 - 최근 10개 release artifact 보관
 - prod에 배포된 artifact는 최소 90일 보관
 - `index.html`은 no-cache
-- hashed static assets는 long-cache
+- fingerprint/hash가 없는 `app.js`, `styles.css`는 no-cache
+- hashed static assets를 도입한 뒤에만 long-cache
 
 ## 4. Build-Time Config
 

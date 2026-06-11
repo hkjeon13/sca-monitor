@@ -1089,6 +1089,22 @@ def test_header_auth_session_reports_principal_roles_and_capabilities(tmp_path):
     assert admin_session["capabilities"]["manage_alert_channels"] is True
 
 
+def test_static_js_and_css_are_revalidated_without_asset_fingerprints(tmp_path):
+    (tmp_path / "index.html").write_text("<script src=\"/app.js\"></script>", encoding="utf-8")
+    (tmp_path / "app.js").write_text("console.log('ok');", encoding="utf-8")
+    (tmp_path / "styles.css").write_text("body { color: #18202a; }", encoding="utf-8")
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        with urlopen(Request(f"{base_url}/app.js"), timeout=5) as app_js:  # noqa: S310 - local test server.
+            app_js_cache_control = app_js.headers["Cache-Control"]
+        with urlopen(Request(f"{base_url}/styles.css"), timeout=5) as styles_css:  # noqa: S310 - local test server.
+            styles_css_cache_control = styles_css.headers["Cache-Control"]
+
+    assert app_js_cache_control == "no-cache"
+    assert styles_css_cache_control == "no-cache"
+
+
 def test_expire_accepted_risks_reopens_due_impacts_and_audits(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

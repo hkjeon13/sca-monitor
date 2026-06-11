@@ -231,7 +231,7 @@ class ScaMonitorApp:
         request.send_response(HTTPStatus.OK)
         request.send_header("Content-Type", content_type)
         request.send_header("Content-Length", str(len(payload)))
-        if file_path.name == "index.html":
+        if file_path.name == "index.html" or file_path.suffix in {".js", ".css"}:
             request.send_header("Cache-Control", "no-cache")
         else:
             request.send_header("Cache-Control", "public, max-age=31536000, immutable")
