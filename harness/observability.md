@@ -46,10 +46,10 @@ GET /metrics
 | sca_monitor_postgres_cutover_blockers | require-postgres cutover blocking check 수 |
 | sca_monitor_postgres_split_required | split credential cutover 강제 여부 |
 | sca_monitor_postgres_split_ready | split credential cutover 준비 완료 여부 |
-| worker_lease_acquire_failures | worker lease 획득 실패 수 |
+| sca_monitor_worker_lease_acquire_failures | worker lease 획득 실패 수 |
 
-현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_ready`, `sca_monitor_advisory_sync_initialized`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`, DB readiness/migration/PostgreSQL cutover metric을 노출한다.
-`new_advisory_to_alert_latency_seconds`와 `worker_lease_acquire_failures`는 별도 event timestamp/lease failure counter가 필요하므로 후속 구현 대상이다.
+현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_ready`, `sca_monitor_advisory_sync_initialized`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_worker_lease_acquire_failures`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`, DB readiness/migration/PostgreSQL cutover metric을 노출한다.
+`new_advisory_to_alert_latency_seconds`는 별도 event timestamp가 필요하므로 후속 구현 대상이다.
 
 ## 4. Logs
 

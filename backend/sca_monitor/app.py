@@ -1633,6 +1633,23 @@ class ScaMonitorApp:
                     "SELECT lock_owner, lock_expires_at FROM advisory_sync_state WHERE source = ?",
                     (source,),
                 ).fetchone()
+                conn.execute(
+                    """
+                    UPDATE advisory_sync_state
+                    SET lease_acquire_failures = lease_acquire_failures + 1,
+                        last_error_at = ?,
+                        last_error_message = ?,
+                        updated_at = ?
+                    WHERE source = ?
+                    """,
+                    (
+                        now,
+                        f"lock held by {row['lock_owner']} until {row['lock_expires_at']}",
+                        now,
+                        source,
+                    ),
+                )
+                conn.commit()
                 raise RuntimeError(f"{source} sync lock is held by {row['lock_owner']} until {row['lock_expires_at']}")
         try:
             yield
@@ -3031,10 +3048,14 @@ class ScaMonitorApp:
         lines = []
         with self.db.connect() as conn:
             advisory_rows = conn.execute(
-                "SELECT source, status, last_success_at FROM advisory_sync_state ORDER BY source"
+                "SELECT source, status, last_success_at, lease_acquire_failures FROM advisory_sync_state ORDER BY source"
             ).fetchall()
             poll_rows = conn.execute(
-                "SELECT worker_name, checked_count, succeeded_count, failed_count FROM endpoint_poll_state ORDER BY worker_name"
+                """
+                SELECT worker_name, checked_count, succeeded_count, failed_count, lease_acquire_failures
+                FROM endpoint_poll_state
+                ORDER BY worker_name
+                """
             ).fetchall()
             alert_counts = conn.execute(
                 """
@@ -3056,6 +3077,12 @@ class ScaMonitorApp:
             lag = seconds_since(row["last_success_at"], now)
             if lag is not None:
                 lines.append(f'sca_monitor_advisory_sync_lag_seconds{{source="{metric_label(row["source"])}"}} {lag}')
+        for row in advisory_rows:
+            failures = int(row["lease_acquire_failures"] or 0)
+            if failures:
+                lines.append(
+                    f'sca_monitor_worker_lease_acquire_failures{{worker_type="advisory_sync",source="{metric_label(row["source"])}"}} {failures}'
+                )
 
         total_checked = 0
         total_succeeded = 0
@@ -3069,6 +3096,11 @@ class ScaMonitorApp:
             lines.append(f'sca_monitor_endpoint_poll_success_rate{{worker="{metric_label(row["worker_name"])}"}} {worker_rate:.6f}')
             lines.append(f'sca_monitor_endpoint_poll_checked_total{{worker="{metric_label(row["worker_name"])}"}} {checked}')
             lines.append(f'sca_monitor_endpoint_poll_failed_total{{worker="{metric_label(row["worker_name"])}"}} {failed}')
+            lease_failures = int(row["lease_acquire_failures"] or 0)
+            if lease_failures:
+                lines.append(
+                    f'sca_monitor_worker_lease_acquire_failures{{worker_type="endpoint_poll",worker="{metric_label(row["worker_name"])}"}} {lease_failures}'
+                )
         total_rate = total_succeeded / total_checked if total_checked else 0.0
         lines.append(f"sca_monitor_endpoint_poll_success_rate {total_rate:.6f}")
 

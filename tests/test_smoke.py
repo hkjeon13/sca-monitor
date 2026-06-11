@@ -2453,6 +2453,13 @@ def test_endpoint_poll_refuses_held_lock(tmp_path):
         with pytest.raises(RuntimeError, match="endpoint poll lock is held"):
             poll_configured_endpoints(app, worker_name="smoke-worker", lock_owner="owner-b")
 
+    with app.db.connect() as conn:
+        row = conn.execute(
+            "SELECT lease_acquire_failures FROM endpoint_poll_state WHERE worker_name = 'smoke-worker'"
+        ).fetchone()
+    assert row["lease_acquire_failures"] == 1
+    assert 'sca_monitor_worker_lease_acquire_failures{worker_type="endpoint_poll",worker="smoke-worker"} 1' in app.metrics()
+
 
 def test_metrics_exposes_operational_indicators(tmp_path):
     app = make_test_app(tmp_path)
@@ -4722,6 +4729,11 @@ def test_osv_sync_refuses_held_lock(tmp_path):
     with app.advisory_sync_lock("OSV", "owner-a", ttl_seconds=60):
         with pytest.raises(RuntimeError, match="sync lock is held"):
             sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, lock_owner="owner-b")
+
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT lease_acquire_failures FROM advisory_sync_state WHERE source = 'OSV'").fetchone()
+    assert row["lease_acquire_failures"] == 1
+    assert 'sca_monitor_worker_lease_acquire_failures{worker_type="advisory_sync",source="OSV"} 1' in app.metrics()
 
 
 def test_dispatch_pending_alerts_marks_sent(tmp_path):

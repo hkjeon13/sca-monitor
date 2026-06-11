@@ -63,6 +63,23 @@ def endpoint_poll_lock(app: ScaMonitorApp, worker_name: str, owner: str, ttl_sec
                 "SELECT lock_owner, lock_expires_at FROM endpoint_poll_state WHERE worker_name = ?",
                 (worker_name,),
             ).fetchone()
+            conn.execute(
+                """
+                UPDATE endpoint_poll_state
+                SET lease_acquire_failures = lease_acquire_failures + 1,
+                    last_error_at = ?,
+                    last_error_message = ?,
+                    updated_at = ?
+                WHERE worker_name = ?
+                """,
+                (
+                    now,
+                    f"lock held by {row['lock_owner']} until {row['lock_expires_at']}",
+                    now,
+                    worker_name,
+                ),
+            )
+            conn.commit()
             raise RuntimeError(f"{worker_name} endpoint poll lock is held by {row['lock_owner']} until {row['lock_expires_at']}")
     try:
         yield
