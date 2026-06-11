@@ -23,9 +23,10 @@ read-only HTTP smoke:
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --json
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --require-postgres-split-metrics --json
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --expect-postgres-split-required false --json
+SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --expect-database-backend sqlite --json
 ```
 
-기본 검증은 `/health`, `/ready`, `/api/v1/overview`, `/`만 조회하며 운영 데이터를 변경하지 않는다. `--require-postgres-split-metrics`는 `/metrics`의 PostgreSQL split cutover gauge 존재까지 read-only로 확인한다. `--expect-postgres-split-required`는 `/ready`의 split 요구값과 `/metrics`의 `sca_monitor_postgres_split_required` 값이 같은지 확인하며, split credential stage 전환 gate에서는 `true`로 실행한다.
+기본 검증은 `/health`, `/ready`, `/api/v1/overview`, `/`만 조회하며 운영 데이터를 변경하지 않는다. `--require-postgres-split-metrics`는 `/metrics`의 PostgreSQL split cutover gauge 존재까지 read-only로 확인한다. `--expect-postgres-split-required`는 `/ready`의 split 요구값과 `/metrics`의 `sca_monitor_postgres_split_required` 값이 같은지 확인하며, split credential stage 전환 gate에서는 `true`로 실행한다. `--expect-database-backend`는 `/ready`의 `database_backend`가 현재 의도한 runtime과 일치하는지 확인한다. 현재 SQLite fallback 운영에서는 `sqlite`, PostgreSQL cutover 검증 stage에서는 `postgres`로 실행한다.
 
 VM systemd scheduler 등록:
 

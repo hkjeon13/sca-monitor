@@ -514,6 +514,133 @@ def test_http_smoke_can_expect_postgres_split_required_value():
     }
 
 
+def test_http_smoke_can_expect_database_backend():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/ready":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "status": "ready",
+                            "database_backend": "sqlite",
+                            "migration": {"current": 17, "required": 17},
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            if self.path in {"/health", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-database-backend",
+                "sqlite",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["database_backend"] == {
+        "expected": "sqlite",
+        "actual": "sqlite",
+        "ok": True,
+    }
+
+
+def test_http_smoke_fails_when_database_backend_differs():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/ready":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ready", "database_backend": "sqlite"}).encode("utf-8"))
+                return
+            if self.path in {"/health", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-database-backend",
+                "postgres",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["database_backend"] == {
+        "expected": "postgres",
+        "actual": "sqlite",
+        "ok": False,
+    }
+
+
 def test_http_smoke_can_expect_advisory_sync_ready():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -1969,6 +2096,8 @@ def test_ci_smoke_runs_core_gates():
     assert "--expect-postgres-split-required" in script
     assert "SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY" in script
     assert "--expect-advisory-sync-ready" in script
+    assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
+    assert "--expect-database-backend" in script
 
 
 def test_deploy_remote_runs_deployment_input_readiness_before_migration():
@@ -2016,6 +2145,9 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
+    assert "--expect-database-backend sqlite" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
 
 
 def test_harness_documents_advisory_source_preflight():

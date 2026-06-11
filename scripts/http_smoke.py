@@ -173,6 +173,24 @@ def check_postgres_split_consistency(base_url: str, timeout: float, expected_spl
         }
 
 
+def check_database_backend(base_url: str, timeout: float, expected_backend: str) -> dict[str, Any]:
+    try:
+        status, ready = fetch_json(base_url, "/ready", timeout)
+        actual_backend = ready.get("database_backend")
+        return {
+            "expected": expected_backend,
+            "actual": actual_backend,
+            "ok": status == 200 and actual_backend == expected_backend,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "expected": expected_backend,
+            "actual": None,
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready: bool) -> dict[str, Any]:
     try:
         status, overview = fetch_json(base_url, "/api/v1/overview", timeout)
@@ -204,6 +222,7 @@ def run_smoke(
     *,
     require_postgres_split_metrics: bool = False,
     expect_postgres_split_required: bool | None = None,
+    expect_database_backend: str | None = None,
     expect_advisory_sync_ready: bool | None = None,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
@@ -238,6 +257,17 @@ def run_smoke(
             if consistency.get("error"):
                 result["postgres_split_consistency"]["error"] = consistency["error"]
             result["status"] = "failed"
+    if expect_database_backend is not None:
+        database_backend = check_database_backend(base_url, timeout, expect_database_backend)
+        result["database_backend"] = {
+            "expected": database_backend["expected"],
+            "actual": database_backend["actual"],
+            "ok": database_backend["ok"],
+        }
+        if not database_backend["ok"]:
+            if database_backend.get("error"):
+                result["database_backend"]["error"] = database_backend["error"]
+            result["status"] = "failed"
     if expect_advisory_sync_ready is not None:
         readiness = check_advisory_sync_readiness(base_url, timeout, expect_advisory_sync_ready)
         result["advisory_sync_readiness"] = {
@@ -265,6 +295,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=10.0, help="Request timeout in seconds.")
     parser.add_argument("--require-postgres-split-metrics", action="store_true", help="Fail unless /metrics exposes PostgreSQL split cutover gauges.")
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
+    parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
     parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
@@ -279,6 +310,7 @@ def main() -> int:
         args.timeout,
         require_postgres_split_metrics=args.require_postgres_split_metrics,
         expect_postgres_split_required=args.expect_postgres_split_required,
+        expect_database_backend=args.expect_database_backend,
         expect_advisory_sync_ready=args.expect_advisory_sync_ready,
     )
     if args.json:
