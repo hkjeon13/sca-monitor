@@ -3,6 +3,7 @@ import zipfile
 
 import pytest
 
+from backend.sca_monitor.alert_dispatch import dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
@@ -202,6 +203,64 @@ def test_osv_sync_refuses_held_lock(tmp_path):
             sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, lock_owner="owner-b")
 
 
+def test_dispatch_pending_alerts_marks_sent(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    delivered = []
+
+    result = dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        sender=lambda url, payload: delivered.append((url, payload)),
+    )
+
+    assert result.pending == 1
+    assert result.sent == 1
+    assert result.failed == 0
+    assert delivered[0][0] == "https://alerts.example.test/webhook"
+    assert delivered[0][1]["service_id"] == "alert-service"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT status, sent_at, channel_type FROM alert_events").fetchone()
+        assert row["status"] == "sent"
+        assert row["sent_at"] is not None
+        assert row["channel_type"] == "webhook"
+
+
+def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    result = dispatch_pending_alerts(app, webhook_url=None, dry_run=True)
+
+    assert result.pending == 1
+    assert result.sent == 0
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT status FROM alert_events").fetchone()
+        assert row["status"] == "pending"
+
+
+def test_dispatch_pending_alerts_marks_failed(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    def fail_sender(url, payload):
+        raise RuntimeError("delivery failed")
+
+    result = dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        sender=fail_sender,
+    )
+
+    assert result.pending == 1
+    assert result.sent == 0
+    assert result.failed == 1
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT status, payload FROM alert_events").fetchone()
+        assert row["status"] == "failed"
+        assert "delivery failed" in row["payload"]
+
+
 def make_test_app(tmp_path):
     settings = Settings(
         app_env="test",
@@ -221,6 +280,18 @@ def write_osv_fixture_zip(tmp_path):
     with zipfile.ZipFile(zip_path, "w") as archive:
         archive.writestr("OSV-TEST-0001.json", json.dumps(osv_fixture()))
     return zip_path
+
+
+def create_alerting_impact(app):
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "alert-service",
+            "service_name": "Alert Service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
 
 
 def osv_fixture():

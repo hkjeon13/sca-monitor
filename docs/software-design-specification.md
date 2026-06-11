@@ -1625,6 +1625,14 @@ last_alerted_status
 }
 ```
 
+현재 MVP 구현 상태:
+
+- impact 신규 생성 시 `alert_events`에 `pending` outbox row를 생성한다.
+- `scripts/dispatch_alerts.py`는 pending alert를 webhook JSON으로 발송하고 `sent_at`, `status=sent`를 기록한다.
+- 발송 실패 시 `status=failed`로 기록하고 payload에 `dispatch_error`를 남긴다.
+- `--dry-run`은 pending 수만 확인하고 DB row를 변경하지 않는다.
+- Slack app 방식, 재시도 backoff, dispatcher job locking, idempotency header는 후속 구현 대상이다.
+
 ## 19. 보안 설계
 
 - endpoint 인증 정보는 암호화 저장한다.
