@@ -1830,14 +1830,18 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/configure_runtime_inputs.py" in script
     assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
+    assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
+    assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
+    assert "scripts/advisory_source_preflight.py --check" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
     assert script.index("scripts/validate_database_env_file.py") < script.index("scripts/configure_runtime_inputs.py")
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
+    assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
 
 
 def test_harness_documents_deployment_input_readiness():
@@ -1863,9 +1867,11 @@ def test_harness_documents_advisory_source_preflight():
 
     assert "scripts/advisory_source_preflight.py --list-only --json" in network_doc
     assert "scripts/advisory_source_preflight.py --check --json" in network_doc
+    assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT=required" in network_doc
     assert "osv-vulnerabilities.storage.googleapis.com" in network_doc
     assert "REQ-NET-006" in network_doc
     assert "scripts/advisory_source_preflight.py --list-only --json" in cicd_doc
+    assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT=required" in cicd_doc
 
 
 def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):

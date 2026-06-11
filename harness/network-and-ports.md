@@ -32,11 +32,14 @@
 ```bash
 python3 scripts/advisory_source_preflight.py --list-only --json
 python3 scripts/advisory_source_preflight.py --check --json
+SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT=required scripts/deploy_remote.sh
 ```
 
 `--check`는 OSV API, OSV dump, CISA KEV, GitHub Security Advisory, NVD CVE API, OpenSSF malicious packages source에 HTTP GET을 수행한다.
 출력에는 query string이나 token 값을 포함하지 않고 host/port, requirement reference, HTTP status만 남긴다.
 `REQ-NET-006`이 미확정이거나 방화벽 allowlist가 적용되지 않은 환경에서는 이 gate가 `blocked` 또는 `degraded`를 반환할 수 있다.
+`SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT=required`는 원격 배포 중 migration 전에 같은 check를 stop gate로 실행한다.
+timeout은 `SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT`으로 조정한다.
 
 ## 3. Registered Service Endpoint 접근
 

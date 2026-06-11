@@ -12,6 +12,8 @@ REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
 GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
+ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
+ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -54,6 +56,8 @@ ssh "$REMOTE" "set -euo pipefail
   SYSTEMD_PREFIX_OVERRIDE='$SYSTEMD_PREFIX_OVERRIDE'
   SYSTEMD_PYTHON_OVERRIDE='$SYSTEMD_PYTHON_OVERRIDE'
   REQUIRE_RUNTIME_INPUTS='$REQUIRE_RUNTIME_INPUTS'
+  ADVISORY_SOURCE_PREFLIGHT='$ADVISORY_SOURCE_PREFLIGHT'
+  ADVISORY_SOURCE_PREFLIGHT_TIMEOUT='$ADVISORY_SOURCE_PREFLIGHT_TIMEOUT'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -84,6 +88,21 @@ ssh "$REMOTE" "set -euo pipefail
       ;;
   esac
   python3 scripts/deployment_input_readiness.py --env-file .env --json \$deployment_readiness_args
+  case \"\$ADVISORY_SOURCE_PREFLIGHT\" in
+    disabled|skip|false|0|'')
+      echo 'advisory source preflight skipped'
+      ;;
+    list|list-only|auto)
+      python3 scripts/advisory_source_preflight.py --list-only --json
+      ;;
+    check|required)
+      python3 scripts/advisory_source_preflight.py --check --timeout \"\$ADVISORY_SOURCE_PREFLIGHT_TIMEOUT\" --json
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT: \$ADVISORY_SOURCE_PREFLIGHT\" >&2
+      exit 2
+      ;;
+  esac
   systemd_worker_units_for_migration() {
     case \"\$SYSTEMD_MODE\" in
       enable-poller)
