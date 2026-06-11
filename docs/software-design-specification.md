@@ -1433,6 +1433,7 @@ Web Console은 API Gateway를 통해 다음 API를 사용한다.
 
 ```text
 GET /api/v1/overview
+GET /api/v1/session
 GET /api/v1/services
 POST /api/v1/services
 GET /api/v1/services/{service_id}
@@ -1481,12 +1482,13 @@ GET /api/v1/audit-logs
 - Impact Bulk Action: `POST /api/v1/impacts/status`와 Web Console bulk action bar에서 현재 impact 필터에 매칭된 항목을 `acknowledged`, `in_progress`, `fixed`, `false_positive`, `not_affected` 등 승인 만료일이 필요 없는 상태로 일괄 변경하고 각 impact history/audit log를 기록한다
 - Audit Log: `audit_logs` table과 `GET /api/v1/audit-logs` 기반 impact status 변경, alert channel 설정 변경, alert event requeue 이력을 actor/action/target/reason/before/after로 조회한다. Web Console Settings에서 action/target/search/limit 필터로 최근 audit log를 확인할 수 있으며, webhook URL 같은 민감 target 값은 masked 값만 저장/노출한다
 - Advisory Detail: `GET /api/v1/advisories/{advisory_id}`와 Web Console Advisories 화면에서 advisory source, severity, affected version/range, alias, KEV/malicious 여부, 관련 impact 요약을 확인한다
+- Role-aware Session/UI: `GET /api/v1/session`으로 현재 `auth_mode`, principal, roles, owner teams, Web Console capability를 조회한다. `SCA_MONITOR_AUTH_MODE=disabled`에서는 기존 MVP 호환을 위해 모든 콘솔 action을 허용하고, `header` 모드에서는 `X-SCA-Principal`, `X-SCA-Roles`, `X-SCA-Owner-Teams` 기반 capability로 서비스 등록, endpoint test, push credential, alert channel, impact status, accepted risk action을 비활성화한다. 최종 권한 판단은 API 서버의 role authorization이 수행한다
 - Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
 
 남은 구현:
 
-- role-aware UI와 API 인가 연동
-- accepted risk role-aware 승인 정책과 운영 scheduler 등록
+- OIDC/JWT 검증과 인증 프록시 연동
+- accepted risk 운영 scheduler enable/start
 - 외부 endpoint polling scheduler 배치 enable, mTLS/HMAC endpoint auth policy, push credential rotation policy 고도화
 - Slack app 방식, alert channel hard delete
 
@@ -1584,7 +1586,7 @@ PATCH /api/v1/impacts/{impact_id}/status
 이 모드에서 서버는 request body의 `actor`를 신뢰하지 않고 인증 principal을 `actor`와 accepted risk `approved_by`로 저장한다.
 `accepted_risk` 처리는 `security-approver` 역할만 허용하고, `service-owner`는 `X-SCA-Owner-Teams`에 포함된 자기 팀 impact의 `acknowledged`, `in_progress` 전환만 수행할 수 있다.
 서비스 등록, endpoint test, push credential 발급/폐기, alert channel 생성/수정은 `admin` 역할만 수행할 수 있다.
-OIDC/JWT 검증과 Web Console role-aware UI 제어, 운영 scheduler 등록은 후속 구현 범위이다.
+OIDC/JWT 검증과 운영 scheduler 등록은 후속 구현 범위이다.
 
 ## 16. Version Matching and Package Normalization
 

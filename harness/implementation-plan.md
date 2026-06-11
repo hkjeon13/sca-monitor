@@ -163,15 +163,15 @@ Phase 0 착수 전 선행 조건:
 
 현재 MVP 구현 상태:
 
-- 완료: shell/navigation, overview dashboard, service list/detail, basic service registration, endpoint test action, endpoint one-shot polling worker, push credential issue/rotate/revoke, integration guide, impact list, impact server-side filters, impact 고급 필터 UI, impact pagination/sorting, impact detail, impact status action panel, impact bulk action, header-auth impact/admin API 인가, alert channel settings, alert event operations, audit log, advisory detail, accepted risk 승인/만료 workflow
+- 완료: shell/navigation, overview dashboard, service list/detail, basic service registration, endpoint test action, endpoint one-shot polling worker, push credential issue/rotate/revoke, integration guide, impact list, impact server-side filters, impact 고급 필터 UI, impact pagination/sorting, impact detail, impact status action panel, impact bulk action, header-auth impact/admin API 인가, Web Console role-aware UI 제어, alert channel settings, alert event operations, audit log, advisory detail, accepted risk 승인/만료 workflow
 - 부분 완료: service registration wizard는 기본 등록, endpoint test, push credential 발급/회전/폐기 form을 제공하며 endpoint 인증 설정, polling scheduler, 조직별 credential rotation 주기 정책은 미구현
 - 완료: impact filtering은 API와 Web Console에서 status/risk/service/team/environment/package/advisory/KEV/search와 pagination/sorting을 제공하며, 필터 결과에 대한 bulk status action을 지원한다
-- 부분 완료: role-aware API 인가는 `SCA_MONITOR_AUTH_MODE=header` impact workflow와 admin-only service registration, endpoint test, push credential, alert channel 설정 범위에서 동작한다. OIDC/JWT 검증과 Web Console role-aware UI 제어는 미구현
+- 부분 완료: role-aware API 인가는 `SCA_MONITOR_AUTH_MODE=header` impact workflow와 admin-only service registration, endpoint test, push credential, alert channel 설정 범위에서 동작한다. Web Console은 `GET /api/v1/session` capability 기반으로 역할별 action을 비활성화한다. OIDC/JWT 검증과 인증 프록시 연동은 미구현
 - 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성까지 구현됨. 실제 운영 enable/start는 배포 환경별 승인 후 실행
 
 검증:
 
-- role-aware UI test
+- header-auth session capability test
 - API integration mock test
 - responsive smoke check for mobile width
 - error/empty/loading state test

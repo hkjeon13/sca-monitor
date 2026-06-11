@@ -87,6 +87,21 @@ main {
   margin-bottom: 22px;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-summary {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 360px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 h1, h2 {
   margin: 0;
   letter-spacing: 0;
@@ -452,5 +467,16 @@ pre {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .top-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .session-summary {
+    max-width: none;
+    text-align: left;
   }
 }

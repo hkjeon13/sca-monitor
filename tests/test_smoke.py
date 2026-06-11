@@ -1042,6 +1042,53 @@ def test_header_auth_admin_required_for_alert_channel_changes(tmp_path):
     assert {item["actor"] for item in audit["audit_logs"]} == {"admin@example.test"}
 
 
+def test_session_disabled_mode_keeps_web_console_actions_enabled(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        session = http_json(f"{base_url}/api/v1/session")
+
+    assert session["auth_mode"] == "disabled"
+    assert session["authenticated"] is False
+    assert session["principal"] == "web-console"
+    assert session["roles"] == ["admin", "security-approver", "service-owner"]
+    assert all(session["capabilities"].values())
+
+
+def test_header_auth_session_reports_principal_roles_and_capabilities(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(f"{base_url}/api/v1/session", expect_status=403)
+        owner_session = http_json(
+            f"{base_url}/api/v1/session",
+            headers={"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform, payments"},
+        )
+        approver_session = http_json(
+            f"{base_url}/api/v1/session",
+            headers={"X-SCA-Principal": "approver@example.test", "X-SCA-Roles": "security-approver"},
+        )
+        admin_session = http_json(
+            f"{base_url}/api/v1/session",
+            headers={"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"},
+        )
+
+    assert "missing authenticated principal" in forbidden["error"]
+    assert owner_session["authenticated"] is True
+    assert owner_session["principal"] == "owner@example.test"
+    assert owner_session["roles"] == ["service-owner"]
+    assert owner_session["owner_teams"] == ["payments", "platform"]
+    assert owner_session["capabilities"]["update_impacts"] is True
+    assert owner_session["capabilities"]["bulk_update_impacts"] is True
+    assert owner_session["capabilities"]["accept_risk"] is False
+    assert owner_session["capabilities"]["manage_services"] is False
+    assert approver_session["capabilities"]["accept_risk"] is True
+    assert approver_session["capabilities"]["manage_alert_channels"] is False
+    assert admin_session["capabilities"]["manage_services"] is True
+    assert admin_session["capabilities"]["manage_credentials"] is True
+    assert admin_session["capabilities"]["manage_alert_channels"] is True
+
+
 def test_expire_accepted_risks_reopens_due_impacts_and_audits(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

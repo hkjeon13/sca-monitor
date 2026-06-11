@@ -28,6 +28,76 @@ const impactStatuses = [
 let selectedImpactId = null;
 let selectedServiceId = null;
 let selectedAdvisoryId = null;
+let currentSession = defaultSession();
+
+function defaultSession() {
+  return {
+    auth_mode: "disabled",
+    authenticated: false,
+    principal: "web-console",
+    roles: ["admin", "security-approver", "service-owner"],
+    owner_teams: [],
+    capabilities: {
+      manage_services: true,
+      manage_credentials: true,
+      manage_alert_channels: true,
+      update_impacts: true,
+      bulk_update_impacts: true,
+      accept_risk: true,
+    },
+  };
+}
+
+function can(capability) {
+  return currentSession?.capabilities?.[capability] === true;
+}
+
+function hasRole(role) {
+  return Array.isArray(currentSession?.roles) && currentSession.roles.includes(role);
+}
+
+function canBulkImpactTarget(status) {
+  if (!can("bulk_update_impacts")) return false;
+  if (hasRole("admin") || hasRole("security-approver") || currentSession.auth_mode === "disabled") return true;
+  if (!hasRole("service-owner") || !["acknowledged", "in_progress"].includes(status)) return false;
+  const ownerTeam = document.querySelector('#impact-filter-form input[name="owner_team"]')?.value?.trim();
+  return Boolean(ownerTeam && currentSession.owner_teams?.includes(ownerTeam));
+}
+
+function setDisabled(selector, disabled) {
+  document.querySelectorAll(selector).forEach((element) => {
+    element.disabled = disabled;
+  });
+}
+
+async function loadSession() {
+  currentSession = await api.get("/api/v1/session");
+  renderSessionSummary();
+  applyRoleControls();
+}
+
+function renderSessionSummary() {
+  const target = document.querySelector("#session-summary");
+  if (!target) return;
+  const roles = currentSession.roles?.length ? currentSession.roles.join(", ") : "no role";
+  target.textContent = currentSession.auth_mode === "disabled"
+    ? "auth disabled"
+    : `${currentSession.principal || "unknown"} · ${roles}`;
+}
+
+function applyRoleControls() {
+  setDisabled("#service-form button[type='submit'], #endpoint-test", !can("manage_services"));
+  setDisabled("#credential-form button[type='submit']", !can("manage_credentials"));
+  setDisabled("#alert-channel-form button[type='submit']", !can("manage_alert_channels"));
+  setDisabled("#impact-bulk-action-form button[type='submit']", !can("bulk_update_impacts"));
+  document.querySelectorAll("#impact-bulk-action-form select[name='target_status'] option").forEach((option) => {
+    option.disabled = !canBulkImpactTarget(option.value);
+  });
+  const statusButton = document.querySelector("#impact-status-form button[type='submit']");
+  if (statusButton) {
+    statusButton.disabled = !can("update_impacts");
+  }
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -301,7 +371,10 @@ async function loadImpactDetail(impactId) {
     <form id="impact-status-form" class="status-form">
       <label>Status
         <select name="status">
-          ${impactStatuses.map((status) => `<option value="${status}" ${status === impact.status ? "selected" : ""}>${status}</option>`).join("")}
+          ${impactStatuses.map((status) => {
+            const disableAcceptedRisk = status === "accepted_risk" && !can("accept_risk") && status !== impact.status;
+            return `<option value="${status}" ${status === impact.status ? "selected" : ""} ${disableAcceptedRisk ? "disabled" : ""}>${status}</option>`;
+          }).join("")}
         </select>
       </label>
       <label>Actor<input name="actor" value="web-console" /></label>
@@ -315,12 +388,16 @@ async function loadImpactDetail(impactId) {
     </div>
   `;
   document.querySelector("#impact-status-form").addEventListener("submit", updateImpactStatus);
+  applyRoleControls();
 }
 
 async function updateImpactStatus(event) {
   event.preventDefault();
   if (!selectedImpactId) return;
   const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (!can("update_impacts") || (body.status === "accepted_risk" && !can("accept_risk"))) {
+    return;
+  }
   await api.send(`/api/v1/impacts/${encodeURIComponent(selectedImpactId)}/status`, "PATCH", body);
   await Promise.all([loadOverview(), loadServices(), loadImpacts()]);
 }
@@ -389,7 +466,9 @@ function renderImpactPagination(pagination) {
 }
 
 async function refreshAll() {
+  await loadSession();
   await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAdvisories(), loadAlertChannels(), loadAlertEvents(), loadAuditLogs()]);
+  applyRoleControls();
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);
@@ -399,6 +478,7 @@ document.querySelector("#impact-filter-form").addEventListener("submit", async (
   event.currentTarget.elements.offset.value = "0";
   selectedImpactId = null;
   await loadImpacts();
+  applyRoleControls();
 });
 
 document.querySelector("#clear-impact-filters").addEventListener("click", async () => {
@@ -406,11 +486,14 @@ document.querySelector("#clear-impact-filters").addEventListener("click", async 
   document.querySelector('#impact-filter-form input[name="offset"]').value = "0";
   selectedImpactId = null;
   await loadImpacts();
+  applyRoleControls();
 });
 
 document.querySelector("#impact-bulk-action-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!can("bulk_update_impacts")) return;
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (!canBulkImpactTarget(form.target_status)) return;
   const data = await api.send("/api/v1/impacts/status", "POST", {
     target_status: form.target_status,
     filters: impactFilterObjectForBulk(),
@@ -453,6 +536,7 @@ document.querySelector("#bulk-requeue-alert-events").addEventListener("click", a
 
 document.querySelector("#service-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!can("manage_services")) return;
   const form = new FormData(event.currentTarget);
   await api.send("/api/v1/services", "POST", Object.fromEntries(form.entries()));
   event.currentTarget.reset();
@@ -460,6 +544,7 @@ document.querySelector("#service-form").addEventListener("submit", async (event)
 });
 
 document.querySelector("#endpoint-test").addEventListener("click", async () => {
+  if (!can("manage_services")) return;
   const form = Object.fromEntries(new FormData(document.querySelector("#service-form")).entries());
   const result = document.querySelector("#endpoint-test-result");
   await api.send("/api/v1/services", "POST", form);
@@ -474,6 +559,7 @@ document.querySelector("#endpoint-test").addEventListener("click", async () => {
 
 document.querySelector("#credential-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!can("manage_credentials")) return;
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
   const data = await api.send(`/api/v1/services/${encodeURIComponent(form.service_id)}/push-credentials`, "POST", {
     environment: form.environment,
@@ -502,6 +588,7 @@ async function refreshCredentialListFromForm() {
 async function loadPushCredentials(serviceId, environment) {
   const data = await api.get(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials?environment=${encodeURIComponent(environment || "prod")}`);
   const target = document.querySelector("#credential-list");
+  const canManageCredentials = can("manage_credentials");
   if (!data.credentials.length) {
     target.innerHTML = `<p>No push credentials issued.</p>`;
     return;
@@ -512,12 +599,13 @@ async function loadPushCredentials(serviceId, environment) {
         <strong>${escapeHtml(credential.token_prefix)}</strong>
         <span>${escapeHtml(credential.revoked_at ? "revoked" : "active")} · expires ${escapeHtml(credential.expires_at || "-")}</span>
       </div>
-      <button type="button" class="secondary" data-credential-rotate="${escapeHtml(credential.id)}" ${credential.revoked_at ? "disabled" : ""}>Rotate</button>
-      <button type="button" class="secondary" data-credential-id="${escapeHtml(credential.id)}" ${credential.revoked_at ? "disabled" : ""}>Revoke</button>
+      <button type="button" class="secondary" data-credential-rotate="${escapeHtml(credential.id)}" ${credential.revoked_at || !canManageCredentials ? "disabled" : ""}>Rotate</button>
+      <button type="button" class="secondary" data-credential-id="${escapeHtml(credential.id)}" ${credential.revoked_at || !canManageCredentials ? "disabled" : ""}>Revoke</button>
     </div>
   `).join("");
   target.querySelectorAll("[data-credential-rotate]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!can("manage_credentials")) return;
       const data = await api.send(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials/${encodeURIComponent(button.dataset.credentialRotate)}/rotate`, "POST", {
         environment,
         reason: "web console credential rotation",
@@ -532,6 +620,7 @@ async function loadPushCredentials(serviceId, environment) {
   });
   target.querySelectorAll("[data-credential-id]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!can("manage_credentials")) return;
       await api.send(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials/${encodeURIComponent(button.dataset.credentialId)}/revoke`, "POST", {environment});
       await loadPushCredentials(serviceId, environment);
     });
@@ -565,6 +654,7 @@ document.querySelector("#snapshot-form").addEventListener("submit", async (event
 
 document.querySelector("#alert-channel-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!can("manage_alert_channels")) return;
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
   await api.send("/api/v1/settings/alert-channels", "POST", {
     name: form.name,
@@ -580,6 +670,7 @@ async function loadAlertChannels() {
   const target = document.querySelector("#alert-channel-list");
   if (!target) return;
   const data = await api.get("/api/v1/settings/alert-channels");
+  const canManageAlertChannels = can("manage_alert_channels");
   if (!data.channels.length) {
     target.innerHTML = `<p>No alert channels configured.</p>`;
     return;
@@ -590,18 +681,20 @@ async function loadAlertChannels() {
         <strong>${escapeHtml(channel.name)}</strong>
         <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.enabled ? "enabled" : "disabled")} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
       </div>
-      <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.is_default || !channel.enabled ? "disabled" : ""}>Make Default</button>
-      <button type="button" class="secondary" data-channel-disable="${escapeHtml(channel.id)}" ${!channel.enabled ? "disabled" : ""}>Disable</button>
+      <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.is_default || !channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Make Default</button>
+      <button type="button" class="secondary" data-channel-disable="${escapeHtml(channel.id)}" ${!channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Disable</button>
     </div>
   `).join("");
   target.querySelectorAll("[data-channel-default]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!can("manage_alert_channels")) return;
       await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelDefault)}`, "PATCH", {is_default: true, enabled: true});
       await loadAlertChannels();
     });
   });
   target.querySelectorAll("[data-channel-disable]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!can("manage_alert_channels")) return;
       await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelDisable)}`, "PATCH", {enabled: false});
       await loadAlertChannels();
     });

@@ -95,6 +95,8 @@ class ScaMonitorApp:
                 return self.json_response(request, {"status": "ready" if status == HTTPStatus.OK else "not_ready", **readiness}, status)
             if path == "/metrics":
                 return self.text_response(request, self.metrics(), "text/plain; charset=utf-8")
+            if path == "/api/v1/session" and method == "GET":
+                return self.json_response(request, self.session(request))
             if path == "/api/v1/overview" and method == "GET":
                 return self.json_response(request, self.overview())
             if path == "/api/v1/services" and method == "GET":
@@ -253,6 +255,40 @@ class ScaMonitorApp:
             "principal": principal,
             "roles": roles,
             "owner_teams": parse_csv_header(request.headers.get("X-SCA-Owner-Teams")),
+        }
+
+    def session(self, request: BaseHTTPRequestHandler) -> dict:
+        mode = (self.settings.auth_mode or "disabled").lower()
+        if mode in {"disabled", "off", "none"}:
+            return {
+                "auth_mode": "disabled",
+                "authenticated": False,
+                "principal": "web-console",
+                "roles": ["admin", "security-approver", "service-owner"],
+                "owner_teams": [],
+                "capabilities": self.role_capabilities({"admin", "security-approver", "service-owner"}),
+            }
+        auth_context = self.auth_context(request)
+        roles = auth_context["roles"]
+        return {
+            "auth_mode": mode,
+            "authenticated": True,
+            "principal": auth_context["principal"],
+            "roles": sorted(roles),
+            "owner_teams": sorted(auth_context["owner_teams"]),
+            "capabilities": self.role_capabilities(roles),
+        }
+
+    def role_capabilities(self, roles: set[str]) -> dict:
+        can_manage = "admin" in roles
+        can_update_impacts = bool(roles.intersection({"admin", "security-approver", "service-owner"}))
+        return {
+            "manage_services": can_manage,
+            "manage_credentials": can_manage,
+            "manage_alert_channels": can_manage,
+            "update_impacts": can_update_impacts,
+            "bulk_update_impacts": can_update_impacts,
+            "accept_risk": "security-approver" in roles,
         }
 
     def apply_authenticated_actor(self, body: dict, auth_context: dict) -> dict:
