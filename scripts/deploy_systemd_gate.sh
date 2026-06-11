@@ -38,6 +38,21 @@ validate_units() {
     --json
 }
 
+preflight_enable() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd enable preflight failed: systemctl not found" >&2
+    exit 2
+  fi
+  local systemctl_cmd=(systemctl)
+  if [[ "$SCOPE" == "user" ]]; then
+    systemctl_cmd+=(--user)
+  fi
+  if ! "${systemctl_cmd[@]}" list-unit-files >/dev/null 2>&1; then
+    echo "systemd enable preflight failed: ${systemctl_cmd[*]} list-unit-files is not available" >&2
+    exit 2
+  fi
+}
+
 install_units() {
   if [[ "$1" == "enable" ]]; then
     bash scripts/install_systemd_units.sh \
@@ -53,7 +68,11 @@ install_units() {
       --python "$PYTHON_BIN" \
       --prefix "$PREFIX"
   fi
-  python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
+  if [[ "$1" == "enable" ]]; then
+    python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl --json
+  else
+    python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
+  fi
 }
 
 case "$MODE" in
@@ -68,6 +87,7 @@ case "$MODE" in
     install_units install
     ;;
   enable)
+    preflight_enable
     validate_units >/dev/null
     install_units enable
     ;;

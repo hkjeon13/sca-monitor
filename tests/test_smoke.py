@@ -274,6 +274,75 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     assert "unit files installed" in result.stdout
 
 
+def test_deploy_systemd_gate_enable_mode_requires_systemctl(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    env = {
+        **os.environ,
+        "PATH": str(bin_dir),
+        "HOME": str(tmp_path / "home"),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["/bin/bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "systemd enable preflight failed: systemctl not found" in result.stderr
+
+
+def test_deploy_systemd_gate_enable_mode_reports_systemctl_status(tmp_path):
+    home_dir = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        f"""#!/bin/sh
+echo "$@" >> "{log_path}"
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    api_status = payload["systemctl"]["sca-monitor-api.service"]
+    assert payload["status"] == "ok"
+    assert payload["summary"]["valid"] == 11
+    assert api_status == {"enabled": "enabled", "active": "active"}
+    assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
