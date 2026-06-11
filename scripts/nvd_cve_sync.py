@@ -25,6 +25,12 @@ def main() -> None:
     parser.add_argument("--json-dir", type=Path, default=None, help="Read local NVD CVE API response files named CVE-YYYY-NNNN.json")
     parser.add_argument("--cve-list-path", type=Path, default=None, help="Read CVE ids from a newline-delimited text file")
     parser.add_argument("--limit", type=int, default=None, help="Maximum CVE ids to process from arguments/list")
+    parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=float(os.getenv("NVD_REQUEST_DELAY_SECONDS", "0")),
+        help="Delay between remote NVD CVE requests in batch mode. Defaults to NVD_REQUEST_DELAY_SECONDS or 0.",
+    )
     parser.add_argument("--lock-owner", default=None, help="Explicit sync lock owner id")
     parser.add_argument("--lock-ttl-seconds", type=int, default=3600, help="Sync lock time-to-live in seconds")
     args = parser.parse_args()
@@ -60,6 +66,7 @@ def main() -> None:
             json_dir=args.json_dir,
             limit=args.limit,
             lock_ttl_seconds=args.lock_ttl_seconds,
+            delay_seconds=args.delay_seconds,
         )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
 

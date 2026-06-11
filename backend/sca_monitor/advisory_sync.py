@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,7 @@ class NvdCveBatchSyncResult:
     failed: int
     results: list[dict[str, Any]]
     api_url: str
+    request_delay_seconds: float
 
 
 @dataclass(frozen=True)
@@ -516,22 +518,33 @@ def sync_nvd_cves(
     json_dir: Path | None = None,
     limit: int | None = None,
     lock_ttl_seconds: int = 3600,
+    delay_seconds: float = 0.0,
+    sleep_func: Callable[[float], None] = time.sleep,
 ) -> NvdCveBatchSyncResult:
+    if delay_seconds < 0:
+        raise ValueError("delay_seconds must be greater than or equal to 0")
     processed = 0
     imported_rows = 0
     rematched_impacts = 0
     failed = 0
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
+    unique_cve_ids: list[str] = []
     for raw_cve_id in cve_ids:
         cve_id = raw_cve_id.strip().upper()
         if not cve_id or cve_id in seen:
             continue
+        seen.add(cve_id)
+        unique_cve_ids.append(cve_id)
+    if limit is not None:
+        unique_cve_ids = unique_cve_ids[:limit]
+
+    for index, cve_id in enumerate(unique_cve_ids):
         if limit is not None and processed >= limit:
             break
-        seen.add(cve_id)
         processed += 1
         json_path = json_dir / f"{cve_id}.json" if json_dir else None
+        uses_remote_api = not (json_path and json_path.exists())
         try:
             result = sync_nvd_cve(
                 app,
@@ -548,6 +561,8 @@ def sync_nvd_cves(
         except Exception as exc:  # noqa: BLE001 - batch sync should report per-CVE failures.
             failed += 1
             results.append({"source": "NVD", "cve_id": cve_id, "status": "failed", "error": exc.__class__.__name__, "detail": str(exc)})
+        if uses_remote_api and delay_seconds > 0 and index < len(unique_cve_ids) - 1:
+            sleep_func(delay_seconds)
     return NvdCveBatchSyncResult(
         source="NVD",
         processed=processed,
@@ -556,6 +571,7 @@ def sync_nvd_cves(
         failed=failed,
         results=results,
         api_url=api_url,
+        request_delay_seconds=delay_seconds,
     )
 
 

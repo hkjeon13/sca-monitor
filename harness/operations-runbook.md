@@ -129,6 +129,15 @@ CISA KEV는 `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vuln
 운영 검증에는 작은 `--limit`으로 먼저 실행하고, 폐쇄망 또는 테스트 fixture 검증에는 `--json-path /path/to/cisa-kev.json`을 사용할 수 있다.
 실행 결과의 `imported_rows`, `enriched_advisories`, `rematched_impacts`, `failed`를 확인한다.
 
+NVD CVE 목록 수동 동기화:
+
+```bash
+NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100
+```
+
+`--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 원격 NVD API batch 요청 간격을 조절한다.
+폐쇄망, stage, 재현 테스트에서는 `--json-dir fixtures/nvd`를 함께 사용하면 로컬 `CVE-YYYY-NNNN.json` 파일을 읽고 원격 요청 지연 없이 같은 import 경로를 검증한다.
+
 ### Endpoint polling failed
 
 1. endpoint_health 확인

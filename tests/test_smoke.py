@@ -3986,6 +3986,65 @@ def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
         "example/example-server",
     }
     assert app.overview()["advisory_sync"]["NVD"] == "ok"
+    assert result.request_delay_seconds == 0
+
+
+def test_sync_nvd_cves_delays_between_remote_batch_requests(tmp_path, monkeypatch):
+    app = make_test_app(tmp_path)
+    calls = []
+    sleeps = []
+
+    def fake_sync_nvd_cve(app_arg, cve_id, **kwargs):
+        calls.append({"cve_id": cve_id, **kwargs})
+        class FakeResult:
+            source = "NVD"
+            imported_rows = 1
+            rematched_impacts = 0
+
+            def __init__(self, cve_id, api_url):
+                self.cve_id = cve_id
+                self.api_url = api_url
+
+        return FakeResult(cve_id, kwargs["api_url"])
+
+    monkeypatch.setattr("backend.sca_monitor.advisory_sync.sync_nvd_cve", fake_sync_nvd_cve)
+
+    result = sync_nvd_cves(
+        app,
+        ["CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0002", "CVE-2026-0003"],
+        limit=3,
+        delay_seconds=1.25,
+        sleep_func=sleeps.append,
+    )
+
+    assert result.processed == 3
+    assert result.imported_rows == 3
+    assert result.request_delay_seconds == 1.25
+    assert [call["cve_id"] for call in calls] == ["CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"]
+    assert [item["cve_id"] for item in result.results] == ["CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"]
+    assert sleeps == [1.25, 1.25]
+
+
+def test_sync_nvd_cves_does_not_delay_for_local_json_dir(tmp_path, monkeypatch):
+    app = make_test_app(tmp_path)
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(json.dumps(nvd_cve_fixture("CVE-2026-0002")), encoding="utf-8")
+    sleeps = []
+
+    result = sync_nvd_cves(
+        app,
+        ["CVE-2026-0001", "CVE-2026-0002"],
+        json_dir=json_dir,
+        delay_seconds=1.25,
+        sleep_func=sleeps.append,
+    )
+
+    assert result.processed == 2
+    assert result.imported_rows == 2
+    assert result.request_delay_seconds == 1.25
+    assert sleeps == []
 
 
 def test_nvd_cve_sync_cli_imports_local_json(tmp_path):
@@ -4006,6 +4065,40 @@ def test_nvd_cve_sync_cli_imports_local_json(tmp_path):
     assert payload["source"] == "NVD"
     assert payload["cve_id"] == "CVE-2026-0001"
     assert payload["imported_rows"] == 1
+
+
+def test_nvd_cve_sync_cli_batch_exposes_delay_seconds(tmp_path):
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(json.dumps(nvd_cve_fixture("CVE-2026-0002")), encoding="utf-8")
+    cve_list_path = tmp_path / "cves.txt"
+    cve_list_path.write_text("CVE-2026-0001\nCVE-2026-0002\n", encoding="utf-8")
+    database_url = f"sqlite:///{tmp_path / 'nvd-list-cli.sqlite3'}"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/nvd_cve_sync.py",
+            "--cve-list-path",
+            str(cve_list_path),
+            "--json-dir",
+            str(json_dir),
+            "--delay-seconds",
+            "1.5",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "NVD"
+    assert payload["processed"] == 2
+    assert payload["imported_rows"] == 2
+    assert payload["request_delay_seconds"] == 1.5
 
 
 def test_nvd_cve_sync_cli_imports_list_file_from_json_dir(tmp_path):
