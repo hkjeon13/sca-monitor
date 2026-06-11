@@ -4,13 +4,13 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 
 def utcnow() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class Database:
@@ -236,4 +236,3 @@ def canonical_package_name(ecosystem: str, name: str) -> str:
     if ecosystem.lower() == "maven":
         return name.lower()
     return name.lower()
-

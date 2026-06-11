@@ -15,12 +15,18 @@ ssh "$REMOTE" "set -euo pipefail
   set -a
   . ./.env
   set +a
-  pkill -f 'python3 -m backend.sca_monitor' || true
+  if [ -f .data/sca-monitor.pid ]; then
+    old_pid=\$(cat .data/sca-monitor.pid)
+    if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then
+      kill \"\$old_pid\" || true
+      sleep 1
+    fi
+  fi
   nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
+  echo \$! > .data/sca-monitor.pid
   sleep 2
   curl -fsS http://127.0.0.1:$PORT/health >/dev/null
   curl -fsS http://127.0.0.1:$PORT/ready >/dev/null
 "
 
 echo "remote deployed: http://$REMOTE:$PORT"
-
