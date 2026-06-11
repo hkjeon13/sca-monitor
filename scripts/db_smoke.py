@@ -29,12 +29,6 @@ def run_smoke(database: Database, *, write_check: bool = True) -> dict[str, Any]
         result["status"] = "failed"
         result["error"] = "migration_too_old"
         return result
-    if database.backend != "sqlite":
-        result["status"] = "failed"
-        result["error"] = "query_adapter_not_enabled"
-        result["detail"] = "PostgreSQL migration status is readable, but runtime query adapter is not enabled yet."
-        return result
-
     with database.connect() as conn:
         result["checks"]["services_readable"] = conn.execute("SELECT COUNT(*) AS c FROM services").fetchone()["c"] >= 0
         result["checks"]["advisory_sync_state_readable"] = conn.execute(

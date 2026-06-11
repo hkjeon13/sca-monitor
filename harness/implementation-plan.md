@@ -92,6 +92,7 @@ Phase 0 착수 전 선행 조건:
 - `scripts/db_smoke.py` 기반 DB read/write rollback smoke gate 추가
 - `/ready` migration 상태 노출 추가
 - SQLite fallback 유지
+- `psycopg` 기반 PostgreSQL runtime query adapter 1차 추가
 - OSV 단건 import API와 advisory 조회 API 추가
 - OSV affected range version matcher 추가
 - `scripts/osv_sync.py` OSV ecosystem dump sync worker CLI 추가
@@ -103,8 +104,7 @@ Phase 0 착수 전 선행 조건:
 
 남은 작업:
 
-- PostgreSQL driver dependency 선택 및 설치
-- repository/query adapter 분리
+- repository/query adapter 고도화
 - 실제 PostgreSQL integration test
 - API/worker DB 계정 분리
 - production migration tool 확정

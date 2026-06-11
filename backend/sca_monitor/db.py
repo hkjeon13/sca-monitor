@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -17,8 +18,70 @@ from .migrations import (
 )
 
 
+BEGIN_RE = re.compile(r"^BEGIN(?:\s+IMMEDIATE)?\s*;?$", re.IGNORECASE)
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def postgres_sql(sql: str) -> str:
+    if BEGIN_RE.match(sql.strip()):
+        return "-- transaction already managed by psycopg adapter"
+
+    converted: list[str] = []
+    in_single_quote = False
+    in_double_quote = False
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if char == "'" and not in_double_quote:
+            converted.append(char)
+            if in_single_quote and index + 1 < len(sql) and sql[index + 1] == "'":
+                converted.append(sql[index + 1])
+                index += 2
+                continue
+            in_single_quote = not in_single_quote
+        elif char == '"' and not in_single_quote:
+            converted.append(char)
+            in_double_quote = not in_double_quote
+        elif char == "?" and not in_single_quote and not in_double_quote:
+            converted.append("%s")
+        else:
+            converted.append(char)
+        index += 1
+    return "".join(converted)
+
+
+class PostgresCursorAdapter:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    @property
+    def rowcount(self) -> int:
+        return self.cursor.rowcount
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+
+class PostgresConnectionAdapter:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def execute(self, sql: str, params: tuple | list | None = None) -> PostgresCursorAdapter:
+        translated = postgres_sql(sql)
+        cursor = self.conn.execute(translated, params or ())
+        return PostgresCursorAdapter(cursor)
+
+    def commit(self) -> None:
+        self.conn.commit()
+
+    def rollback(self) -> None:
+        self.conn.rollback()
 
 
 class Database:
@@ -55,9 +118,11 @@ class Database:
         return path.resolve()
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        if self.backend != "sqlite":
-            raise RuntimeError("PostgreSQL query adapter is not enabled yet; use SQLite fallback until the adapter is implemented")
+    def connect(self) -> Iterator[Any]:
+        if self.backend == "postgres":
+            with self._connect_postgres() as conn:
+                yield conn
+            return
         assert self.path is not None
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
@@ -65,6 +130,25 @@ class Database:
             conn.execute("PRAGMA foreign_keys = ON")
             yield conn
             conn.commit()
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _connect_postgres(self) -> Iterator["PostgresConnectionAdapter"]:
+        try:
+            import psycopg  # type: ignore[import-not-found]
+            from psycopg.rows import dict_row  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError("psycopg is required to use the PostgreSQL runtime query adapter") from exc
+
+        conn = psycopg.connect(self.database_url, row_factory=dict_row)
+        adapter = PostgresConnectionAdapter(conn)
+        try:
+            yield adapter
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 

@@ -91,8 +91,8 @@ python3 scripts/db_smoke.py
 python3 scripts/db_smoke.py --json
 ```
 
-현재 SQLite fallback에서는 `services`, `advisory_sync_state`, `alert_events` read와 `audit_logs` transactional write/rollback을 검증한다.
-PostgreSQL URL에서는 migration status 조회가 가능하더라도 runtime query adapter가 아직 미구현이면 `query_adapter_not_enabled`로 실패해야 하며, 이 상태에서는 운영 DB 전환을 진행하지 않는다.
+현재 SQLite fallback과 PostgreSQL runtime adapter에서는 `services`, `advisory_sync_state`, `alert_events` read와 `audit_logs` transactional write/rollback을 검증한다.
+PostgreSQL URL에서는 `psycopg` 설치, DB network, credential, migration 상태, API workflow별 integration smoke를 통과해야 운영 DB 전환을 진행한다.
 
 ## 4. Deployment Stop Rules
 

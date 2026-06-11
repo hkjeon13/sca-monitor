@@ -14,7 +14,7 @@ import pytest
 from backend.sca_monitor.alert_dispatch import dispatch_alert_batches, dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import parse_cisa_kev_vulnerability, sync_cisa_kev_catalog, sync_osv_ecosystem_dump
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
-from backend.sca_monitor.db import Database, canonical_package_name
+from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, postgres_sql
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp
 from backend.sca_monitor.config import Settings
@@ -183,6 +183,96 @@ def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database = Database(database_url)
     with database.connect() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'db.smoke.write'").fetchone()["c"] == 0
+
+
+def test_postgres_sql_translates_placeholders_outside_string_literals():
+    sql = "SELECT * FROM services WHERE service_id = ? AND note = '?' AND environment = ?"
+
+    assert postgres_sql(sql) == "SELECT * FROM services WHERE service_id = %s AND note = '?' AND environment = %s"
+    assert postgres_sql("BEGIN IMMEDIATE") == "-- transaction already managed by psycopg adapter"
+
+
+def test_postgres_connection_adapter_executes_translated_sql():
+    class FakeCursor:
+        rowcount = 1
+
+        def fetchone(self):
+            return {"c": 1}
+
+        def fetchall(self):
+            return [{"c": 1}]
+
+    class FakeConnection:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, sql, params=()):
+            self.calls.append((sql, params))
+            return FakeCursor()
+
+    fake = FakeConnection()
+    cursor = PostgresConnectionAdapter(fake).execute("SELECT COUNT(*) AS c FROM services WHERE service_id = ?", ("svc",))
+
+    assert fake.calls == [("SELECT COUNT(*) AS c FROM services WHERE service_id = %s", ("svc",))]
+    assert cursor.fetchone()["c"] == 1
+
+
+def test_db_smoke_runs_postgres_runtime_adapter_path():
+    from scripts.db_smoke import run_smoke
+
+    missing = object()
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __init__(self, row=missing):
+            self.row = {"c": 0} if row is missing else row
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.inserted_audit_id = None
+
+        def execute(self, sql, params=()):
+            if sql.startswith("SELECT COUNT(*)"):
+                return FakeCursor({"c": 0})
+            if sql.startswith("BEGIN"):
+                return FakeCursor()
+            if "INSERT INTO audit_logs" in sql:
+                self.inserted_audit_id = params[0]
+                return FakeCursor()
+            if "SELECT id FROM audit_logs" in sql:
+                return FakeCursor({"id": self.inserted_audit_id}) if self.inserted_audit_id == params[0] else FakeCursor(None)
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+        def rollback(self):
+            self.inserted_audit_id = None
+
+    class FakePostgresDatabase:
+        backend = "postgres"
+
+        def __init__(self):
+            self.connection = FakeConnection()
+
+        def readiness(self):
+            return {
+                "database": "ok",
+                "database_backend": "postgres",
+                "migration": {"current": REQUIRED_MIGRATION_VERSION, "required": REQUIRED_MIGRATION_VERSION, "minimum_supported": 1, "compatible": True},
+            }
+
+        @contextmanager
+        def connect(self):
+            yield self.connection
+
+    result = run_smoke(FakePostgresDatabase())
+
+    assert result["status"] == "ok"
+    assert result["database_backend"] == "postgres"
+    assert result["checks"]["audit_log_write_rollback"] is True
+    assert result["checks"]["audit_log_rollback_clean"] is True
 
 
 def test_push_credential_issue_and_bound_snapshot_push(tmp_path):
