@@ -1372,7 +1372,9 @@ def test_web_console_renders_database_readiness_panel():
     assert "event.reason" in script
     assert "event.alert_suppression_key" in script
     assert "renderAlertEventPayloadSummary" in script
+    assert "renderAlertEventPayloadDetails" in script
     assert "event.payload" in script
+    assert "JSON.stringify(payload, null, 2)" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script

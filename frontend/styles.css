@@ -486,6 +486,25 @@ input[readonly] {
   font-size: 12px;
 }
 
+.payload-detail {
+  margin-top: 6px;
+  max-width: min(720px, 70vw);
+}
+
+.payload-detail summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payload-detail pre {
+  margin: 6px 0 0;
+  max-height: 240px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .audit-item {
   align-items: flex-start;
 }

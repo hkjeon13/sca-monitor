@@ -971,6 +971,7 @@ async function loadAlertEvents() {
         <strong>${escapeHtml(event.status)} · ${escapeHtml(event.service_id || "-")} / ${escapeHtml(event.package_name || "-")}</strong>
         <span>${escapeHtml(event.reason || "-")} · ${escapeHtml(event.advisory_id || event.alert_suppression_key || "-")} · retries ${escapeHtml(event.retry_count || 0)} · ${escapeHtml(event.created_at)}</span>
         ${renderAlertEventPayloadSummary(event.payload)}
+        ${renderAlertEventPayloadDetails(event.payload)}
       </div>
       <button type="button" class="secondary" data-alert-requeue="${escapeHtml(event.id)}" ${event.status !== "dead_letter" ? "disabled" : ""}>Requeue</button>
     </div>
@@ -996,6 +997,16 @@ function renderAlertEventPayloadSummary(payload) {
   ].filter(([, value]) => value);
   if (!fields.length) return "";
   return `<span>${fields.map(([label, value]) => `${escapeHtml(label)}: ${escapeHtml(value)}`).join(" · ")}</span>`;
+}
+
+function renderAlertEventPayloadDetails(payload) {
+  if (!payload || typeof payload !== "object" || !Object.keys(payload).length) return "";
+  return `
+    <details class="payload-detail">
+      <summary>Payload</summary>
+      <pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+    </details>
+  `;
 }
 
 function renderDailyDigestPreview(data) {
