@@ -93,6 +93,7 @@ Phase 0 착수 전 선행 조건:
 - `scripts/postgres_integration_smoke.py` 기반 실제 PostgreSQL migration/db smoke/API workflow gate 추가
 - `scripts/deploy_db_gate.sh` 기반 배포 시 PostgreSQL URL 자동 integration smoke gate 추가
 - `API_DATABASE_URL`/`WORKER_DATABASE_URL` 기반 API/worker DB URL 분리와 worker read-only smoke gate 추가
+- `SCA_MONITOR_AUTO_MIGRATE`/컴포넌트별 auto-migrate flag 기반 runtime migration 비활성화 지원
 - `/ready` migration 상태 노출 추가
 - SQLite fallback 유지
 - `psycopg` 기반 PostgreSQL runtime query adapter 1차 추가

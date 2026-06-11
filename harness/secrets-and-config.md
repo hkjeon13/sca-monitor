@@ -22,6 +22,9 @@ API_BASE_URL
 SCA_MONITOR_DATABASE_URL
 API_DATABASE_URL
 WORKER_DATABASE_URL
+SCA_MONITOR_AUTO_MIGRATE
+SCA_MONITOR_API_AUTO_MIGRATE
+SCA_MONITOR_WORKER_AUTO_MIGRATE
 ENCRYPTION_KEY_REF
 ```
 
@@ -34,9 +37,13 @@ SCA_MONITOR_DATABASE_URL=sqlite:////data/psyche/Projects/sca-monitor/.data/sca-m
 # PostgreSQL 계정 분리 시에는 SCA_MONITOR_DATABASE_URL을 비우고 아래 값을 사용한다.
 API_DATABASE_URL=postgresql://sca_api:...
 WORKER_DATABASE_URL=postgresql://sca_worker:...
+# 배포 migration gate 이후 runtime DDL 권한을 제거하려면 auto-migrate를 끈다.
+SCA_MONITOR_AUTO_MIGRATE=false
 ```
 
 `SCA_MONITOR_DB`는 이전 MVP 호환용 path 설정으로만 유지한다.
+`SCA_MONITOR_AUTO_MIGRATE` 기본값은 `true`이며, `SCA_MONITOR_API_AUTO_MIGRATE`와 `SCA_MONITOR_WORKER_AUTO_MIGRATE`가 있으면 컴포넌트별 설정이 우선한다.
+PostgreSQL 최소권한 운영에서는 `scripts/migrate.py`와 `deploy_db_gate.sh`가 먼저 통과한 뒤 API/worker runtime auto-migrate를 `false`로 둔다.
 
 ### API Server
 

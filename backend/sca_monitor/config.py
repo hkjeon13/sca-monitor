@@ -16,6 +16,7 @@ class Settings:
     frontend_dir: Path
     smoke_token: str
     auth_mode: str = "disabled"
+    auto_migrate: bool = True
     max_snapshot_payload_bytes: int = 10 * 1024 * 1024
     max_snapshot_dependencies: int = 10000
     max_snapshot_pushes_per_minute: int = 30
@@ -28,6 +29,11 @@ def load_settings(component: str = "api") -> Settings:
     if component not in {"api", "worker"}:
         raise ValueError(f"unsupported settings component: {component}")
     component_database_url = os.getenv("WORKER_DATABASE_URL" if component == "worker" else "API_DATABASE_URL")
+    auto_migrate = env_flag(
+        os.getenv(f"SCA_MONITOR_{component.upper()}_AUTO_MIGRATE")
+        or os.getenv("SCA_MONITOR_AUTO_MIGRATE"),
+        default=True,
+    )
     database_url = (
         os.getenv("SCA_MONITOR_DATABASE_URL")
         or component_database_url
@@ -44,7 +50,19 @@ def load_settings(component: str = "api") -> Settings:
         frontend_dir=frontend_dir,
         smoke_token=os.getenv("SMOKE_TEST_TOKEN", "dev-smoke-token"),
         auth_mode=os.getenv("SCA_MONITOR_AUTH_MODE", "disabled"),
+        auto_migrate=auto_migrate,
         max_snapshot_payload_bytes=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES", str(10 * 1024 * 1024))),
         max_snapshot_dependencies=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES", "10000")),
         max_snapshot_pushes_per_minute=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE", "30")),
     )
+
+
+def env_flag(value: str | None, *, default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"invalid boolean environment value: {value}")

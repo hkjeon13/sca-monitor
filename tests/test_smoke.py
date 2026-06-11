@@ -129,6 +129,33 @@ def test_load_settings_global_database_url_overrides_component_urls(monkeypatch,
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-global.sqlite3"
 
 
+def test_load_settings_supports_component_auto_migrate_flags(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SCA_MONITOR_AUTO_MIGRATE", "true")
+    monkeypatch.setenv("SCA_MONITOR_WORKER_AUTO_MIGRATE", "false")
+
+    assert load_settings(component="api").auto_migrate is True
+    assert load_settings(component="worker").auto_migrate is False
+
+
+def test_sca_monitor_app_can_skip_runtime_migration(tmp_path):
+    settings = Settings(
+        app_env="test",
+        host="127.0.0.1",
+        port=0,
+        data_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'no-auto-migrate.sqlite3'}",
+        database_path=tmp_path / "no-auto-migrate.sqlite3",
+        frontend_dir=tmp_path,
+        smoke_token="test",
+        auto_migrate=False,
+    )
+
+    app = ScaMonitorApp(settings)
+
+    assert app.db.current_migration_version() == 0
+
+
 def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     unit_dir = tmp_path / "systemd"
 

@@ -15,6 +15,7 @@ Access: API/worker private network only
 현재 MVP 배포는 PostgreSQL 전환 전 단계로 SQLite fallback을 사용한다.
 애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 API runtime은 `API_DATABASE_URL`, worker/scheduler runtime은 `WORKER_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 DB URL을 구성한다.
 PostgreSQL 계정 분리를 활성화하려면 `SCA_MONITOR_DATABASE_URL`을 비우고 `API_DATABASE_URL`/`WORKER_DATABASE_URL`을 각각 설정한다.
+배포 pipeline이 `scripts/migrate.py`와 `deploy_db_gate.sh`를 먼저 실행하는 운영 환경에서는 `SCA_MONITOR_AUTO_MIGRATE=false` 또는 컴포넌트별 `SCA_MONITOR_API_AUTO_MIGRATE=false`, `SCA_MONITOR_WORKER_AUTO_MIGRATE=false`로 runtime DDL을 비활성화할 수 있다.
 
 ```text
 Temporary fallback: sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3
@@ -128,6 +129,7 @@ bash scripts/deploy_db_gate.sh
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.
 `--with-api-workflow`는 synthetic service 등록과 snapshot push까지 실행하므로 CI 또는 stage DB에서 사용하고, 운영 DB에서는 승인된 synthetic service 정책이 있을 때만 사용한다.
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
+runtime auto-migrate를 끈 환경에서는 이 migration/gate 단계가 API/worker 시작 전 필수 stop gate이다.
 
 SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:
 

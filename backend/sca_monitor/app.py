@@ -66,7 +66,8 @@ class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.db = Database(settings.database_url)
-        self.db.migrate()
+        if settings.auto_migrate:
+            self.db.migrate()
 
     def handler(self):
         app = self
