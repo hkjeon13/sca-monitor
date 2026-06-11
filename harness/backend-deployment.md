@@ -240,6 +240,8 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 원격 배포 스크립트는 DB gate 후 `scripts/deploy_systemd_gate.sh`를 실행한다.
 `enable-poller`, `enable-dispatcher-dry-run`, `enable` mode에서는 migration과 DB gate 실행 전에 기존 systemd worker unit을 잠시 중지하고, gate가 끝나면 다시 시작한다.
 이는 SQLite fallback 운영 중 endpoint poller 또는 alert dispatcher가 DB write lock을 잡아 migration/gate가 실패하는 상황을 줄이기 위한 절차이다.
+생성되는 systemd unit은 `Environment=SCA_MONITOR_AUTO_MIGRATE=false`를 포함한다.
+따라서 VM systemd 배포에서는 `scripts/migrate.py`와 `deploy_db_gate.sh`가 schema 적용을 담당하고, API/worker 시작 시 runtime DDL은 수행하지 않는다.
 운영에서 실제 unit 파일만 설치하려면 `SCA_MONITOR_SYSTEMD_MODE=install`, API service만 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-api`, API와 endpoint poller만 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-poller`, dry-run dispatcher까지 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run`, live dispatcher와 timer까지 전체 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable`을 명시한다.
 `enable-api`, `enable-poller`, `enable-dispatcher-dry-run`, `enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
 이미 active 상태인 unit도 새 코드와 unit 파일을 반영하도록 `enable --now` 이후 대상 service/timer를 명시적으로 restart한다.

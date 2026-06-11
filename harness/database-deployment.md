@@ -57,6 +57,8 @@ PostgreSQL 운영 적용 전 실제 PostgreSQL instance, credential, network acc
 현재 임시 배포 스크립트도 서버 시작 전에 `python3 scripts/migrate.py`를 실행한다.
 VM systemd 배포에서 이미 endpoint poller 또는 alert dispatcher가 실행 중이면 migration과 DB gate 전에 worker unit을 일시 중지하고 gate 후 재시작한다.
 SQLite fallback에서는 장시간 실행 worker의 write lock이 migration 또는 smoke gate와 경합할 수 있으므로 이 순서를 배포 자동화의 기본값으로 둔다.
+VM systemd unit은 `SCA_MONITOR_AUTO_MIGRATE=false`를 명시해 API/worker 재시작 시 runtime migration을 반복하지 않는다.
+이 모드에서는 배포 migration gate 실패가 stop condition이며, unit start로 schema를 보정하지 않는다.
 
 ## 3. Migration Rules
 

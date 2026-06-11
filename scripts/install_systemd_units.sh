@@ -110,9 +110,10 @@ write_unit() {
 }
 
 unit_header() {
-  cat <<EOF
+cat <<EOF
 WorkingDirectory=$REPO_DIR
 EnvironmentFile=-$REPO_DIR/.env
+Environment=SCA_MONITOR_AUTO_MIGRATE=false
 EOF
 }
 

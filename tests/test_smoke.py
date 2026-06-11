@@ -252,7 +252,10 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     poller = (unit_dir / "sca-monitor-endpoint-poller.service").read_text(encoding="utf-8")
     assert f"WorkingDirectory={REPO_ROOT}" in poller
     assert f"EnvironmentFile=-{REPO_ROOT}/.env" in poller
+    assert "Environment=SCA_MONITOR_AUTO_MIGRATE=false" in poller
     assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
+    api = (unit_dir / "sca-monitor-api.service").read_text(encoding="utf-8")
+    assert "Environment=SCA_MONITOR_AUTO_MIGRATE=false" in api
     expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
     assert "OnUnitActiveSec=15min" in expiry_timer
     ghsa = (unit_dir / "sca-monitor-ghsa-sync.service").read_text(encoding="utf-8")
@@ -272,6 +275,7 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     canonical_merge_timer = (unit_dir / "sca-monitor-canonical-advisory-merge.timer").read_text(encoding="utf-8")
     assert "Unit=sca-monitor-canonical-advisory-merge.service" in canonical_merge_timer
     dispatcher_dry_run = (unit_dir / "sca-monitor-alert-dispatcher-dry-run.service").read_text(encoding="utf-8")
+    assert "Environment=SCA_MONITOR_AUTO_MIGRATE=false" in dispatcher_dry_run
     assert "scripts/dispatch_alerts.py --limit 50 --iterations 0" in dispatcher_dry_run
     assert "--lock-owner systemd-alert-dispatcher-dry-run --dry-run" in dispatcher_dry_run
 
