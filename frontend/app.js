@@ -67,10 +67,12 @@ async function loadServices() {
 
 async function loadImpacts() {
   const query = impactFilterQuery();
+  syncImpactFiltersToUrl(query);
   const data = await api.get(`/api/v1/impacts${query ? `?${query}` : ""}`);
   const target = document.querySelector("#impacts-list");
   if (!data.impacts.length) {
     target.innerHTML = `<p>${query ? "No impacts match the selected filters." : "No open impacts. Push the demo lodash snapshot to see matching behavior."}</p>`;
+    renderImpactPagination(data.pagination);
     selectedImpactId = null;
     renderImpactDetailEmpty("No impact selected.");
     return;
@@ -96,6 +98,7 @@ async function loadImpacts() {
     selectedImpactId = data.impacts[0].id;
     await loadImpactDetail(selectedImpactId);
   }
+  renderImpactPagination(data.pagination);
 }
 
 async function selectImpact(impactId) {
@@ -179,6 +182,45 @@ function impactFilterQuery() {
   return params.toString();
 }
 
+function syncImpactFiltersToUrl(query) {
+  const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", url);
+}
+
+function loadImpactFiltersFromUrl() {
+  const form = document.querySelector("#impact-filter-form");
+  const params = new URLSearchParams(window.location.search);
+  for (const element of form.elements) {
+    if (!element.name || !params.has(element.name)) continue;
+    element.value = params.get(element.name);
+  }
+}
+
+function renderImpactPagination(pagination) {
+  const target = document.querySelector("#impact-pagination");
+  if (!pagination) {
+    target.innerHTML = "";
+    return;
+  }
+  const start = pagination.total ? pagination.offset + 1 : 0;
+  const end = pagination.offset + pagination.returned;
+  target.innerHTML = `
+    <span>${escapeHtml(start)}-${escapeHtml(end)} of ${escapeHtml(pagination.total)}</span>
+    <div>
+      <button type="button" class="secondary" data-page-offset="${escapeHtml(pagination.prev_offset ?? "")}" ${pagination.prev_offset === null ? "disabled" : ""}>Prev</button>
+      <button type="button" class="secondary" data-page-offset="${escapeHtml(pagination.next_offset ?? "")}" ${pagination.next_offset === null ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+  target.querySelectorAll("[data-page-offset]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!button.dataset.pageOffset) return;
+      document.querySelector('#impact-filter-form input[name="offset"]').value = button.dataset.pageOffset;
+      selectedImpactId = null;
+      await loadImpacts();
+    });
+  });
+}
+
 async function refreshAll() {
   await Promise.all([loadOverview(), loadServices(), loadImpacts()]);
 }
@@ -187,12 +229,14 @@ document.querySelector("#refresh").addEventListener("click", refreshAll);
 
 document.querySelector("#impact-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  event.currentTarget.elements.offset.value = "0";
   selectedImpactId = null;
   await loadImpacts();
 });
 
 document.querySelector("#clear-impact-filters").addEventListener("click", async () => {
   document.querySelector("#impact-filter-form").reset();
+  document.querySelector('#impact-filter-form input[name="offset"]').value = "0";
   selectedImpactId = null;
   await loadImpacts();
 });
@@ -228,6 +272,8 @@ document.querySelector("#snapshot-form").addEventListener("submit", async (event
   });
   await refreshAll();
 });
+
+loadImpactFiltersFromUrl();
 
 refreshAll().catch((error) => {
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="section"><strong>Load failed</strong><p>${error.message}</p></div>`);

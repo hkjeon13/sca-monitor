@@ -163,9 +163,9 @@ Phase 0 착수 전 선행 조건:
 
 현재 MVP 구현 상태:
 
-- 완료: shell/navigation, overview dashboard, service list, basic service registration, integration guide, impact list, impact server-side filters, impact detail, impact status action panel
+- 완료: shell/navigation, overview dashboard, service list, basic service registration, integration guide, impact list, impact server-side filters, impact pagination/sorting, impact detail, impact status action panel
 - 부분 완료: service registration wizard는 기본 등록 form만 제공하며 endpoint test/push credential 발급은 미구현
-- 부분 완료: impact filtering은 API의 status/risk/service/team/environment/package/advisory/search와 Web Console의 status/risk/search 기본 UI를 제공하며 URL query 유지, pagination/sorting, 고급 필터 UI는 미구현
+- 부분 완료: impact filtering은 API의 status/risk/service/team/environment/package/advisory/search와 pagination/sorting을 제공하며 Web Console의 status/risk/search/sort/page size, URL query 유지, Prev/Next를 제공한다. service/team/environment/package/advisory 전용 고급 필터 UI는 미구현
 - 미구현: service detail, settings, role-aware UI, accepted risk 승인자/만료일 workflow
 
 검증:

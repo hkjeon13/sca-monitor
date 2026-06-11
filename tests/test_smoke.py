@@ -229,6 +229,20 @@ def test_list_impacts_supports_server_side_filters(tmp_path):
     assert [impact["service_id"] for impact in app.list_impacts({"advisory_id": ["OSV-TEST-0002"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"q": ["billing"]})] == ["billing-service"]
 
+    page = app.search_impacts({"limit": ["1"], "offset": ["1"], "sort": ["service"], "direction": ["asc"]})
+
+    assert page["pagination"] == {
+        "total": 2,
+        "limit": 1,
+        "offset": 1,
+        "returned": 1,
+        "next_offset": None,
+        "prev_offset": 0,
+        "sort": "service",
+        "direction": "asc",
+    }
+    assert [impact["service_id"] for impact in page["impacts"]] == ["billing-service"]
+
 
 def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     app = make_test_app(tmp_path)

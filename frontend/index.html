@@ -86,12 +86,39 @@
                 <option value="low">low</option>
               </select>
             </label>
+            <label>Sort
+              <select name="sort">
+                <option value="risk">risk</option>
+                <option value="updated_at">updated</option>
+                <option value="last_seen_at">last seen</option>
+                <option value="service">service</option>
+                <option value="package">package</option>
+                <option value="status">status</option>
+              </select>
+            </label>
+            <label>Direction
+              <select name="direction">
+                <option value="asc">asc</option>
+                <option value="desc">desc</option>
+              </select>
+            </label>
+            <label>Page Size
+              <select name="limit">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+              </select>
+            </label>
             <label>Search<input name="q" placeholder="service, package, advisory, team" /></label>
+            <input type="hidden" name="offset" value="0" />
             <button type="submit">Apply</button>
             <button type="button" id="clear-impact-filters" class="secondary">Clear</button>
           </form>
           <div class="impact-workspace">
-            <div id="impacts-list" class="impact-list"></div>
+            <div>
+              <div id="impacts-list" class="impact-list"></div>
+              <div id="impact-pagination" class="pagination"></div>
+            </div>
             <aside id="impact-detail" class="impact-detail">
               <p>No impact selected.</p>
             </aside>

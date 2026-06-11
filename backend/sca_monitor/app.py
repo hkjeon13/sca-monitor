@@ -100,7 +100,7 @@ class ScaMonitorApp:
             if path == "/api/v1/snapshots" and method == "POST":
                 return self.json_response(request, self.push_snapshot(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/impacts" and method == "GET":
-                return self.json_response(request, {"impacts": self.list_impacts(parse_qs(parsed.query))})
+                return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
                 impact_id = path.split("/")[-1]
                 return self.json_response(request, self.get_impact(impact_id))
@@ -674,6 +674,9 @@ class ScaMonitorApp:
         return count
 
     def list_impacts(self, query: dict[str, list[str]]) -> list[dict]:
+        return self.search_impacts(query)["impacts"]
+
+    def search_impacts(self, query: dict[str, list[str]]) -> dict:
         where = []
         params = []
         if status := query.get("status", [None])[0]:
@@ -714,7 +717,33 @@ class ScaMonitorApp:
             )
             params.extend([like] * 7)
         sql_where = "WHERE " + " AND ".join(where) if where else ""
+        limit = bounded_int(query.get("limit", [None])[0], default=50, minimum=1, maximum=200)
+        offset = bounded_int(query.get("offset", [None])[0], default=0, minimum=0, maximum=1_000_000)
+        sort = query.get("sort", ["risk"])[0]
+        direction = query.get("direction", ["asc"])[0].lower()
+        if direction not in {"asc", "desc"}:
+            direction = "asc"
+        sort_columns = {
+            "risk": "CASE i.risk_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+            "updated_at": "i.updated_at",
+            "first_detected_at": "i.first_detected_at",
+            "last_seen_at": "i.last_seen_at",
+            "service": "lower(s.service_id)",
+            "package": "lower(i.package_name)",
+            "status": "i.status",
+        }
+        order_expr = sort_columns.get(sort, sort_columns["risk"])
         with self.db.connect() as conn:
+            total = conn.execute(
+                f"""
+                SELECT COUNT(*) AS c
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                JOIN advisories a ON a.id = i.advisory_pk
+                {sql_where}
+                """,
+                tuple(params),
+            ).fetchone()["c"]
             rows = conn.execute(
                 f"""
                 SELECT i.*, s.service_id, s.service_name, a.advisory_id, a.summary
@@ -722,12 +751,24 @@ class ScaMonitorApp:
                 JOIN services s ON s.id = i.service_pk
                 JOIN advisories a ON a.id = i.advisory_pk
                 {sql_where}
-                ORDER BY CASE i.risk_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
-                         i.updated_at DESC
+                ORDER BY {order_expr} {direction.upper()}, i.updated_at DESC
+                LIMIT ? OFFSET ?
                 """,
-                tuple(params),
+                tuple(params + [limit, offset]),
             ).fetchall()
-        return [row_to_dict(row) for row in rows]
+        return {
+            "impacts": [row_to_dict(row) for row in rows],
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "returned": len(rows),
+                "next_offset": offset + limit if offset + limit < total else None,
+                "prev_offset": max(offset - limit, 0) if offset > 0 else None,
+                "sort": sort if sort in sort_columns else "risk",
+                "direction": direction,
+            },
+        }
 
     def get_impact(self, impact_id: str) -> dict:
         with self.db.connect() as conn:
@@ -794,6 +835,14 @@ def required(data: dict, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"{key} required")
     return str(value)
+
+
+def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(number, maximum))
 
 
 def utcnow_after_seconds(seconds: int) -> str:

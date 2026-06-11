@@ -113,6 +113,11 @@ button.secondary {
   border: 1px solid #c9dadd;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .section {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -172,7 +177,7 @@ th {
 }
 
 .filter-bar {
-  grid-template-columns: 160px 140px minmax(220px, 1fr) auto auto;
+  grid-template-columns: 130px 120px 150px 130px 120px minmax(220px, 1fr) auto auto;
   align-items: end;
   gap: 10px;
   margin-bottom: 14px;
@@ -181,6 +186,21 @@ th {
 .impact-list {
   display: grid;
   gap: 10px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination div {
+  display: flex;
+  gap: 8px;
 }
 
 .impact-workspace {
