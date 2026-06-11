@@ -12,7 +12,13 @@ from urllib.request import Request, urlopen
 import pytest
 
 from backend.sca_monitor.alert_dispatch import alert_payload, dispatch_alert_batches, dispatch_pending_alerts
-from backend.sca_monitor.advisory_sync import parse_cisa_kev_vulnerability, sync_cisa_kev_catalog, sync_osv_ecosystem_dump
+from backend.sca_monitor.advisory_sync import (
+    parse_cisa_kev_vulnerability,
+    parse_nvd_cve_vulnerability,
+    sync_cisa_kev_catalog,
+    sync_nvd_cve,
+    sync_osv_ecosystem_dump,
+)
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
 from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
@@ -3296,6 +3302,55 @@ def test_sync_cisa_kev_catalog_from_json_file(tmp_path):
     assert app.overview()["advisory_sync"]["CISA_KEV"] == "ok"
 
 
+def test_parse_nvd_cve_vulnerability_extracts_cpe_advisory():
+    advisories = parse_nvd_cve_vulnerability(nvd_cve_fixture()["vulnerabilities"][0])
+
+    assert len(advisories) == 1
+    advisory = advisories[0]
+    assert advisory.advisory_id == "CVE-2026-0001"
+    assert advisory.source == "NVD"
+    assert advisory.severity == "critical"
+    assert advisory.ecosystem == "cpe"
+    assert advisory.package_name == "example/example-server"
+    assert advisory.affected_versions == ["versionStartIncluding:1.0.0", "versionEndExcluding:2.0.0"]
+    assert advisory.is_known_exploited is True
+
+
+def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
+    app = make_test_app(tmp_path)
+    json_path = tmp_path / "nvd-cve.json"
+    json_path.write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+
+    result = sync_nvd_cve(app, "CVE-2026-0001", json_path=json_path)
+
+    assert result.source == "NVD"
+    assert result.imported_rows == 1
+    advisories = app.list_advisories({"source": ["NVD"]})
+    assert advisories[0]["advisory_id"] == "CVE-2026-0001"
+    assert advisories[0]["package_name"] == "example/example-server"
+    assert app.overview()["advisory_sync"]["NVD"] == "ok"
+
+
+def test_nvd_cve_sync_cli_imports_local_json(tmp_path):
+    json_path = tmp_path / "nvd-cve.json"
+    json_path.write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+    database_url = f"sqlite:///{tmp_path / 'nvd-cli.sqlite3'}"
+
+    result = subprocess.run(
+        ["python3", "scripts/nvd_cve_sync.py", "CVE-2026-0001", "--json-path", str(json_path)],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "NVD"
+    assert payload["cve_id"] == "CVE-2026-0001"
+    assert payload["imported_rows"] == 1
+
+
 def test_cisa_kev_sync_enriches_matching_osv_alias_and_rematches_impacts(tmp_path):
     app = make_test_app(tmp_path)
     app.import_osv_payload(osv_fixture())
@@ -4148,5 +4203,57 @@ def cisa_kev_fixture():
                 "notes": "",
                 "cwes": [],
             },
+        ],
+    }
+
+
+def nvd_cve_fixture():
+    return {
+        "resultsPerPage": 1,
+        "startIndex": 0,
+        "totalResults": 1,
+        "format": "NVD_CVE",
+        "version": "2.0",
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2026-0001",
+                    "published": "2026-01-01T00:00:00.000",
+                    "lastModified": "2026-01-02T00:00:00.000",
+                    "descriptions": [
+                        {"lang": "en", "value": "Example Server contains a remote code execution vulnerability."}
+                    ],
+                    "metrics": {
+                        "cvssMetricV31": [
+                            {
+                                "cvssData": {
+                                    "version": "3.1",
+                                    "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                                    "baseScore": 9.8,
+                                    "baseSeverity": "CRITICAL",
+                                }
+                            }
+                        ]
+                    },
+                    "configurations": [
+                        {
+                            "nodes": [
+                                {
+                                    "operator": "OR",
+                                    "cpeMatch": [
+                                        {
+                                            "vulnerable": True,
+                                            "criteria": "cpe:2.3:a:example:example-server:*:*:*:*:*:*:*:*",
+                                            "versionStartIncluding": "1.0.0",
+                                            "versionEndExcluding": "2.0.0",
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ],
+                    "cisaExploitAdd": "2026-06-10",
+                }
+            }
         ],
     }

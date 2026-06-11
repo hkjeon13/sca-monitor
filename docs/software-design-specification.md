@@ -327,7 +327,7 @@ GET https://services.nvd.nist.gov/rest/json/cves/2.0
 CVE ID 기반 조회:
 
 ```http
-GET https://services.nvd.nist.gov/rest/json/cves/2.0?cveIds=CVE-2026-0000
+GET https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-0000
 ```
 
 변경 이력 조회:
@@ -356,6 +356,12 @@ cve.references
 - CVE alias가 있는 OSV/GHSA advisory에 CVSS, CWE, references를 보강한다.
 - CPE 기반 매칭은 OS/package/product 자산까지 확장할 때 사용한다.
 - `lastModified` 변경 시 advisory metadata를 갱신한다.
+
+현재 구현:
+
+- `parse_nvd_cve_vulnerability()`는 NVD CVE API 2.0의 `vulnerabilities[].cve` payload에서 CVE ID, English description, CVSS severity, vulnerable CPE match, published/lastModified, CISA exploit marker를 `AdvisoryImport`로 변환한다.
+- `scripts/nvd_cve_sync.py CVE-YYYY-NNNN`은 단건 CVE를 NVD에서 조회하거나 `--json-path` fixture를 읽어 `source=NVD`, `ecosystem=cpe` advisory row로 저장하고 `advisory_sync_state`에 `NVD` 상태를 기록한다.
+- NVD 전체 incremental pagination, CVE alias 기반 기존 OSV/GHSA row enrichment, `/cvehistory/2.0` 변경 이력 수집은 후속 범위이다.
 
 ### 5.6 OpenSSF Malicious Packages 수집 방식
 

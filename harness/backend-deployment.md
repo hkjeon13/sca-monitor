@@ -74,6 +74,7 @@ Advisory worker command examples:
 python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 python3 scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --limit 100 --scan-limit 1000 --lock-ttl-seconds 3600
 python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
+python3 scripts/nvd_cve_sync.py CVE-2026-0001 --lock-ttl-seconds 3600
 ```
 
 확인 항목:

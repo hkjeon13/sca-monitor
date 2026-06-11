@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator
 from uuid import uuid4
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .app import ScaMonitorApp
@@ -16,6 +17,7 @@ from .osv import AdvisoryImport
 
 OSV_DUMP_BASE_URL = "https://osv-vulnerabilities.storage.googleapis.com"
 CISA_KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,15 @@ class CisaKevSyncResult:
     catalog_url: str
     catalog_version: str | None
     date_released: str | None
+
+
+@dataclass(frozen=True)
+class NvdCveSyncResult:
+    source: str
+    cve_id: str
+    imported_rows: int
+    rematched_impacts: int
+    api_url: str
 
 
 def osv_dump_url(ecosystem: str) -> str:
@@ -188,6 +199,134 @@ def load_cisa_kev_catalog(*, catalog_url: str, json_path: Path | None = None) ->
     request = Request(catalog_url, headers={"Accept": "application/json", "User-Agent": "sca-monitor/0.1"})
     with urlopen(request, timeout=60) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def load_nvd_cve_payload(
+    *,
+    cve_id: str,
+    api_url: str = NVD_CVE_API_URL,
+    api_key: str | None = None,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    if not cve_id:
+        raise ValueError("cve_id required")
+    url = f"{api_url}?{urlencode({'cveId': cve_id})}"
+    headers = {"Accept": "application/json", "User-Agent": "sca-monitor/0.1"}
+    if api_key:
+        headers["apiKey"] = api_key
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
+    cve = item.get("cve") or item
+    cve_id = str(cve.get("id") or "").strip()
+    if not cve_id:
+        raise ValueError("NVD CVE id required")
+    cpe_matches = vulnerable_cpe_matches(cve.get("configurations") or [])
+    if not cpe_matches:
+        cpe_matches = [{"criteria": f"cve:{cve_id}"}]
+
+    imports: list[AdvisoryImport] = []
+    for cpe_match in cpe_matches:
+        criteria = str(cpe_match.get("criteria") or "").strip()
+        package_name = package_name_from_cpe(criteria) or cve_id
+        advisory_id = cve_id if len(cpe_matches) == 1 else f"{cve_id}:{package_name}"
+        imports.append(
+            AdvisoryImport(
+                advisory_id=advisory_id,
+                source="NVD",
+                summary=nvd_english_description(cve) or cve_id,
+                severity=nvd_severity(cve),
+                ecosystem="cpe",
+                package_name=package_name,
+                canonical_package_name=canonical_package_name("cpe", package_name),
+                affected_versions=nvd_affected_versions(cpe_match),
+                affected_ranges=[cpe_match],
+                fixed_version=None,
+                is_known_exploited=bool(cve.get("cisaExploitAdd")),
+                is_malicious_package=False,
+                published_at=cve.get("published"),
+                modified_at=cve.get("lastModified"),
+                raw_payload=cve,
+            )
+        )
+    return imports
+
+
+def sync_nvd_cve(
+    app: ScaMonitorApp,
+    cve_id: str,
+    *,
+    api_url: str = NVD_CVE_API_URL,
+    api_key: str | None = None,
+    json_path: Path | None = None,
+    lock_owner: str | None = None,
+    lock_ttl_seconds: int = 3600,
+) -> NvdCveSyncResult:
+    owner = lock_owner or default_lock_owner("nvd-cve")
+    payload = json.loads(json_path.read_text(encoding="utf-8")) if json_path else load_nvd_cve_payload(cve_id=cve_id, api_url=api_url, api_key=api_key)
+    vulnerabilities = payload.get("vulnerabilities") or []
+    imported_rows = 0
+    rematched_impacts = 0
+    with app.advisory_sync_lock("NVD", owner, ttl_seconds=lock_ttl_seconds):
+        for item in vulnerabilities:
+            for advisory in parse_nvd_cve_vulnerability(item):
+                with app.db.connect() as conn:
+                    changed = app.upsert_advisory(conn, advisory)
+                    if changed:
+                        rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
+                    imported_rows += 1
+        status = "ok" if imported_rows else "partial"
+        error_message = None if imported_rows else f"NVD CVE not found: {cve_id}"
+        app.record_advisory_sync("NVD", status, cve_id, error_message, imported_count=imported_rows)
+    return NvdCveSyncResult(source="NVD", cve_id=cve_id, imported_rows=imported_rows, rematched_impacts=rematched_impacts, api_url=api_url)
+
+
+def vulnerable_cpe_matches(configurations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for config in configurations:
+        for node in config.get("nodes") or []:
+            for cpe_match in node.get("cpeMatch") or []:
+                if cpe_match.get("vulnerable") is True and cpe_match.get("criteria"):
+                    matches.append(cpe_match)
+    return matches
+
+
+def package_name_from_cpe(criteria: str) -> str | None:
+    parts = criteria.split(":")
+    if len(parts) >= 6 and parts[0] == "cpe" and parts[1] == "2.3":
+        vendor = parts[3].replace("\\", "")
+        product = parts[4].replace("\\", "")
+        if vendor and product:
+            return f"{vendor}/{product}"
+    return None
+
+
+def nvd_english_description(cve: dict[str, Any]) -> str | None:
+    for item in cve.get("descriptions") or []:
+        if str(item.get("lang") or "").lower() == "en" and item.get("value"):
+            return str(item["value"])
+    return None
+
+
+def nvd_severity(cve: dict[str, Any]) -> str:
+    metrics = cve.get("metrics") or {}
+    for metric_name in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+        for item in metrics.get(metric_name) or []:
+            severity = str(item.get("cvssData", {}).get("baseSeverity") or item.get("baseSeverity") or "").lower()
+            if severity in {"critical", "high", "medium", "low"}:
+                return severity
+    return "medium"
+
+
+def nvd_affected_versions(cpe_match: dict[str, Any]) -> list[str]:
+    versions = []
+    for key in ("versionStartIncluding", "versionStartExcluding", "versionEndIncluding", "versionEndExcluding"):
+        if cpe_match.get(key):
+            versions.append(f"{key}:{cpe_match[key]}")
+    return versions
 
 
 def parse_cisa_kev_vulnerability(item: dict[str, Any], catalog: dict[str, Any] | None = None) -> AdvisoryImport:
