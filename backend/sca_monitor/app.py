@@ -124,6 +124,7 @@ class ScaMonitorApp:
                 return self.json_response(request, {"status": "ok", "app": "sca-monitor"})
             if path == "/ready":
                 readiness = self.db.readiness()
+                readiness["database_url_source"] = self.settings.database_url_source
                 status = HTTPStatus.OK if readiness["database"] == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
                 return self.json_response(request, {"status": "ready" if status == HTTPStatus.OK else "not_ready", **readiness}, status)
             if path == "/metrics":
@@ -462,6 +463,7 @@ class ScaMonitorApp:
 
     def database_readiness_summary(self) -> dict:
         readiness = self.db.readiness()
+        readiness["database_url_source"] = self.settings.database_url_source
         return {
             "status": "ready" if readiness["database"] == "ok" else "not_ready",
             **readiness,

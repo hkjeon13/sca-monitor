@@ -180,6 +180,7 @@ function renderDatabaseReadiness(readiness) {
     </div>
     <div class="detail-grid readiness-grid">
       ${detailRow("Backend", readiness.database_backend)}
+      ${detailRow("URL Source", readiness.database_url_source || "unknown")}
       ${detailRow("Migration", `${migration.current ?? 0}/${migration.required ?? 0}`)}
       ${detailRow("Cutover Mode", cutover.mode || "unknown")}
       ${detailRow("Current Cutover", cutover.status || "unknown")}

@@ -126,7 +126,14 @@ def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
     monkeypatch.setenv("WORKER_DATABASE_URL", "sqlite:////tmp/sca-worker.sqlite3")
 
     assert load_settings(component="api").database_url == "sqlite:////tmp/sca-api.sqlite3"
+    assert load_settings(component="api").database_url_source == "API_DATABASE_URL"
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-worker.sqlite3"
+    assert load_settings(component="worker").database_url_source == "WORKER_DATABASE_URL"
+
+    monkeypatch.delenv("WORKER_DATABASE_URL", raising=False)
+
+    assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-api.sqlite3"
+    assert load_settings(component="worker").database_url_source == "API_DATABASE_URL"
 
 
 def test_load_settings_global_database_url_overrides_component_urls(monkeypatch, tmp_path):
@@ -136,7 +143,30 @@ def test_load_settings_global_database_url_overrides_component_urls(monkeypatch,
     monkeypatch.setenv("WORKER_DATABASE_URL", "sqlite:////tmp/sca-worker.sqlite3")
 
     assert load_settings(component="api").database_url == "sqlite:////tmp/sca-global.sqlite3"
+    assert load_settings(component="api").database_url_source == "SCA_MONITOR_DATABASE_URL"
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-global.sqlite3"
+    assert load_settings(component="worker").database_url_source == "SCA_MONITOR_DATABASE_URL"
+
+
+def test_load_settings_reports_legacy_or_default_database_url_source(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)
+    monkeypatch.delenv("API_DATABASE_URL", raising=False)
+    monkeypatch.delenv("WORKER_DATABASE_URL", raising=False)
+    monkeypatch.delenv("SCA_MONITOR_DB", raising=False)
+
+    default_settings = load_settings(component="api")
+
+    assert default_settings.database_url_source == "default_sqlite"
+    assert default_settings.database_url.endswith("/sca-monitor.sqlite3")
+
+    legacy_path = tmp_path / "legacy.sqlite3"
+    monkeypatch.setenv("SCA_MONITOR_DB", str(legacy_path))
+
+    legacy_settings = load_settings(component="api")
+
+    assert legacy_settings.database_url_source == "SCA_MONITOR_DB"
+    assert legacy_settings.database_url == f"sqlite:///{legacy_path.resolve()}"
 
 
 def test_load_settings_supports_component_auto_migrate_flags(monkeypatch, tmp_path):
@@ -821,6 +851,7 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert payload["status"] == "ready"
     assert payload["database"] == "ok"
     assert payload["database_backend"] == "sqlite"
+    assert payload["database_url_source"] == "default_sqlite"
     assert payload["migration"]["compatible"] is True
     assert payload["cutover"]["status"] == "sqlite_fallback"
     assert payload["cutover_required"]["status"] == "blocked"
@@ -958,6 +989,7 @@ def test_web_console_renders_database_readiness_panel():
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
+    assert "URL Source" in script
 
 
 def enabled_now_lines(text: str) -> str:

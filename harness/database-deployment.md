@@ -25,7 +25,8 @@ Target production: postgresql://...
 
 PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, credential, network access, migration dry-run이 먼저 완료되어야 한다.
 전환 직전에는 `scripts/postgres_cutover_readiness.py --require-postgres --json`을 실행해 DB URL 조합, PostgreSQL 여부, integration smoke 설정, runtime auto-migrate 비활성화 여부를 먼저 확인한다.
-운영자는 Web Console Overview 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, migration version, cutover mode, require-postgres 차단 사유를 확인할 수 있다.
+운영자는 Web Console Overview, `/ready`, 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, DB URL source, migration version, cutover mode, require-postgres 차단 사유를 확인할 수 있다.
+`database_url_source`는 `SCA_MONITOR_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`, `SCA_MONITOR_DB`, `default_sqlite` 중 어떤 설정이 선택됐는지만 표시하며 URL 원문이나 credential은 노출하지 않는다.
 
 ## 2. Migration
 
