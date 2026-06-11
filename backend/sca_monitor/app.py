@@ -270,22 +270,57 @@ class ScaMonitorApp:
         advisory_id = required(body, "advisory_id")
         try:
             payload = fetch_osv_advisory(advisory_id)
-            imported = self.import_osv_payload(payload)
-            return {"source": "OSV", "advisory_id": advisory_id, "imported": imported}
+            result = self.import_osv_payload(payload)
+            return {"source": "OSV", "advisory_id": advisory_id, **result}
         except Exception as exc:
             self.record_advisory_sync("OSV", "error", advisory_id, str(exc))
             raise
 
-    def import_osv_payload(self, payload: dict) -> int:
+    def import_osv_payload(self, payload: dict) -> dict:
         advisories = parse_osv_advisories(payload)
         source_advisory_id = str(payload.get("id") or advisories[0].advisory_id)
+        changed_advisories: list[AdvisoryImport] = []
+        rematched_impacts = 0
         with self.db.connect() as conn:
             for advisory in advisories:
-                self.upsert_advisory(conn, advisory)
+                if self.upsert_advisory(conn, advisory):
+                    changed_advisories.append(advisory)
+            for advisory in changed_advisories:
+                rematched_impacts += self.rematch_latest_snapshots_for_advisory(conn, advisory)
             self.record_advisory_sync("OSV", "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
-        return len(advisories)
+        return {
+            "imported": len(advisories),
+            "changed": len(changed_advisories),
+            "rematched_impacts": rematched_impacts,
+        }
 
-    def upsert_advisory(self, conn, advisory: AdvisoryImport) -> None:
+    def upsert_advisory(self, conn, advisory: AdvisoryImport) -> bool:
+        previous = conn.execute(
+            """
+            SELECT summary, severity, ecosystem, package_name, canonical_package_name,
+                   affected_versions, affected_ranges, fixed_version, is_known_exploited,
+                   is_malicious_package, published_at, modified_at, raw_payload
+            FROM advisories
+            WHERE advisory_id = ?
+            """,
+            (advisory.advisory_id,),
+        ).fetchone()
+        next_values = {
+            "summary": advisory.summary,
+            "severity": advisory.severity,
+            "ecosystem": advisory.ecosystem,
+            "package_name": advisory.package_name,
+            "canonical_package_name": advisory.canonical_package_name,
+            "affected_versions": json.dumps(advisory.affected_versions),
+            "affected_ranges": json.dumps(advisory.affected_ranges),
+            "fixed_version": advisory.fixed_version,
+            "is_known_exploited": int(advisory.is_known_exploited),
+            "is_malicious_package": int(advisory.is_malicious_package),
+            "published_at": advisory.published_at,
+            "modified_at": advisory.modified_at,
+            "raw_payload": json.dumps(advisory.raw_payload, ensure_ascii=False),
+        }
+        changed = previous is None or any(previous[key] != value for key, value in next_values.items())
         conn.execute(
             """
             INSERT INTO advisories (
@@ -328,6 +363,24 @@ class ScaMonitorApp:
                 json.dumps(advisory.raw_payload, ensure_ascii=False),
             ),
         )
+        return changed
+
+    def rematch_latest_snapshots_for_advisory(self, conn, advisory: AdvisoryImport) -> int:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ds.service_pk, ds.id AS snapshot_pk
+            FROM dependency_snapshots ds
+            JOIN dependencies d ON d.snapshot_pk = ds.id
+            WHERE ds.is_latest = 1
+              AND d.ecosystem = ?
+              AND d.canonical_package_name = ?
+            """,
+            (advisory.ecosystem, advisory.canonical_package_name),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            count += self.match_impacts(conn, row["service_pk"], row["snapshot_pk"])
+        return count
 
     def record_advisory_sync(
         self,

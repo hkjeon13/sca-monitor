@@ -54,7 +54,7 @@ def sync_osv_ecosystem_dump(
                     break
                 processed += 1
                 try:
-                    imported_rows += app.import_osv_payload(payload)
+                    imported_rows += app.import_osv_payload(payload)["imported"]
                 except Exception:
                     failed += 1
             status = "ok" if failed == 0 else "partial"

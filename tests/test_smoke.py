@@ -93,9 +93,10 @@ def test_parse_osv_uses_payload_severity_when_affected_specific_has_no_severity(
 def test_import_osv_payload_updates_advisory_and_sync_state(tmp_path):
     app = make_test_app(tmp_path)
 
-    imported = app.import_osv_payload(osv_fixture())
+    result = app.import_osv_payload(osv_fixture())
 
-    assert imported == 1
+    assert result["imported"] == 1
+    assert result["changed"] == 1
     advisories = app.list_advisories({"source": ["OSV"]})
     advisory = next(advisory for advisory in advisories if advisory["advisory_id"] == "OSV-TEST-0001")
     assert advisory["affected_ranges"] == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
@@ -121,6 +122,40 @@ def test_range_only_osv_advisory_matches_snapshot(tmp_path):
     impacts = app.list_impacts({})
     assert len(impacts) == 1
     assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
+
+
+def test_advisory_import_rematches_existing_latest_snapshot(tmp_path):
+    app = make_test_app(tmp_path)
+    app.push_snapshot(
+        {
+            "service_id": "pre-existing-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    before = [impact for impact in app.list_impacts({}) if impact["service_id"] == "pre-existing-service"]
+    assert before == []
+
+    payload = osv_fixture()
+    payload["affected"][0]["versions"] = []
+    result = app.import_osv_payload(payload)
+
+    assert result["imported"] == 1
+    assert result["changed"] == 1
+    assert result["rematched_impacts"] == 1
+    impacts = [impact for impact in app.list_impacts({}) if impact["service_id"] == "pre-existing-service"]
+    assert len(impacts) == 1
+    assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
+
+
+def test_unchanged_advisory_import_does_not_rematch(tmp_path):
+    app = make_test_app(tmp_path)
+    first = app.import_osv_payload(osv_fixture())
+    second = app.import_osv_payload(osv_fixture())
+
+    assert first["changed"] == 1
+    assert second["changed"] == 0
+    assert second["rematched_impacts"] == 0
 
 
 def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
