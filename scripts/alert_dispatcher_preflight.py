@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -48,7 +49,18 @@ def default_channel_summary(app: ScaMonitorApp) -> dict[str, Any]:
         "name": row["name"],
         "channel_type": row["channel_type"],
         "target_url_masked": mask_url(row["target_url"]),
+        "placeholder_target": is_placeholder_url(row["target_url"]),
     }
+
+
+def is_placeholder_url(value: str | None) -> bool:
+    if not value:
+        return True
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return True
+    return host in {"example.com", "example.net", "example.org", "example.test"} or host.endswith(".example.test")
 
 
 def run_preflight(app: ScaMonitorApp, *, limit: int, require_default_channel: bool = True) -> dict[str, Any]:
@@ -59,10 +71,12 @@ def run_preflight(app: ScaMonitorApp, *, limit: int, require_default_channel: bo
     checks = {
         "database_ready": readiness["database"] == "ok",
         "default_alert_channel_configured": bool(channel["configured"]),
+        "default_alert_channel_not_placeholder": bool(channel["configured"]) and not channel.get("placeholder_target", True),
         "dispatcher_dry_run_ok": True,
     }
     if not require_default_channel:
         checks["default_alert_channel_configured"] = True
+        checks["default_alert_channel_not_placeholder"] = True
     status = "ok" if all(checks.values()) else "failed"
     result = {
         "status": status,

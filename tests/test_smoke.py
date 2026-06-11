@@ -2574,7 +2574,7 @@ def test_alert_dispatcher_preflight_requires_default_channel(tmp_path):
 def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_update_rows(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
-    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
     env = {
         **os.environ,
         "SCA_MONITOR_DATA_DIR": str(tmp_path),
@@ -2595,14 +2595,40 @@ def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_upd
     assert payload["checks"] == {
         "database_ready": True,
         "default_alert_channel_configured": True,
+        "default_alert_channel_not_placeholder": True,
         "dispatcher_dry_run_ok": True,
     }
-    assert payload["default_alert_channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    assert payload["default_alert_channel"]["target_url_masked"] == "https://alerts.internal/..."
     assert payload["dry_run"]["pending"] == 1
     assert payload["dry_run"]["claimed"] == 0
     assert payload["alert_events"]["pending"] == 1
     with app.db.connect() as conn:
         assert conn.execute("SELECT status FROM alert_events").fetchone()["status"] == "pending"
+
+
+def test_alert_dispatcher_preflight_rejects_placeholder_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/alert_dispatcher_preflight.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["checks"]["default_alert_channel_configured"] is True
+    assert payload["checks"]["default_alert_channel_not_placeholder"] is False
+    assert payload["default_alert_channel"]["placeholder_target"] is True
 
 
 def test_alert_webhook_smoke_posts_synthetic_payload(tmp_path):
