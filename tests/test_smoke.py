@@ -1631,6 +1631,98 @@ def test_validate_database_env_file_accepts_split_postgres_without_leaking_urls(
     assert "postgresql://worker:secret" not in result.stdout
 
 
+def test_cutover_readiness_report_combines_inputs_without_leaking_secrets(tmp_path):
+    env_file = tmp_path / "runtime.env"
+    database_env_file = tmp_path / "postgres.env"
+    database_path = tmp_path / "sca-monitor.sqlite3"
+    sqlite_env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{database_path}",
+    }
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run",
+                "SMOKE_TEST_TOKEN=stage-smoke-token",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    database_env_file.write_text(
+        "\n".join(
+            [
+                "MIGRATION_DATABASE_URL=postgresql://migration:secret@db.internal:5432/sca",
+                "API_DATABASE_URL=postgresql://api:secret@db.internal:5432/sca",
+                "WORKER_DATABASE_URL=postgresql://worker:secret@db.internal:5432/sca",
+                "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required",
+                "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true",
+                "SCA_MONITOR_API_AUTO_MIGRATE=false",
+                "SCA_MONITOR_WORKER_AUTO_MIGRATE=false",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=sqlite_env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backup_result = subprocess.run(
+        ["python3", "scripts/backup_database.py", "--json"],
+        cwd=REPO_ROOT,
+        env=sqlite_env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backup_path = Path(json.loads(backup_result.stdout)["backup_path"])
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/cutover_readiness_report.py",
+            "--env-file",
+            str(env_file),
+            "--database-env-file",
+            str(database_env_file),
+            "--backup-path",
+            str(backup_path),
+            "--require-postgres",
+            "--require-split",
+            "--require-runtime-inputs",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["deployment_inputs"]["status"] == "ok"
+    assert payload["database_env"]["status"] == "ok"
+    assert payload["backup_restore"]["status"] == "ok"
+    assert payload["production_preflight"]["status"] == "skipped"
+    assert payload["summary"]["blockers"] == 0
+    assert payload["summary"]["ok"] >= 3
+    assert "postgresql://migration:secret" not in result.stdout
+    assert "postgresql://api:secret" not in result.stdout
+    assert "postgresql://worker:secret" not in result.stdout
+    assert str(backup_path) not in result.stdout
+    assert "sqlite:///" not in result.stdout
+
+
 def test_prepare_database_env_file_creates_protected_placeholder_without_overwrite(tmp_path):
     target = tmp_path / ".secrets" / "postgres.env"
 
@@ -2220,6 +2312,7 @@ def test_ci_smoke_runs_core_gates():
     assert "scripts/database_env_dry_run_gate.py" in script
     assert "scripts/backup_database.py" in script
     assert "scripts/verify_backup_restore.py" in script
+    assert "scripts/cutover_readiness_report.py" in script
     assert "scripts/advisory_source_preflight.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2293,6 +2386,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "scripts/validate_database_env_file.py" in database_doc
     assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "scripts/verify_backup_restore.py" in database_doc
+    assert "scripts/cutover_readiness_report.py" in database_doc
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
