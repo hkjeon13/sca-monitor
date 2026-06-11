@@ -348,6 +348,12 @@ def test_remote_deploy_uses_db_gate():
 
     assert "bash scripts/deploy_db_gate.sh" in script
     assert "bash scripts/deploy_systemd_gate.sh" in script
+    assert 'SYSTEMD_MODE_OVERRIDE="${SCA_MONITOR_SYSTEMD_MODE:-}"' in script
+    assert 'SCA_MONITOR_SYSTEMD_MODE=\\"\\$SYSTEMD_MODE_OVERRIDE\\"' in script
+    assert 'SYSTEMD_MODE=\\"\\${SCA_MONITOR_SYSTEMD_MODE:-validate}\\"' in script
+    assert 'if [ \\"\\$SYSTEMD_MODE\\" = ' in script
+    assert "rm -f .data/sca-monitor.pid" in script
+    assert "nohup python3 -m backend.sca_monitor" in script
 
 
 def test_postgres_sql_translates_placeholders_outside_string_literals():

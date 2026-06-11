@@ -4,7 +4,7 @@ set -euo pipefail
 REMOTE="${REMOTE:-ai-assistant}"
 REMOTE_DIR="${REMOTE_DIR:-/data/psyche/Projects/sca-monitor}"
 PORT="${SCA_MONITOR_PORT:-18780}"
-SYSTEMD_MODE="${SCA_MONITOR_SYSTEMD_MODE:-validate}"
+SYSTEMD_MODE_OVERRIDE="${SCA_MONITOR_SYSTEMD_MODE:-}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -16,9 +16,13 @@ ssh "$REMOTE" "set -euo pipefail
   set -a
   . ./.env
   set +a
+  SYSTEMD_MODE_OVERRIDE='$SYSTEMD_MODE_OVERRIDE'
+  if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
+    SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
+  fi
+  SYSTEMD_MODE=\"\${SCA_MONITOR_SYSTEMD_MODE:-validate}\"
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
-  SCA_MONITOR_SYSTEMD_MODE='$SYSTEMD_MODE' SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' bash scripts/deploy_systemd_gate.sh
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)
     if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then
@@ -26,8 +30,13 @@ ssh "$REMOTE" "set -euo pipefail
       sleep 1
     fi
   fi
-  nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
-  echo \$! > .data/sca-monitor.pid
+  SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE\" SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' bash scripts/deploy_systemd_gate.sh
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ]; then
+    rm -f .data/sca-monitor.pid
+  else
+    nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
+    echo \$! > .data/sca-monitor.pid
+  fi
   for attempt in \$(seq 1 20); do
     if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
        curl -fsS http://127.0.0.1:$PORT/ready >/dev/null 2>&1; then
@@ -36,6 +45,9 @@ ssh "$REMOTE" "set -euo pipefail
     sleep 1
   done
   tail -80 logs/sca-monitor.log || true
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ]; then
+    systemctl --user status sca-monitor-api.service --no-pager || true
+  fi
   exit 1
 "
 

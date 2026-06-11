@@ -222,6 +222,8 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 
 원격 배포 스크립트는 DB gate 후 `scripts/deploy_systemd_gate.sh`를 실행한다.
 운영에서 실제 unit 파일만 설치하려면 `SCA_MONITOR_SYSTEMD_MODE=install`, 설치와 enable/start까지 수행하려면 `SCA_MONITOR_SYSTEMD_MODE=enable`을 명시한다.
+`enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
+`off`, `validate`, `install` 모드에서는 기존 nohup API runtime을 유지한다.
 
 운영에서 system unit으로 설치하려면 `--system`을 사용한다.
 이 경우 root 권한과 `/etc/systemd/system` 쓰기 권한이 필요하다.
