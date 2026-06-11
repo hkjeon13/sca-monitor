@@ -93,6 +93,10 @@ class ScaMonitorApp:
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
                 return self.json_response(request, self.create_service(self.read_json(request)), HTTPStatus.CREATED)
+            if path == "/api/v1/settings/alert-channels" and method == "GET":
+                return self.json_response(request, {"channels": self.list_alert_channels()})
+            if path == "/api/v1/settings/alert-channels" and method == "POST":
+                return self.json_response(request, self.create_alert_channel(self.read_json(request)), HTTPStatus.CREATED)
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "GET":
                 service_id = path.split("/")[-2]
                 return self.json_response(request, {"credentials": self.list_push_credentials(service_id, parse_qs(parsed.query))})
@@ -281,6 +285,62 @@ class ScaMonitorApp:
                 (row["id"], now),
             )
         return {"service": sanitize_service(row_to_dict(row))}
+
+    def list_alert_channels(self) -> list[dict]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, name, channel_type, target_url, enabled, is_default, created_at, updated_at
+                FROM alert_channels
+                ORDER BY is_default DESC, updated_at DESC
+                """
+            ).fetchall()
+        return [sanitize_alert_channel(row_to_dict(row)) for row in rows]
+
+    def create_alert_channel(self, body: dict) -> dict:
+        name = required(body, "name")
+        channel_type = body.get("channel_type", "webhook")
+        if channel_type != "webhook":
+            raise ValueError("only webhook alert channels are supported")
+        target_url = required(body, "target_url")
+        if not target_url.startswith(("https://", "http://")):
+            raise ValueError("target_url must be http or https")
+        enabled = int(bool(body.get("enabled", True)))
+        is_default = int(bool(body.get("is_default", True)))
+        channel_id = str(uuid.uuid4())
+        now = utcnow()
+        with self.db.connect() as conn:
+            if is_default:
+                conn.execute("UPDATE alert_channels SET is_default = 0, updated_at = ?", (now,))
+            conn.execute(
+                """
+                INSERT INTO alert_channels (
+                    id, name, channel_type, target_url, enabled, is_default, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    channel_type=excluded.channel_type,
+                    target_url=excluded.target_url,
+                    enabled=excluded.enabled,
+                    is_default=excluded.is_default,
+                    updated_at=excluded.updated_at
+                """,
+                (channel_id, name, channel_type, target_url, enabled, is_default, now, now),
+            )
+            row = conn.execute("SELECT * FROM alert_channels WHERE name = ?", (name,)).fetchone()
+        return {"channel": sanitize_alert_channel(row_to_dict(row))}
+
+    def default_alert_webhook_url(self) -> str | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT target_url
+                FROM alert_channels
+                WHERE enabled = 1 AND is_default = 1 AND channel_type = 'webhook'
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return row["target_url"] if row else None
 
     def list_push_credentials(self, service_id: str, query: dict[str, list[str]]) -> list[dict]:
         environment = query.get("environment", ["prod"])[0]
@@ -1132,6 +1192,27 @@ def sanitize_service(service: dict | None) -> dict | None:
     sanitized["status_auth_configured"] = has_secret
     sanitized.pop("encrypted_auth_config", None)
     return sanitized
+
+
+def sanitize_alert_channel(channel: dict | None) -> dict | None:
+    if channel is None:
+        return None
+    sanitized = dict(channel)
+    target_url = sanitized.pop("target_url", None)
+    sanitized["target_configured"] = bool(target_url)
+    sanitized["target_url_masked"] = mask_url(target_url)
+    sanitized["enabled"] = bool(sanitized.get("enabled"))
+    sanitized["is_default"] = bool(sanitized.get("is_default"))
+    return sanitized
+
+
+def mask_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if not parsed.netloc:
+        return "***"
+    return f"{parsed.scheme}://{parsed.netloc}/..."
 
 
 def endpoint_auth_config_from_body(body: dict) -> tuple[str | None, str | None, str | None]:

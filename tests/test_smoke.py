@@ -104,6 +104,41 @@ def test_push_credential_revoke_blocks_token_reuse(tmp_path):
         )
 
 
+def test_alert_channel_create_list_redacts_target(tmp_path):
+    app = make_test_app(tmp_path)
+
+    created = app.create_alert_channel(
+        {
+            "name": "security-router",
+            "channel_type": "webhook",
+            "target_url": "https://alerts.example.test/hooks/secret-token",
+            "is_default": True,
+        }
+    )
+
+    assert created["channel"]["name"] == "security-router"
+    assert created["channel"]["channel_type"] == "webhook"
+    assert created["channel"]["target_configured"] is True
+    assert created["channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    assert "secret-token" not in json.dumps(created)
+    channels = app.list_alert_channels()
+    assert channels[0]["is_default"] is True
+    assert "secret-token" not in json.dumps(channels)
+    assert app.default_alert_webhook_url() == "https://alerts.example.test/hooks/secret-token"
+
+
+def test_alert_channel_only_one_default(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.create_alert_channel({"name": "first", "target_url": "https://first.example.test/webhook", "is_default": True})
+    app.create_alert_channel({"name": "second", "target_url": "https://second.example.test/webhook", "is_default": True})
+
+    channels = app.list_alert_channels()
+    defaults = [channel for channel in channels if channel["is_default"]]
+    assert [channel["name"] for channel in defaults] == ["second"]
+    assert app.default_alert_webhook_url() == "https://second.example.test/webhook"
+
+
 def test_service_endpoint_test_records_healthy_status(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service(
@@ -663,6 +698,21 @@ def test_dispatch_pending_alerts_marks_sent(tmp_path):
         assert row["status"] == "sent"
         assert row["sent_at"] is not None
         assert row["channel_type"] == "webhook"
+
+
+def test_dispatch_pending_alerts_uses_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default", "is_default": True})
+    delivered = []
+
+    result = dispatch_pending_alerts(app, webhook_url=None, sender=lambda url, payload: delivered.append((url, payload)))
+
+    assert result.sent == 1
+    assert delivered[0][0] == "https://alerts.example.test/default"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT channel_target FROM alert_events").fetchone()
+        assert row["channel_target"] == "https://alerts.example.test/default"
 
 
 def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):

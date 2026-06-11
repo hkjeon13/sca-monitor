@@ -222,7 +222,7 @@ function renderImpactPagination(pagination) {
 }
 
 async function refreshAll() {
-  await Promise.all([loadOverview(), loadServices(), loadImpacts()]);
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);
@@ -337,6 +337,37 @@ document.querySelector("#snapshot-form").addEventListener("submit", async (event
   }, headers);
   await refreshAll();
 });
+
+document.querySelector("#alert-channel-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await api.send("/api/v1/settings/alert-channels", "POST", {
+    name: form.name,
+    channel_type: "webhook",
+    target_url: form.target_url,
+    is_default: form.is_default === "on",
+  });
+  event.currentTarget.reset();
+  await loadAlertChannels();
+});
+
+async function loadAlertChannels() {
+  const target = document.querySelector("#alert-channel-list");
+  if (!target) return;
+  const data = await api.get("/api/v1/settings/alert-channels");
+  if (!data.channels.length) {
+    target.innerHTML = `<p>No alert channels configured.</p>`;
+    return;
+  }
+  target.innerHTML = data.channels.map((channel) => `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(channel.name)}</strong>
+        <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
+      </div>
+    </div>
+  `).join("");
+}
 
 loadImpactFiltersFromUrl();
 

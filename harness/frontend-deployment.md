@@ -13,7 +13,7 @@
 - service impact 조회
 - impact 상태 변경
 - accepted risk 요청/승인
-- alert channel 설정
+- alert channel 설정: MVP는 Settings 화면에서 default webhook channel 등록/조회 지원
 
 ## 2. URL 요구사항
 

@@ -35,6 +35,7 @@ def dispatch_pending_alerts(
 ) -> AlertDispatchResult:
     now = utcnow()
     owner = lock_owner or default_lock_owner()
+    webhook_url = webhook_url or app.default_alert_webhook_url()
     with app.db.connect() as conn:
         eligible_rows = conn.execute(
             """

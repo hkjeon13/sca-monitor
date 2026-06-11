@@ -109,6 +109,12 @@ Webhook 수동 발송:
 ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_alerts.py --limit 50 --retry-backoff-seconds 300
 ```
 
+기본 alert channel을 등록한 경우 `ALERT_WEBHOOK_URL` 없이 실행할 수 있다.
+
+```bash
+python3 scripts/dispatch_alerts.py --limit 50 --retry-backoff-seconds 300
+```
+
 반복 실행:
 
 ```bash

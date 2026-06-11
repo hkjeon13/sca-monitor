@@ -1452,7 +1452,8 @@ POST /api/v1/settings/alert-channels
 - Endpoint Bearer Auth: Web Console/API에서 `status_auth_type=bearer_token`과 token을 등록하면 endpoint test/polling에서 `Authorization: Bearer` 헤더를 사용. 서비스 조회 응답은 secret 원문을 제거하고 `status_auth_configured`만 표시
 - Operational Metrics: `/metrics`에서 service/open impact/critical/high/unhealthy count와 advisory sync lag, endpoint poll success rate, alert delivery success rate, alert outbox pending count, stale service count를 Prometheus text 형태로 노출
 - Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
-- Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds` 옵션으로 운영 루프 실행을 지원
+- Alert Channel Settings: `GET/POST /api/v1/settings/alert-channels`와 Web Console Settings에서 기본 webhook channel을 등록/조회한다. webhook URL 원문은 조회 응답에 노출하지 않는다
+- Alert Dispatch Worker: `scripts/dispatch_alerts.py` 기반 pending/failed/expired dispatching alert를 webhook으로 발송하고, 명시적 `--webhook-url`이 없으면 기본 alert channel을 사용한다. `--iterations`, `--interval-seconds`, `--lock-owner`, `--lock-ttl-seconds`, `--retry-backoff-seconds` 옵션으로 운영 루프 실행을 지원
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
@@ -1467,7 +1468,7 @@ POST /api/v1/settings/alert-channels
 - service detail, 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
-- settings/alert channel 관리 화면
+- Slack app 방식, alert channel 수정/삭제, dead-letter 정책, idempotency header
 
 ### 14.7 UI 상태
 
