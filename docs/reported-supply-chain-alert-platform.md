@@ -27,6 +27,9 @@ OSV, CVE, GHSA, CISA KEV 등 외부에 보고된 보안 이슈를 매칭하고
 각 서비스는 자신에게 설치되어 있거나 배포 artifact에 포함된 라이브러리 목록을 status endpoint로 제공한다.
 중앙 alert 서버는 이 endpoint를 주기적으로 조회하거나 서비스가 push한 dependency snapshot을 받아서 advisory와 매칭한다.
 
+상세 소프트웨어 설계와 DB 물리 설계의 기준 문서는 `docs/software-design-specification.md`이다.
+본 문서는 제품 개념과 운영 방향을 설명하며, 구현 세부사항이 충돌할 경우 SDS를 우선한다.
+
 ## 3. 명확한 범위
 
 ### 포함 범위
@@ -39,6 +42,7 @@ OSV, CVE, GHSA, CISA KEV 등 외부에 보고된 보안 이슈를 매칭하고
 - 서비스별 영향도 산정
 - severity 및 운영 영향도 기반 alert 생성
 - 조치 상태 추적
+- 웹 콘솔 기반 서비스 등록, 모니터링, 조치 관리
 
 ### 제외 범위
 
@@ -65,7 +69,7 @@ OSV, CVE, GHSA, CISA KEV 등 외부에 보고된 보안 이슈를 매칭하고
 
 | 소스 | 수집 대상 | 수집 방법 | 상태 |
 |---|---|---|---|
-| OSV.dev | 오픈소스 패키지 취약점, affected range, fixed version | `POST https://api.osv.dev/v1/querybatch`, `GET https://api.osv.dev/v1/vulns/{id}` | CONFIRMED |
+| OSV.dev | 오픈소스 패키지 취약점, affected range, fixed version | OSV 데이터 덤프 feed-sync 및 `GET https://api.osv.dev/v1/vulns/{id}`. `querybatch`는 보조 조회 | CONFIRMED |
 | CISA KEV | 실제 악용이 확인된 CVE | CISA KEV catalog의 JSON/CSV feed | CONFIRMED |
 | OpenSSF Malicious Packages | 악성 패키지 보고, `MAL-*` record | `https://github.com/ossf/malicious-packages` 또는 OSV API | CONFIRMED |
 | GitHub Security Advisory | GHSA, CVE alias, package advisory, malware advisory | `GET https://api.github.com/advisories`, malware는 `type=malware` | CONFIRMED |
@@ -108,7 +112,7 @@ GitHub 생태계의 advisory 정보를 보강 데이터로 사용한다.
 실제로 공격에 악용 중인 취약점 여부를 판단하는 우선순위 데이터로 사용한다.
 
 - KEV에 포함된 CVE는 우선순위를 높인다.
-- 운영 서비스에 영향이 있으면 Critical alert 후보가 된다.
+- 운영 서비스에 영향이 있으면 Critical alert로 우선 분류한다.
 
 ### OpenSSF Malicious Packages
 
@@ -149,6 +153,8 @@ flowchart LR
     G --> H["Alert"]
     H --> I["조치 상태 추적"]
 ```
+
+사용자는 Web Console에서 서비스를 등록하고, endpoint/push 연동 상태를 확인하며, 영향받는 service impact를 모니터링하고 조치 상태를 변경한다.
 
 ## 6. 서비스 등록 모델
 
@@ -313,16 +319,17 @@ dependency snapshot이 오래된 경우에는 보안 이슈 매칭 결과의 신
 
 중앙 alert 서버는 각 서비스의 dependency snapshot이 현재 배포 상태를 충분히 대표하는지 판단해야 한다.
 
-기본 정책은 다음과 같다.
+신선도는 두 가지 신호로 분리한다.
 
 ```text
-fresh: now - generated_at <= freshness_threshold_seconds
-stale: now - generated_at > freshness_threshold_seconds
-unreachable: polling 실패
-invalid: schema validation 실패
+수집 신선도: now - last_successful_poll_at
+snapshot 나이: now - generated_at
 ```
 
-권장 freshness 기준은 다음과 같다.
+polling 방식의 stale 판정은 수집 신선도를 기준으로 한다.
+`generated_at`은 배포 artifact가 오래되었는지를 보여주는 보조 지표이다.
+
+권장 수집 신선도 기준은 다음과 같다.
 
 ```text
 prod: 1시간
@@ -330,7 +337,7 @@ stage: 24시간
 dev: 7일
 ```
 
-freshness가 낮은 snapshot은 advisory 매칭 자체는 수행하되, alert 메시지에 신뢰도 경고를 포함한다.
+수집 신선도가 낮은 snapshot은 advisory 매칭 자체는 수행하되, alert 메시지에 신뢰도 경고를 포함한다.
 
 ```text
 Snapshot Status: stale
@@ -347,7 +354,8 @@ last_poll_finished_at
 last_successful_poll_at
 last_error_code
 last_error_message
-snapshot_status
+collection_status
+freshness_status
 snapshot_age_seconds
 ```
 
@@ -494,20 +502,23 @@ first_detected_at
 last_seen_at
 snapshot_id
 artifact_digest
-snapshot_status
-dedupe_key
+freshness_status
+impact_identity
+alert_suppression_key
 ```
 
-기본 dedupe key는 다음 조합으로 생성한다.
+impact identity는 다음 조합으로 생성한다.
 
 ```text
 service_id
-advisory_id
-package_name
-resolved_version
-artifact_digest
 environment
+canonical_advisory_id
+canonical_package_name
 ```
+
+alert suppression key는 impact identity에 마지막 발송 risk level과 상태를 더해 생성한다.
+`artifact_digest`와 `resolved_version`은 suppression key에 포함하지 않는다.
+배포만 반복되고 취약 상태가 변하지 않은 경우 alert 재발송을 막기 위함이다.
 
 ## 15. 위험도 산정
 
@@ -523,7 +534,7 @@ environment
 dependency_scope
 internet_facing
 business_criticality
-snapshot_status
+freshness_status
 fix_available
 ```
 
@@ -534,7 +545,7 @@ fix_available
 - 악성 패키지로 보고된 항목이 운영 서비스에 포함됨
 - CISA KEV에 포함된 CVE가 운영 서비스에 영향
 - production dependency이며 severity가 critical
-- fix version이 없고 운영 서비스에 영향
+- malicious package 또는 KEV 조건은 다른 하향 요인보다 우선함
 
 ### High
 
@@ -542,6 +553,7 @@ fix_available
 - production dependency
 - 인터넷 노출 서비스에 영향
 - fix version이 존재하여 즉시 조치 가능
+- fix version이 없는 경우는 자동 Critical 승격이 아니라 조치 난이도 보강 정보로 표시
 
 ### Medium
 
@@ -575,7 +587,7 @@ fix_available
 
 ### 중복 방지
 
-중앙 alert 서버는 같은 dedupe key에 대해 동일한 alert을 반복 발송하지 않는다.
+중앙 alert 서버는 같은 alert suppression key에 대해 동일한 alert을 반복 발송하지 않는다.
 
 재알림은 다음 경우에만 수행한다.
 
@@ -649,7 +661,7 @@ resolved_snapshot_id
 resolved_at
 ```
 
-fixed 처리 후 동일 dedupe key 또는 동일 advisory/package 조합이 다시 발견되면 regression alert을 발송한다.
+fixed 처리 후 동일 impact identity 또는 동일 advisory/package 조합이 다시 발견되면 regression alert을 발송한다.
 
 ## 19. SLA와 Escalation
 
@@ -698,8 +710,29 @@ SLA 초과 시 다음 순서로 escalation한다.
 17. endpoint 상태 조회
 18. 자동 fixed 판정
 19. SLA 초과 escalation
+20. Web Console 기본 dashboard
+21. 서비스 등록 wizard
+22. impact 목록/상세/상태 변경 화면
+23. endpoint health와 advisory sync health 모니터링 화면
 
-## 21. 이후 확장 기능
+## 21. Web Console
+
+Web Console은 사용자가 손쉽게 서비스를 등록하고 모니터링하기 위한 운영 화면이다.
+
+주요 화면은 다음과 같다.
+
+- Overview Dashboard: Critical/High open impact, SLA 초과, endpoint unhealthy, advisory sync lag
+- Services: 등록 서비스 목록, owner, environment, latest snapshot, open impact 수
+- Service Registration Wizard: endpoint polling 또는 push 방식 등록, 인증 설정, 테스트 호출
+- Service Detail: endpoint health, latest snapshot, dependency summary, 영향 advisory
+- Impacts: risk/status/team/environment/package/advisory 기준 검색과 필터링
+- Impact Detail: advisory 근거, affected range, 현재 version, fixed version, dependency path, 조치 이력
+- Settings: alert channel, SLA policy, integration credential 관리
+
+모바일에서는 dashboard, impact 상세, 기본 상태 변경을 우선 지원한다.
+대량 설정과 복잡한 필터는 데스크톱 사용성을 우선한다.
+
+## 22. 이후 확장 기능
 
 MVP 이후 다음 기능을 추가할 수 있다.
 
@@ -716,7 +749,7 @@ MVP 이후 다음 기능을 추가할 수 있다.
 - 동일 advisory에 영향받는 서비스 일괄 조회
 - fix version 기준 자동 PR 생성
 
-## 22. 핵심 차별점
+## 23. 핵심 차별점
 
 일반적인 SCA 도구가 취약점 목록을 보여주는 데 집중한다면, 이 시스템은 다음 질문에 답하는 데 집중한다.
 

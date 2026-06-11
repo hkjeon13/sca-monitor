@@ -1,0 +1,86 @@
+# Database Deployment
+
+이 문서는 PostgreSQL 배포와 migration 기준을 정의한다.
+
+## 1. PostgreSQL 기준
+
+```text
+Database: PostgreSQL
+Recommended version: 16+
+Required extension: pgcrypto
+Public exposure: forbidden
+Access: API/worker private network only
+```
+
+## 2. Migration
+
+Migration tool은 아직 REQUIRED이다.
+
+후보:
+
+- Alembic
+- Prisma Migrate
+- Flyway
+- Liquibase
+
+배포 pipeline은 backend/worker 시작 전에 migration을 실행한다.
+
+## 3. Migration Rules
+
+- migration은 idempotent하지 않아도 되지만 순서가 보장되어야 한다.
+- destructive migration은 별도 승인 필요.
+- prod migration 전 backup snapshot 생성.
+- rollback 불가능한 migration은 forward-fix 절차를 문서화.
+- 모든 migration은 직전 배포 버전(N-1) 코드와 호환되어야 한다.
+- 컬럼/테이블 제거 또는 rename은 expand/contract 방식으로 분리한다.
+- NOT NULL 추가는 nullable column 추가, backfill, constraint 적용을 분리한다.
+- migration 도구의 lock 기능 또는 PostgreSQL advisory lock으로 동일 환경 동시 migration 실행을 차단한다.
+- CI/CD는 동일 환경에 대한 중복 배포를 금지하거나 queueing해야 한다.
+
+### 3.1 Expand/Contract 원칙
+
+배포 중에는 구버전 API/worker와 신버전 API/worker가 동시에 존재할 수 있다.
+따라서 DB schema 변경은 다음 순서를 따른다.
+
+1. expand: 새 column/table/index를 추가하되 기존 코드와 호환되게 유지
+2. deploy: 새 코드가 새 schema를 사용하도록 배포
+3. backfill: 필요한 데이터 보정
+4. contract: 이전 코드가 더 이상 참조하지 않는 column/table을 다음 release에서 제거
+
+contract migration은 자동 배포에서 실행하지 않고 별도 승인 gate를 둔다.
+
+## 4. Backup
+
+필수 결정:
+
+| 항목 | 필요 결정 |
+|---|---|
+| backup 주기 | 예: 매일 |
+| PITR | 사용 여부 |
+| retention | 예: 30일 |
+| 복구 테스트 | stage에서 월 1회 등 |
+
+## 5. Retention
+
+SDS 기준:
+
+| 데이터 | 보존 |
+|---|---|
+| latest dependency snapshot | 삭제 전까지 |
+| historical dependency snapshots | 90일 |
+| fixed impacts | 1년 |
+| alert events | 1년 |
+| audit logs | 3년 또는 조직 정책 |
+| advisory data | 삭제하지 않음 |
+
+open impact가 참조하는 snapshot/dependency는 보존하거나 FK를 `ON DELETE SET NULL`로 처리한다.
+
+## 6. DB Smoke Test
+
+배포 후 확인:
+
+- 현재 배포 코드가 요구하는 최소 migration version 이상
+- API user로 read/write 가능
+- worker user로 outbox 조회 가능
+- advisory_sync_state upsert 가능
+- audit_logs insert 가능

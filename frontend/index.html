@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SCA Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">SCA</div>
+          <div>
+            <strong>SCA Monitor</strong>
+            <span>Supply Chain Alert</span>
+          </div>
+        </div>
+        <nav>
+          <a href="#overview" class="active">Overview</a>
+          <a href="#services">Services</a>
+          <a href="#impacts">Impacts</a>
+          <a href="#register">Register</a>
+          <a href="#guide">Integration</a>
+        </nav>
+      </aside>
+      <main>
+        <header class="topbar">
+          <div>
+            <h1>Supply Chain Monitoring</h1>
+            <p>보고된 advisory를 등록 서비스의 dependency snapshot과 매칭합니다.</p>
+          </div>
+          <button id="refresh">Refresh</button>
+        </header>
+
+        <section id="overview" class="section">
+          <h2>Overview</h2>
+          <div class="metrics" id="metrics"></div>
+        </section>
+
+        <section id="services" class="section">
+          <div class="section-header">
+            <h2>Services</h2>
+            <span id="service-count"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Env</th>
+                  <th>Owner</th>
+                  <th>Health</th>
+                  <th>Open Impacts</th>
+                </tr>
+              </thead>
+              <tbody id="services-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="impacts" class="section">
+          <div class="section-header">
+            <h2>Impacts</h2>
+            <span>Open security work</span>
+          </div>
+          <div id="impacts-list" class="impact-list"></div>
+        </section>
+
+        <section id="register" class="section split">
+          <div>
+            <h2>Register Service</h2>
+            <form id="service-form">
+              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
+              <label>Environment
+                <select name="environment">
+                  <option value="prod">prod</option>
+                  <option value="stage">stage</option>
+                  <option value="dev">dev</option>
+                </select>
+              </label>
+              <label>Owner Team<input name="owner_team" placeholder="platform-security" /></label>
+              <label>Endpoint URL<input name="status_endpoint_url" placeholder="https://service/.well-known/sca/dependencies" /></label>
+              <button type="submit">Register</button>
+            </form>
+          </div>
+          <div>
+            <h2>Push Demo Snapshot</h2>
+            <form id="snapshot-form">
+              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
+              <label>Package<input name="package_name" value="lodash" required /></label>
+              <label>Version<input name="version" value="4.17.20" required /></label>
+              <button type="submit">Push Snapshot</button>
+            </form>
+          </div>
+        </section>
+
+        <section id="guide" class="section">
+          <h2>Integration Guide</h2>
+          <pre><code>POST /api/v1/snapshots
+{
+  "schema_version": "1.0",
+  "service_id": "payment-api",
+  "environment": "prod",
+  "dependencies": [
+    {"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}
+  ]
+}</code></pre>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
+
