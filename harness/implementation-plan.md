@@ -91,6 +91,7 @@ Phase 0 착수 전 선행 조건:
 - SQLite fallback 유지
 - OSV 단건 import API와 advisory 조회 API 추가
 - OSV affected range version matcher 추가
+- `scripts/osv_sync.py` OSV ecosystem dump sync worker CLI 추가
 
 남은 작업:
 
@@ -99,7 +100,8 @@ Phase 0 착수 전 선행 조건:
 - 실제 PostgreSQL integration test
 - API/worker DB 계정 분리
 - production migration tool 확정
-- OSV dump 기반 bulk feed-sync worker
+- OSV dump sync scheduler와 source별 worker lease
+- advisory 변경 감지 후 latest snapshot 재매칭
 - ecosystem별 정밀 version matcher와 pre-release 정책 보강
 
 ### Phase 2. API Server

@@ -1,3 +1,7 @@
+import json
+import zipfile
+
+from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp
@@ -115,6 +119,27 @@ def test_range_only_osv_advisory_matches_snapshot(tmp_path):
     impacts = app.list_impacts({})
     assert len(impacts) == 1
     assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
+
+
+def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
+    app = make_test_app(tmp_path)
+    zip_path = tmp_path / "osv-fixture.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("OSV-TEST-0001.json", json.dumps(osv_fixture()))
+        second = osv_fixture()
+        second["id"] = "OSV-TEST-0002"
+        second["affected"][0]["package"]["name"] = "second-package"
+        archive.writestr("OSV-TEST-0002.json", json.dumps(second))
+
+    result = sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, limit=1)
+
+    assert result.processed == 1
+    assert result.imported_rows == 1
+    assert result.failed == 0
+    advisories = app.list_advisories({"source": ["OSV"]})
+    assert any(advisory["advisory_id"] == "OSV-TEST-0001" for advisory in advisories)
+    assert all(advisory["advisory_id"] != "OSV-TEST-0002" for advisory in advisories)
+    assert app.overview()["advisory_sync"]["OSV"] == "ok"
 
 
 def make_test_app(tmp_path):
