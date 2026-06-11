@@ -58,10 +58,11 @@
 OSV 수동 재시도 예시:
 
 ```bash
-python3 scripts/osv_sync.py --ecosystem npm --limit 100
+python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 ```
 
 운영에서 `--limit` 없이 전체 dump를 실행하기 전에는 dump 크기, 디스크 여유 공간, 실행 시간, worker 중복 실행 여부를 먼저 확인한다.
+중복 실행은 `advisory_sync_state.lock_owner`, `lock_expires_at` 기준으로 차단된다.
 테스트 또는 폐쇄망 검증에는 `--zip-path /path/to/osv-fixture.zip`을 사용할 수 있다.
 
 ### Endpoint polling failed

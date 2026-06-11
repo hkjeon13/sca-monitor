@@ -1,6 +1,8 @@
 import json
 import zipfile
 
+import pytest
+
 from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
@@ -142,6 +144,29 @@ def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     assert app.overview()["advisory_sync"]["OSV"] == "ok"
 
 
+def test_advisory_sync_lock_releases_after_success(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with app.advisory_sync_lock("OSV", "owner-a", ttl_seconds=60):
+        with app.db.connect() as conn:
+            row = conn.execute("SELECT lock_owner FROM advisory_sync_state WHERE source = 'OSV'").fetchone()
+            assert row["lock_owner"] == "owner-a"
+
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT lock_owner, lock_expires_at FROM advisory_sync_state WHERE source = 'OSV'").fetchone()
+        assert row["lock_owner"] is None
+        assert row["lock_expires_at"] is None
+
+
+def test_osv_sync_refuses_held_lock(tmp_path):
+    app = make_test_app(tmp_path)
+    zip_path = write_osv_fixture_zip(tmp_path)
+
+    with app.advisory_sync_lock("OSV", "owner-a", ttl_seconds=60):
+        with pytest.raises(RuntimeError, match="sync lock is held"):
+            sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, lock_owner="owner-b")
+
+
 def make_test_app(tmp_path):
     settings = Settings(
         app_env="test",
@@ -154,6 +179,13 @@ def make_test_app(tmp_path):
         smoke_token="test",
     )
     return ScaMonitorApp(settings)
+
+
+def write_osv_fixture_zip(tmp_path):
+    zip_path = tmp_path / "osv-fixture.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("OSV-TEST-0001.json", json.dumps(osv_fixture()))
+    return zip_path
 
 
 def osv_fixture():

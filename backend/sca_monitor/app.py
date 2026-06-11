@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+from contextlib import contextmanager
 import uuid
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -372,6 +374,48 @@ class ScaMonitorApp:
         with self.db.connect() as connection:
             write(connection)
 
+    @contextmanager
+    def advisory_sync_lock(self, source: str, owner: str, ttl_seconds: int = 3600):
+        now = utcnow()
+        expires_at = utcnow_after_seconds(ttl_seconds)
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """
+                INSERT INTO advisory_sync_state (source, status, imported_count, updated_at)
+                VALUES (?, 'pending', 0, ?)
+                ON CONFLICT(source) DO NOTHING
+                """,
+                (source, now),
+            )
+            updated = conn.execute(
+                """
+                UPDATE advisory_sync_state
+                SET lock_owner = ?, lock_expires_at = ?, updated_at = ?
+                WHERE source = ?
+                  AND (lock_owner IS NULL OR lock_owner = ? OR lock_expires_at IS NULL OR lock_expires_at < ?)
+                """,
+                (owner, expires_at, now, source, owner, now),
+            ).rowcount
+            if updated != 1:
+                row = conn.execute(
+                    "SELECT lock_owner, lock_expires_at FROM advisory_sync_state WHERE source = ?",
+                    (source,),
+                ).fetchone()
+                raise RuntimeError(f"{source} sync lock is held by {row['lock_owner']} until {row['lock_expires_at']}")
+        try:
+            yield
+        finally:
+            with self.db.connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE advisory_sync_state
+                    SET lock_owner = NULL, lock_expires_at = NULL, updated_at = ?
+                    WHERE source = ? AND lock_owner = ?
+                    """,
+                    (utcnow(), source, owner),
+                )
+
     def get_service_detail(self, service_id: str) -> dict:
         with self.db.connect() as conn:
             service = conn.execute("SELECT * FROM services WHERE service_id = ?", (service_id,)).fetchone()
@@ -626,6 +670,10 @@ def required(data: dict, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"{key} required")
     return str(value)
+
+
+def utcnow_after_seconds(seconds: int) -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
 
 
 def run() -> None:

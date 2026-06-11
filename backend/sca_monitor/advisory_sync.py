@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
+from uuid import uuid4
 from urllib.request import Request, urlopen
 
 from .app import ScaMonitorApp
@@ -36,23 +38,27 @@ def sync_osv_ecosystem_dump(
     limit: int | None = None,
     dump_url: str | None = None,
     zip_path: Path | None = None,
+    lock_owner: str | None = None,
+    lock_ttl_seconds: int = 3600,
 ) -> OsvSyncResult:
     url = dump_url or osv_dump_url(ecosystem)
     processed = 0
     imported_rows = 0
     failed = 0
+    owner = lock_owner or default_lock_owner(ecosystem)
 
     try:
-        for payload in iter_osv_dump_payloads(url=url, zip_path=zip_path):
-            if limit is not None and processed >= limit:
-                break
-            processed += 1
-            try:
-                imported_rows += app.import_osv_payload(payload)
-            except Exception:
-                failed += 1
-        status = "ok" if failed == 0 else "partial"
-        app.record_advisory_sync("OSV", status, f"{ecosystem}:dump", None, imported_count=0)
+        with app.advisory_sync_lock("OSV", owner, ttl_seconds=lock_ttl_seconds):
+            for payload in iter_osv_dump_payloads(url=url, zip_path=zip_path):
+                if limit is not None and processed >= limit:
+                    break
+                processed += 1
+                try:
+                    imported_rows += app.import_osv_payload(payload)
+                except Exception:
+                    failed += 1
+            status = "ok" if failed == 0 else "partial"
+            app.record_advisory_sync("OSV", status, f"{ecosystem}:dump", None, imported_count=0)
     except Exception as exc:
         app.record_advisory_sync("OSV", "error", f"{ecosystem}:dump", str(exc), imported_count=0)
         raise
@@ -65,6 +71,10 @@ def sync_osv_ecosystem_dump(
         failed=failed,
         dump_url=url,
     )
+
+
+def default_lock_owner(ecosystem: str) -> str:
+    return f"osv-sync:{ecosystem}:{socket.gethostname()}:{uuid4()}"
 
 
 def iter_osv_dump_payloads(*, url: str, zip_path: Path | None = None) -> Iterator[dict]:

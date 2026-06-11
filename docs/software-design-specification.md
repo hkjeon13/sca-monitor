@@ -192,10 +192,11 @@ references
 - `GET /api/v1/advisories`는 저장된 advisory를 조회한다.
 - `scripts/osv_sync.py`는 OSV ecosystem dump ZIP을 읽어 advisory를 일괄 import한다.
 - `advisory_sync_state`는 OSV 단건 import 성공/실패 상태를 기록한다.
+- OSV dump sync worker는 `advisory_sync_state`의 `lock_owner`, `lock_expires_at`을 이용해 source별 중복 실행을 차단한다.
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
 - 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
 - OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
-- scheduler, source별 lease, alias canonical merge, advisory 변경분 재매칭은 후속 구현 대상이다.
+- scheduler, alias canonical merge, advisory 변경분 재매칭은 후속 구현 대상이다.
 
 ### 5.3 CISA KEV 수집 방식
 

@@ -21,6 +21,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="Maximum advisory JSON files to import from the dump")
     parser.add_argument("--dump-url", default=None, help="Override OSV dump URL")
     parser.add_argument("--zip-path", type=Path, default=None, help="Read a local OSV dump ZIP instead of downloading")
+    parser.add_argument("--lock-owner", default=None, help="Explicit sync lock owner id")
+    parser.add_argument("--lock-ttl-seconds", type=int, default=3600, help="Sync lock time-to-live in seconds")
     args = parser.parse_args()
 
     app = ScaMonitorApp(load_settings())
@@ -30,6 +32,8 @@ def main() -> None:
         limit=args.limit,
         dump_url=args.dump_url,
         zip_path=args.zip_path,
+        lock_owner=args.lock_owner,
+        lock_ttl_seconds=args.lock_ttl_seconds,
     )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
 
