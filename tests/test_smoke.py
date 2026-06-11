@@ -857,6 +857,58 @@ def test_canonicalization_endpoint_reports_advisory_merge_candidates(tmp_path):
     assert payload["advisory_merge"]["items"][0]["source_advisory_ids"] == ["GHSA-xxxx-yyyy-zzzz"]
 
 
+def test_canonicalization_apply_endpoint_merges_candidates_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+
+    with run_test_server(app) as base_url:
+        result = http_json(
+            f"{base_url}/api/v1/operations/canonicalization/apply",
+            method="POST",
+            body={"limit": 10, "actor": "operator", "reason": "manual merge"},
+        )
+        readiness = http_json(f"{base_url}/api/v1/operations/canonicalization?limit=10")
+
+    assert result["status"] == "ok"
+    assert result["merged_advisories"] == 1
+    assert result["updated_impacts"] == 0
+    assert result["readiness"]["status"] == "ready"
+    assert readiness["status"] == "ready"
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM advisories WHERE advisory_id = 'GHSA-xxxx-yyyy-zzzz'").fetchone()["c"] == 0
+    audit = app.search_audit_logs({"action": ["canonicalization.apply"]})
+    assert audit["pagination"]["total"] == 1
+    assert audit["audit_logs"][0]["actor"] == "operator"
+    assert audit["audit_logs"][0]["reason"] == "manual merge"
+
+
+def test_canonicalization_apply_endpoint_requires_admin_in_header_auth(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    owner_headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+    admin_headers = {"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"}
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/operations/canonicalization/apply",
+            method="POST",
+            body={"limit": 10},
+            headers=owner_headers,
+            expect_status=403,
+        )
+        allowed = http_json(
+            f"{base_url}/api/v1/operations/canonicalization/apply",
+            method="POST",
+            body={"limit": 10, "actor": "spoofed"},
+            headers=admin_headers,
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert allowed["actor"] == "admin@example.test"
+
+
 def test_remote_deploy_uses_db_gate():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
@@ -902,8 +954,10 @@ def test_web_console_renders_database_readiness_panel():
     assert 'id="canonicalization-status"' in html
     assert "/api/v1/operations/database-readiness" in script
     assert "/api/v1/operations/canonicalization" in script
+    assert "/api/v1/operations/canonicalization/apply" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
+    assert "applyCanonicalization" in script
 
 
 def enabled_now_lines(text: str) -> str:

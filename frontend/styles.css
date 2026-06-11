@@ -455,6 +455,16 @@ input[readonly] {
   gap: 8px;
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .credential-list {
   display: grid;
   gap: 8px;

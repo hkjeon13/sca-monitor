@@ -136,6 +136,11 @@ class ScaMonitorApp:
                 return self.json_response(request, self.database_readiness_summary())
             if path == "/api/v1/operations/canonicalization" and method == "GET":
                 return self.json_response(request, self.canonicalization_status(parse_qs(parsed.query)))
+            if path == "/api/v1/operations/canonicalization/apply" and method == "POST":
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "canonicalization apply requires admin role")
+                return self.json_response(request, self.apply_canonicalization(self.apply_authenticated_actor(body, auth_context)))
             if path == "/api/v1/services" and method == "GET":
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
@@ -480,6 +485,43 @@ class ScaMonitorApp:
             "pending_advisory_merges": pending_advisory_merges,
             "pending_impact_updates": pending_impact_updates,
         }
+
+    def apply_canonicalization(self, body: dict) -> dict:
+        limit = bounded_int(body.get("limit"), default=100, minimum=1, maximum=1000)
+        actor = body.get("actor", "web-console")
+        reason = body.get("reason", "manual canonicalization apply")
+        now = utcnow()
+        advisory_merge = self.merge_canonical_advisory_rows(limit=limit, dry_run=False, actor=actor)
+        impact_backfill = self.backfill_canonical_impact_keys(limit=limit, dry_run=False, actor=actor)
+        result = {
+            "status": "ok",
+            "limit": limit,
+            "advisory_merge": advisory_merge,
+            "impact_backfill": impact_backfill,
+            "merged_advisories": advisory_merge["merged_advisories"],
+            "updated_impacts": impact_backfill["updated"],
+            "merged_impacts": impact_backfill["merged"],
+            "actor": actor,
+        }
+        with self.db.connect() as conn:
+            self.write_audit_log(
+                conn,
+                actor=actor,
+                action="canonicalization.apply",
+                target_type="operations",
+                target_id="canonicalization",
+                reason=reason,
+                before=None,
+                after={
+                    "limit": limit,
+                    "merged_advisories": result["merged_advisories"],
+                    "updated_impacts": result["updated_impacts"],
+                    "merged_impacts": result["merged_impacts"],
+                },
+                occurred_at=now,
+            )
+        result["readiness"] = self.canonicalization_status({"limit": [str(limit)]})
+        return result
 
     def sla_overdue_count(self, conn) -> int:
         rows = conn.execute(

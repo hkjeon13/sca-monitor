@@ -92,6 +92,7 @@ function applyRoleControls() {
   setDisabled("#dispatcher-preflight-form button[type='submit']", !can("manage_alert_channels"));
   setDisabled("#dispatcher-activation-form button[type='submit']", !can("manage_alert_channels"));
   setDisabled("#daily-digest-preview-form button[type='submit']", !can("manage_alert_channels"));
+  setDisabled("#canonicalization-apply", !can("manage_alert_channels"));
   setDisabled("#impact-bulk-action-form button[type='submit']", !can("bulk_update_impacts"));
   document.querySelectorAll("#impact-bulk-action-form select[name='target_status'] option").forEach((option) => {
     option.disabled = !canBulkImpactTarget(option.value);
@@ -228,7 +229,28 @@ function renderCanonicalizationStatus(status) {
       <h3>Impact Key Candidates</h3>
       <ul>${impactItems || "<li><span>No impact key candidates.</span></li>"}</ul>
     </div>
+    <div class="inline-actions">
+      <button type="button" id="canonicalization-apply" class="secondary" ${!can("manage_alert_channels") ? "disabled" : ""}>Apply Canonicalization</button>
+      <span id="canonicalization-apply-result"></span>
+    </div>
   `;
+  const button = document.querySelector("#canonicalization-apply");
+  if (button) {
+    button.addEventListener("click", applyCanonicalization);
+  }
+}
+
+async function applyCanonicalization() {
+  if (!can("manage_alert_channels")) return;
+  const target = document.querySelector("#canonicalization-apply-result");
+  target.textContent = "Applying...";
+  const data = await api.send("/api/v1/operations/canonicalization/apply", "POST", {
+    limit: 100,
+    actor: "web-console",
+    reason: "manual canonicalization apply from overview",
+  });
+  target.textContent = `merged advisories ${data.merged_advisories}, updated impacts ${data.updated_impacts}, merged impacts ${data.merged_impacts}`;
+  await Promise.all([loadOverview(), loadAdvisories(), loadImpacts(), loadAuditLogs()]);
 }
 
 async function loadServices() {

@@ -117,6 +117,7 @@ python3 scripts/merge_canonical_advisories.py --limit 100 --actor operator
 
 dry-run에서 alias-related advisory row 후보를 먼저 확인한다.
 apply 시 canonical advisory row로 alias, metadata, impact FK를 이관하고 기본적으로 impact key backfill도 이어서 실행한다.
+Web Console Overview의 Canonicalization 패널에서도 같은 dry-run 상태를 확인하고 admin 권한으로 apply를 실행할 수 있다.
 
 CISA KEV 수동 재시도 예시:
 
