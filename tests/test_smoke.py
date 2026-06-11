@@ -367,6 +367,72 @@ def test_http_smoke_checks_read_only_endpoints():
     assert seen_paths == ["/health", "/ready", "/api/v1/overview", "/"]
 
 
+def test_http_smoke_can_require_postgres_split_metrics():
+    seen_paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen_paths.append(self.path)
+            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/metrics":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"sca_monitor_postgres_split_required 0\n"
+                    b"sca_monitor_postgres_split_ready 0\n"
+                )
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--require-postgres-split-metrics",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert "/metrics" in [check["path"] for check in payload["checks"]]
+    assert payload["postgres_split_metrics"] == {
+        "required_metric_present": True,
+        "ready_metric_present": True,
+    }
+    assert seen_paths[:4] == ["/health", "/ready", "/api/v1/overview", "/"]
+    assert "/metrics" in seen_paths
+
+
 def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     result = subprocess.run(
         ["python3", "scripts/systemd_scheduler_status.py", "--unit-dir", str(tmp_path), "--json"],

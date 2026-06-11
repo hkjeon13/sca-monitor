@@ -21,9 +21,10 @@ read-only HTTP smoke:
 
 ```bash
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --json
+SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --require-postgres-split-metrics --json
 ```
 
-이 검증은 `/health`, `/ready`, `/api/v1/overview`, `/`만 조회하며 운영 데이터를 변경하지 않는다.
+기본 검증은 `/health`, `/ready`, `/api/v1/overview`, `/`만 조회하며 운영 데이터를 변경하지 않는다. `--require-postgres-split-metrics`는 `/metrics`의 PostgreSQL split cutover gauge 존재까지 read-only로 확인한다.
 
 VM systemd scheduler 등록:
 

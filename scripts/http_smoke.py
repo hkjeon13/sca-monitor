@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 DEFAULT_PATHS = ("/health", "/ready", "/api/v1/overview", "/")
 JSON_PATHS = {"/health", "/ready", "/api/v1/overview"}
+POSTGRES_SPLIT_METRICS = ("sca_monitor_postgres_split_required", "sca_monitor_postgres_split_ready")
 
 
 @dataclass
@@ -37,6 +38,16 @@ class CheckResult:
             "json_ok": self.json_ok,
             "error": self.error,
         }
+
+
+def metric_names(text: str) -> set[str]:
+    names = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        names.add(line.split(None, 1)[0].split("{", 1)[0])
+    return names
 
 
 def smoke_url(base_url: str, path: str, timeout: float) -> CheckResult:
@@ -77,14 +88,58 @@ def smoke_url(base_url: str, path: str, timeout: float) -> CheckResult:
     return CheckResult(path=path, url=url, ok=ok, status=status, elapsed_ms=elapsed_ms, json_ok=json_ok, error=error)
 
 
-def run_smoke(base_url: str, paths: list[str], timeout: float) -> dict[str, Any]:
+def fetch_text(base_url: str, path: str, timeout: float) -> tuple[int, str]:
+    url = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+    request = Request(url, headers={"Accept": "text/plain,*/*;q=0.8", "User-Agent": "sca-monitor-http-smoke/1.0"})
+    with urlopen(request, timeout=timeout) as response:
+        return int(response.status), response.read(1024 * 1024).decode("utf-8", "replace")
+
+
+def check_postgres_split_metrics(base_url: str, timeout: float) -> dict[str, Any]:
+    try:
+        status, text = fetch_text(base_url, "/metrics", timeout)
+        names = metric_names(text)
+        missing = [name for name in POSTGRES_SPLIT_METRICS if name not in names]
+        return {
+            "required_metric_present": "sca_monitor_postgres_split_required" in names,
+            "ready_metric_present": "sca_monitor_postgres_split_ready" in names,
+            "ok": status == 200 and not missing,
+            "status": status,
+            "missing": missing,
+        }
+    except (HTTPError, URLError, TimeoutError) as exc:
+        return {
+            "required_metric_present": False,
+            "ready_metric_present": False,
+            "ok": False,
+            "status": getattr(exc, "code", None),
+            "missing": list(POSTGRES_SPLIT_METRICS),
+            "error": str(exc),
+        }
+
+
+def run_smoke(base_url: str, paths: list[str], timeout: float, *, require_postgres_split_metrics: bool = False) -> dict[str, Any]:
+    if require_postgres_split_metrics and "/metrics" not in paths:
+        paths = [*paths, "/metrics"]
     checks = [smoke_url(base_url, path, timeout) for path in paths]
     ok = all(check.ok for check in checks)
-    return {
+    result = {
         "status": "ok" if ok else "failed",
         "base_url": base_url,
         "checks": [check.as_dict() for check in checks],
     }
+    if require_postgres_split_metrics:
+        split_metrics = check_postgres_split_metrics(base_url, timeout)
+        result["postgres_split_metrics"] = {
+            "required_metric_present": split_metrics["required_metric_present"],
+            "ready_metric_present": split_metrics["ready_metric_present"],
+        }
+        if not split_metrics["ok"]:
+            result["postgres_split_metrics"]["missing"] = split_metrics.get("missing", [])
+            if split_metrics.get("error"):
+                result["postgres_split_metrics"]["error"] = split_metrics["error"]
+            result["status"] = "failed"
+    return result
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,6 +151,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--path", action="append", dest="paths", help="Path to check. May be repeated.")
     parser.add_argument("--timeout", type=float, default=10.0, help="Request timeout in seconds.")
+    parser.add_argument("--require-postgres-split-metrics", action="store_true", help="Fail unless /metrics exposes PostgreSQL split cutover gauges.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -103,7 +159,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     paths = args.paths or list(DEFAULT_PATHS)
-    result = run_smoke(args.base_url, paths, args.timeout)
+    result = run_smoke(args.base_url, paths, args.timeout, require_postgres_split_metrics=args.require_postgres_split_metrics)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
