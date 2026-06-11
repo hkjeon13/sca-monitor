@@ -2709,6 +2709,9 @@ def test_web_console_renders_database_readiness_panel():
     assert "Migration DB" in script
     assert "Split Ready" in script
     assert "Split Required" in script
+    assert "Advisory Freshness" in script
+    assert "Advisory Sources" in script
+    assert "readiness.advisory_sync_readiness" in script
     assert "Preflight Checks" in script
     assert "Next Action" in script
     assert "renderPostgresPreflightSummary" in script

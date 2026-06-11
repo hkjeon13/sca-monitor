@@ -176,6 +176,8 @@ function renderDatabaseReadiness(readiness) {
   const required = readiness.cutover_required || {};
   const preflight = readiness.postgres_preflight || {};
   const runtimeUrls = readiness.runtime_database_urls || {};
+  const advisoryReadiness = readiness.advisory_sync_readiness || {};
+  const advisoryFreshness = advisoryReadiness.freshness || {};
   document.querySelector("#database-readiness").innerHTML = `
     <div class="section-header">
       <h3>Database Readiness</h3>
@@ -193,6 +195,8 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Required Mode", preflight.required_mode || required.mode || "unknown")}
       ${detailRow("PostgreSQL Configured", cutover.postgres_configured ? "yes" : "no")}
       ${detailRow("Split Ready", preflight.split_ready ? "yes" : "no")}
+      ${detailRow("Advisory Freshness", `${advisoryFreshness.status || "unknown"} · ${advisoryFreshness.stale_count ?? 0} stale / ${advisoryFreshness.partial_count ?? 0} partial / ${advisoryFreshness.failed_count ?? 0} failed`)}
+      ${detailRow("Advisory Sources", `${advisoryReadiness.initialized_count ?? 0}/${advisoryReadiness.required_count ?? 0} initialized · ${advisoryReadiness.status || "unknown"}`)}
       ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
       ${detailRow("Next Action", preflight.next_action || "unknown")}
       ${detailRow("Runtime URLs", renderRuntimeDatabaseUrls(runtimeUrls))}
