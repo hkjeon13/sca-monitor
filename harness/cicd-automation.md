@@ -144,10 +144,11 @@ SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" \
 python3 scripts/seed_default_alert_channel.py --json
 ```
 
-live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activation checklist를 통과해야 한다.
+live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activation checklist와 systemd go-live gate를 통과해야 한다.
 
 ```bash
 python3 scripts/alert_dispatcher_activation_check.py --json
+python3 scripts/alert_dispatcher_go_live_gate.py --json
 python3 scripts/bootstrap_readiness_check.py --json
 ```
 

@@ -3364,6 +3364,98 @@ def test_alert_dispatcher_activation_check_cli_reports_blocked(tmp_path):
     assert "default_alert_channel_configured" in payload["blocking_failures"]
 
 
+def test_alert_dispatcher_go_live_gate_blocks_placeholder_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+    unit_dir = tmp_path / "systemd"
+    subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/alert_dispatcher_go_live_gate.py",
+            "--json",
+            "--unit-dir",
+            str(unit_dir),
+            "--skip-systemctl-state",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": app.settings.database_url},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert payload["systemd"]["status"] == "ok"
+    assert "activation_check_ready" in payload["blocking_failures"]
+    assert "default_alert_channel_not_placeholder" in payload["activation_check"]["blocking_failures"]
+
+
+def test_alert_dispatcher_go_live_gate_ready_with_real_channel_and_valid_units(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+    unit_dir = tmp_path / "systemd"
+    subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/alert_dispatcher_go_live_gate.py",
+            "--json",
+            "--unit-dir",
+            str(unit_dir),
+            "--skip-systemctl-state",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": app.settings.database_url},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert payload["blocking_failures"] == []
+    assert payload["activation_check"]["status"] == "ready"
+    assert payload["systemd"]["status"] == "ok"
+    assert "SCA_MONITOR_SYSTEMD_MODE=enable" in payload["go_live_command"]
+
+
 def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_update_rows(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
