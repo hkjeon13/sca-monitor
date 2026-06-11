@@ -94,7 +94,6 @@ ssh "$REMOTE" "set -euo pipefail
     runtime_input_args=\"\$runtime_input_args --public-url \$PUBLIC_URL_OVERRIDE\"
   fi
   if [ -n \"\$DATABASE_ENV_FILE\" ]; then
-    python3 scripts/validate_database_env_file.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
     case \"\$DATABASE_ENV_PREFLIGHT_ONLY\" in
       true|1|yes|on)
         case \"\$DATABASE_ENV_PREFLIGHT_EXPECT\" in
@@ -123,6 +122,7 @@ ssh "$REMOTE" "set -euo pipefail
         exit 0
         ;;
       false|0|no|off|'')
+        python3 scripts/validate_database_env_file.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
         ;;
       *)
         echo \"invalid SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY: \$DATABASE_ENV_PREFLIGHT_ONLY\" >&2

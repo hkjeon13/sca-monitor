@@ -2529,6 +2529,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
     assert script.index("scripts/validate_database_env_file.py") < script.index("scripts/configure_runtime_inputs.py")
+    assert script.index('case \\"\\$DATABASE_ENV_PREFLIGHT_ONLY\\"') < script.index('python3 scripts/validate_database_env_file.py --database-env-file \\"\\$DATABASE_ENV_FILE\\" --json')
     assert script.index("scripts/prepare_database_env_file.py --database-env-file") < script.index("set -a")
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY") < script.index("set -a")
