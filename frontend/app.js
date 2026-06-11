@@ -66,10 +66,11 @@ async function loadServices() {
 }
 
 async function loadImpacts() {
-  const data = await api.get("/api/v1/impacts");
+  const query = impactFilterQuery();
+  const data = await api.get(`/api/v1/impacts${query ? `?${query}` : ""}`);
   const target = document.querySelector("#impacts-list");
   if (!data.impacts.length) {
-    target.innerHTML = `<p>No open impacts. Push the demo lodash snapshot to see matching behavior.</p>`;
+    target.innerHTML = `<p>${query ? "No impacts match the selected filters." : "No open impacts. Push the demo lodash snapshot to see matching behavior."}</p>`;
     selectedImpactId = null;
     renderImpactDetailEmpty("No impact selected.");
     return;
@@ -167,11 +168,34 @@ async function updateImpactStatus(event) {
   await Promise.all([loadOverview(), loadServices(), loadImpacts()]);
 }
 
+function impactFilterQuery() {
+  const form = document.querySelector("#impact-filter-form");
+  const params = new URLSearchParams();
+  for (const [key, value] of new FormData(form).entries()) {
+    if (String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  return params.toString();
+}
+
 async function refreshAll() {
   await Promise.all([loadOverview(), loadServices(), loadImpacts()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);
+
+document.querySelector("#impact-filter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  selectedImpactId = null;
+  await loadImpacts();
+});
+
+document.querySelector("#clear-impact-filters").addEventListener("click", async () => {
+  document.querySelector("#impact-filter-form").reset();
+  selectedImpactId = null;
+  await loadImpacts();
+});
 
 document.querySelector("#service-form").addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -64,6 +64,32 @@
             <h2>Impacts</h2>
             <span>Open security work</span>
           </div>
+          <form id="impact-filter-form" class="filter-bar">
+            <label>Status
+              <select name="status">
+                <option value="">Any</option>
+                <option value="open">open</option>
+                <option value="acknowledged">acknowledged</option>
+                <option value="in_progress">in_progress</option>
+                <option value="fixed">fixed</option>
+                <option value="accepted_risk">accepted_risk</option>
+                <option value="false_positive">false_positive</option>
+                <option value="not_affected">not_affected</option>
+              </select>
+            </label>
+            <label>Risk
+              <select name="risk_level">
+                <option value="">Any</option>
+                <option value="critical">critical</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+            <label>Search<input name="q" placeholder="service, package, advisory, team" /></label>
+            <button type="submit">Apply</button>
+            <button type="button" id="clear-impact-filters" class="secondary">Clear</button>
+          </form>
           <div class="impact-workspace">
             <div id="impacts-list" class="impact-list"></div>
             <aside id="impact-detail" class="impact-detail">

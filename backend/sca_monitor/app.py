@@ -679,6 +679,40 @@ class ScaMonitorApp:
         if status := query.get("status", [None])[0]:
             where.append("i.status = ?")
             params.append(status)
+        if risk_level := query.get("risk_level", [None])[0]:
+            where.append("i.risk_level = ?")
+            params.append(risk_level)
+        if service_id := query.get("service_id", [None])[0]:
+            where.append("s.service_id = ?")
+            params.append(service_id)
+        if owner_team := query.get("owner_team", [None])[0]:
+            where.append("s.owner_team = ?")
+            params.append(owner_team)
+        if environment := query.get("environment", [None])[0]:
+            where.append("i.environment = ?")
+            params.append(environment)
+        if package_name := query.get("package_name", [None])[0]:
+            where.append("i.canonical_package_name = ?")
+            params.append(canonical_package_name("", package_name))
+        if advisory_id := query.get("advisory_id", [None])[0]:
+            where.append("a.advisory_id = ?")
+            params.append(advisory_id)
+        if search := query.get("q", [None])[0]:
+            like = f"%{search.lower()}%"
+            where.append(
+                """
+                (
+                    lower(s.service_id) LIKE ?
+                    OR lower(s.service_name) LIKE ?
+                    OR lower(s.owner_team) LIKE ?
+                    OR lower(i.package_name) LIKE ?
+                    OR lower(i.canonical_package_name) LIKE ?
+                    OR lower(a.advisory_id) LIKE ?
+                    OR lower(a.summary) LIKE ?
+                )
+                """
+            )
+            params.extend([like] * 7)
         sql_where = "WHERE " + " AND ".join(where) if where else ""
         with self.db.connect() as conn:
             rows = conn.execute(

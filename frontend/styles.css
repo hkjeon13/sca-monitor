@@ -107,6 +107,12 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  background: #eef4f5;
+  color: var(--accent);
+  border: 1px solid #c9dadd;
+}
+
 .section {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -163,6 +169,13 @@ th, td {
 th {
   color: var(--muted);
   font-size: 13px;
+}
+
+.filter-bar {
+  grid-template-columns: 160px 140px minmax(220px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .impact-list {
@@ -328,7 +341,8 @@ pre {
   .split,
   .impact-workspace,
   .detail-grid,
-  .status-form {
+  .status-form,
+  .filter-bar {
     grid-template-columns: 1fr;
   }
 

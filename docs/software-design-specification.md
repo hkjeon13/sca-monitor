@@ -1424,6 +1424,7 @@ POST /api/v1/settings/alert-channels
 - Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
+- Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 Web Console의 status/risk/search 필터 제공
 - Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시
 - Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록
 - Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
@@ -1434,7 +1435,7 @@ POST /api/v1/settings/alert-channels
 - accepted risk 승인자/만료일 workflow
 - service detail과 endpoint test/push credential 발급
 - advisory detail
-- impact 조건별 검색/필터/pagination
+- impact 고급 필터 UI, URL query 유지, pagination/sorting
 - settings/alert channel 관리 화면
 
 ### 14.7 UI 상태

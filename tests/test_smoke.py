@@ -198,6 +198,38 @@ def test_closed_workflow_statuses_are_excluded_from_open_counts(tmp_path):
     assert app.list_services()[0]["open_impacts"] == 0
 
 
+def test_list_impacts_supports_server_side_filters(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    second_payload = osv_fixture()
+    second_payload["id"] = "OSV-TEST-0002"
+    second_payload["summary"] = "Fixture advisory for second-package"
+    second_payload["affected"][0]["package"]["name"] = "second-package"
+    second_payload["affected"][0]["database_specific"]["severity"] = "LOW"
+    app.import_osv_payload(second_payload)
+    app.push_snapshot(
+        {
+            "service_id": "billing-service",
+            "service_name": "Billing Service",
+            "environment": "stage",
+            "owner_team": "billing-team",
+            "dependencies": [{"ecosystem": "npm", "name": "second-package", "version": "1.0.1"}],
+        }
+    )
+    high_impact = next(impact for impact in app.list_impacts({}) if impact["risk_level"] == "high")
+    app.update_impact_status(high_impact["id"], {"status": "acknowledged", "actor": "tester"})
+
+    assert {impact["service_id"] for impact in app.list_impacts({})} == {"alert-service", "billing-service"}
+    assert [impact["service_id"] for impact in app.list_impacts({"status": ["acknowledged"]})] == ["alert-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"risk_level": ["low"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"service_id": ["billing-service"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"owner_team": ["billing-team"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"environment": ["stage"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"package_name": ["Second-Package"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"advisory_id": ["OSV-TEST-0002"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"q": ["billing"]})] == ["billing-service"]
+
+
 def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     app = make_test_app(tmp_path)
     zip_path = tmp_path / "osv-fixture.zip"
