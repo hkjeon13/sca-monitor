@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,8 @@ def main() -> None:
     parser.add_argument("--cve-list-path", type=Path, default=None, help="Read CVE ids from a newline-delimited text file")
     parser.add_argument("--last-mod-start", default=None, help="NVD lastModStartDate window for incremental candidate discovery")
     parser.add_argument("--last-mod-end", default=None, help="NVD lastModEndDate window for incremental candidate discovery")
+    parser.add_argument("--use-cursor", action="store_true", help="Use advisory_sync_state.cursor as lastModStartDate when --last-mod-start is omitted.")
+    parser.add_argument("--lookback-hours", type=float, default=24.0, help="Fallback modified-window lookback when --use-cursor has no timestamp cursor.")
     parser.add_argument("--modified-json-path", type=Path, default=None, help="Read a local NVD modified-window response JSON instead of discovering candidates remotely")
     parser.add_argument("--limit", type=int, default=None, help="Maximum CVE ids to process from arguments/list")
     parser.add_argument(
@@ -40,6 +43,12 @@ def main() -> None:
 
     app = ScaMonitorApp(load_settings(component="worker"))
     cve_ids = list(args.cve_ids)
+    modified_window_end = args.last_mod_end
+    if args.use_cursor and not args.last_mod_start:
+        args.last_mod_start = nvd_cursor_or_fallback_start(app, args.lookback_hours)
+    if args.use_cursor and not args.last_mod_end and not args.modified_json_path:
+        modified_window_end = nvd_timestamp(datetime.now(timezone.utc))
+        args.last_mod_end = modified_window_end
     if args.cve_list_path:
         cve_ids.extend(
             line.strip()
@@ -52,7 +61,7 @@ def main() -> None:
         cve_ids.extend(
             load_nvd_modified_cve_ids(
                 last_mod_start=args.last_mod_start or "fixture-start",
-                last_mod_end=args.last_mod_end or "fixture-end",
+                last_mod_end=modified_window_end or "fixture-end",
                 api_url=args.api_url,
                 api_key=args.api_key,
                 json_path=args.modified_json_path,
@@ -82,8 +91,37 @@ def main() -> None:
             limit=args.limit,
             lock_ttl_seconds=args.lock_ttl_seconds,
             delay_seconds=args.delay_seconds,
+            success_cursor=modified_window_end if (args.last_mod_start or args.modified_json_path) else None,
         )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+
+
+def nvd_cursor_or_fallback_start(app: ScaMonitorApp, lookback_hours: float) -> str:
+    if lookback_hours <= 0:
+        raise SystemExit("--lookback-hours must be greater than 0")
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT cursor FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    cursor = row["cursor"] if row else None
+    if cursor and is_nvd_timestamp_cursor(str(cursor)):
+        return str(cursor)
+    return nvd_timestamp(datetime.now(timezone.utc) - timedelta(hours=lookback_hours))
+
+
+def is_nvd_timestamp_cursor(value: str) -> bool:
+    if "T" not in value:
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def nvd_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(timezone.utc)
+    return value.strftime("%Y-%m-%dT%H:%M:%S.000")
 
 
 if __name__ == "__main__":

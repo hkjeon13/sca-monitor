@@ -33,6 +33,7 @@ from backend.sca_monitor.config import Settings, load_settings
 from backend.sca_monitor.osv import parse_osv_advisories
 from backend.sca_monitor.postgres_cutover import assess_cutover, summarize_preflight
 from backend.sca_monitor.versioning import version_is_affected
+from scripts.nvd_cve_sync import nvd_cursor_or_fallback_start
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -4022,6 +4023,27 @@ def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
     assert state["records_processed"] == 2
 
 
+def test_sync_nvd_cves_uses_success_cursor_for_modified_window(tmp_path):
+    app = make_test_app(tmp_path)
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(nvd_cve_fixture()), encoding="utf-8")
+
+    result = sync_nvd_cves(
+        app,
+        ["CVE-2026-0001"],
+        json_dir=json_dir,
+        success_cursor="2026-06-02T00:00:00.000",
+    )
+
+    assert result.processed == 1
+    assert result.failed == 0
+    with app.db.connect() as conn:
+        state = conn.execute("SELECT cursor, last_advisory_id FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    assert state["cursor"] == "2026-06-02T00:00:00.000"
+    assert state["last_advisory_id"] == "CVE-2026-0001"
+
+
 def test_sync_nvd_cves_keeps_cursor_on_partial_failure(tmp_path, monkeypatch):
     app = make_test_app(tmp_path)
     app.record_advisory_sync("NVD", "ok", "CVE-2026-0000", None, cursor="CVE-2026-0000", records_processed=1)
@@ -4205,6 +4227,55 @@ def test_nvd_cve_sync_cli_imports_modified_window_candidates_from_json(tmp_path)
     assert payload["processed"] == 2
     assert payload["imported_rows"] == 2
     assert [item["cve_id"] for item in payload["results"]] == ["CVE-2026-0001", "CVE-2026-0002"]
+
+
+def test_nvd_cve_sync_cli_stores_modified_window_end_cursor(tmp_path):
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    first = nvd_cve_fixture("CVE-2026-0001")
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(first), encoding="utf-8")
+    modified_path = tmp_path / "nvd-modified.json"
+    modified_path.write_text(json.dumps({"vulnerabilities": [first["vulnerabilities"][0]]}), encoding="utf-8")
+    database_url = f"sqlite:///{tmp_path / 'nvd-modified-cursor-cli.sqlite3'}"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/nvd_cve_sync.py",
+            "--last-mod-start",
+            "2026-06-01T00:00:00.000",
+            "--last-mod-end",
+            "2026-06-02T00:00:00.000",
+            "--modified-json-path",
+            str(modified_path),
+            "--json-dir",
+            str(json_dir),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["processed"] == 1
+    database = Database(database_url)
+    with database.connect() as conn:
+        state = conn.execute("SELECT cursor, last_advisory_id FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    assert state["cursor"] == "2026-06-02T00:00:00.000"
+    assert state["last_advisory_id"] == "CVE-2026-0001"
+
+
+def test_nvd_cve_sync_use_cursor_falls_back_from_invalid_timestamp(tmp_path):
+    app = make_test_app(tmp_path)
+    app.record_advisory_sync("NVD", "ok", "CVE-2026-0001", None, cursor="badTcursor", records_processed=1)
+
+    start = nvd_cursor_or_fallback_start(app, 1)
+
+    assert start != "badTcursor"
+    assert start.endswith(".000")
+    assert "T" in start
 
 
 def test_nvd_cve_sync_cli_imports_list_file_from_json_dir(tmp_path):

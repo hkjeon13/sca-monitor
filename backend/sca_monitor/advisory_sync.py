@@ -564,6 +564,7 @@ def sync_nvd_cves(
     lock_ttl_seconds: int = 3600,
     delay_seconds: float = 0.0,
     sleep_func: Callable[[float], None] = time.sleep,
+    success_cursor: str | None = None,
 ) -> NvdCveBatchSyncResult:
     if delay_seconds < 0:
         raise ValueError("delay_seconds must be greater than or equal to 0")
@@ -618,7 +619,7 @@ def sync_nvd_cves(
             last_successful_cve_id,
             None if failed == 0 else f"{failed} NVD CVE sync failures",
             imported_count=imported_rows,
-            cursor=last_successful_cve_id,
+            cursor=success_cursor or last_successful_cve_id,
             records_processed=processed,
         )
     return NvdCveBatchSyncResult(

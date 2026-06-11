@@ -134,10 +134,12 @@ NVD CVE 목록 수동 동기화:
 ```bash
 NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100
 NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --last-mod-start 2026-06-01T00:00:00.000 --last-mod-end 2026-06-02T00:00:00.000 --limit 100
+NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --use-cursor --lookback-hours 24 --limit 100
 ```
 
 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 원격 NVD API batch 요청 간격을 조절한다.
 `--last-mod-start`/`--last-mod-end`는 NVD modified window에서 CVE ID 후보를 먼저 찾은 뒤 기존 batch import 경로를 사용한다.
+`--use-cursor`는 `advisory_sync_state.cursor`에 저장된 NVD lastModified timestamp를 다음 `lastModStartDate`로 사용한다. timestamp cursor가 없으면 `--lookback-hours` 기준으로 fallback 시작 시각을 계산하고, batch 전체가 성공한 경우에만 현재 window end를 새 cursor로 저장한다.
 batch 중 일부 CVE가 실패하면 `advisory_sync_state.cursor`는 이전 성공 cursor를 유지하고 `status=partial`, `records_processed`로 마지막 실행 범위를 남긴다.
 폐쇄망, stage, 재현 테스트에서는 `--modified-json-path fixtures/nvd-modified.json`으로 후보 추출을 검증하고, `--json-dir fixtures/nvd`를 함께 사용하면 로컬 `CVE-YYYY-NNNN.json` 파일을 읽고 원격 요청 지연 없이 같은 import 경로를 검증한다.
 

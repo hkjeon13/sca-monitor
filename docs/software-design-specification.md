@@ -374,8 +374,9 @@ cve.references
 - `parse_nvd_cve_vulnerability()`는 NVD CVE API 2.0의 `vulnerabilities[].cve` payload에서 CVE ID, English description, CVSS severity, vulnerable CPE match, published/lastModified, CISA exploit marker를 `AdvisoryImport`로 변환한다.
 - `scripts/nvd_cve_sync.py CVE-YYYY-NNNN`은 단건 CVE를 NVD에서 조회하거나 `--json-path` fixture를 읽어 `source=NVD`, `ecosystem=cpe` advisory row로 저장하고 `advisory_sync_state`에 `NVD` 상태와 cursor를 기록한다.
 - `scripts/nvd_cve_sync.py --last-mod-start <ISO8601> --last-mod-end <ISO8601>`는 NVD `lastModStartDate`/`lastModEndDate` window에서 CVE ID 후보를 추출한 뒤 기존 batch sync 경로로 가져온다. 폐쇄망 또는 fixture 검증은 `--modified-json-path`로 동일 후보 추출 로직을 검증한다.
-- `scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100`은 newline-delimited CVE 목록을 dedupe한 뒤 순차 처리한다. 원격 NVD API batch 호출은 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 요청 간격을 둘 수 있고, batch 전체가 성공한 경우에만 cursor를 마지막 성공 CVE로 전진시킨다. 오프라인 검증 또는 staged import는 `--json-dir fixtures/nvd`를 함께 사용하며 파일명은 `CVE-YYYY-NNNN.json` 형식을 따른다.
-- NVD 전체 incremental pagination, lastModified watermark 자동 window 계산, CVE alias 기반 기존 OSV/GHSA row enrichment, `/cvehistory/2.0` 변경 이력 수집은 후속 범위이다.
+- `scripts/nvd_cve_sync.py --use-cursor --lookback-hours 24`는 `advisory_sync_state.cursor`에 저장된 NVD lastModified timestamp를 다음 `lastModStartDate`로 사용한다. cursor가 없거나 ISO timestamp가 아니면 lookback window로 시작점을 계산하고, window batch 전체가 성공한 경우에만 `last_mod_end`를 새 cursor로 저장한다.
+- `scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100`은 newline-delimited CVE 목록을 dedupe한 뒤 순차 처리한다. 원격 NVD API batch 호출은 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 요청 간격을 둘 수 있고, batch 전체가 성공한 경우에만 cursor를 마지막 성공 CVE 또는 modified-window watermark로 전진시킨다. 오프라인 검증 또는 staged import는 `--json-dir fixtures/nvd`를 함께 사용하며 파일명은 `CVE-YYYY-NNNN.json` 형식을 따른다.
+- NVD 전체 incremental pagination, CVE alias 기반 기존 OSV/GHSA row enrichment, `/cvehistory/2.0` 변경 이력 수집은 후속 범위이다.
 
 ### 5.6 OpenSSF Malicious Packages 수집 방식
 
@@ -1282,7 +1283,7 @@ impact 생성/변경 트랜잭션 안에서 `pending` row를 생성하고, alert
 | updated_at | timestamptz | 수정 시각 |
 
 connector는 rate limit을 준수하고 지수 백오프를 적용한다.
-부분 실패 시 cursor를 전진시키지 않는다.
+부분 실패 시 cursor를 전진시키지 않는다. NVD modified-window sync는 ISO timestamp cursor만 watermark로 재사용하고, 잘못된 cursor 값은 lookback fallback window로 대체한다.
 
 #### endpoint_poll_state
 
