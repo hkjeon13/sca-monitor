@@ -827,6 +827,36 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
+def test_canonicalization_endpoint_reports_ready_without_candidates(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/operations/canonicalization?limit=10")
+
+    assert payload["status"] == "ready"
+    assert payload["limit"] == 10
+    assert payload["pending_advisory_merges"] == 0
+    assert payload["pending_impact_updates"] == 0
+    assert payload["advisory_merge"]["dry_run"] is True
+    assert payload["impact_backfill"]["dry_run"] is True
+
+
+def test_canonicalization_endpoint_reports_advisory_merge_candidates(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/operations/canonicalization?limit=10")
+
+    assert payload["status"] == "action_required"
+    assert payload["pending_advisory_merges"] == 1
+    assert payload["advisory_merge"]["items"][0]["target_advisory_id"] == "OSV-TEST-0001"
+    assert payload["advisory_merge"]["items"][0]["source_advisory_ids"] == ["GHSA-xxxx-yyyy-zzzz"]
+
+
 def test_remote_deploy_uses_db_gate():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
@@ -869,8 +899,11 @@ def test_web_console_renders_database_readiness_panel():
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
     assert 'id="database-readiness"' in html
+    assert 'id="canonicalization-status"' in html
     assert "/api/v1/operations/database-readiness" in script
+    assert "/api/v1/operations/canonicalization" in script
     assert "renderDatabaseReadiness" in script
+    assert "renderCanonicalizationStatus" in script
 
 
 def enabled_now_lines(text: str) -> str:

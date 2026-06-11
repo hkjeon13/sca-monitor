@@ -138,9 +138,10 @@ function renderReadinessBadge(status) {
 }
 
 async function loadOverview() {
-  const [overview, databaseReadiness] = await Promise.all([
+  const [overview, databaseReadiness, canonicalization] = await Promise.all([
     api.get("/api/v1/overview"),
     api.get("/api/v1/operations/database-readiness"),
+    api.get("/api/v1/operations/canonicalization?limit=20"),
   ]);
   const alertReadiness = overview.alert_readiness || {};
   const advisorySyncReadiness = overview.advisory_sync_readiness || {};
@@ -157,6 +158,7 @@ async function loadOverview() {
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
   renderDatabaseReadiness(databaseReadiness);
+  renderCanonicalizationStatus(canonicalization);
 }
 
 function renderDatabaseReadiness(readiness) {
@@ -186,6 +188,45 @@ function renderDatabaseReadiness(readiness) {
     <div class="history readiness-checks">
       <h3>PostgreSQL Cutover Checks</h3>
       <ul>${checks || "<li><span>No checks reported.</span></li>"}</ul>
+    </div>
+  `;
+}
+
+function renderCanonicalizationStatus(status) {
+  const advisoryMerge = status.advisory_merge || {};
+  const impactBackfill = status.impact_backfill || {};
+  const advisoryItems = (advisoryMerge.items || []).slice(0, 5).map((item) => `
+    <li>
+      ${renderReadinessBadge("action_required")}
+      <span>${escapeHtml(item.alias_value)} · ${escapeHtml(item.ecosystem)} / ${escapeHtml(item.canonical_package_name)}</span>
+      <strong>${escapeHtml(item.target_advisory_id)} ← ${escapeHtml((item.source_advisory_ids || []).join(", "))}</strong>
+    </li>
+  `).join("");
+  const impactItems = (impactBackfill.items || []).slice(0, 5).map((item) => `
+    <li>
+      ${renderReadinessBadge(item.action || "update")}
+      <span>${escapeHtml(item.impact_id)}</span>
+      <strong>${escapeHtml(item.from_identity)} → ${escapeHtml(item.to_identity)}</strong>
+    </li>
+  `).join("");
+  document.querySelector("#canonicalization-status").innerHTML = `
+    <div class="section-header">
+      <h3>Canonicalization</h3>
+      ${renderReadinessBadge(status.status)}
+    </div>
+    <div class="detail-grid readiness-grid">
+      ${detailRow("Pending Advisory Merges", status.pending_advisory_merges)}
+      ${detailRow("Pending Impact Updates", status.pending_impact_updates)}
+      ${detailRow("Advisory Groups Scanned", advisoryMerge.scanned_groups ?? 0)}
+      ${detailRow("Impacts Scanned", impactBackfill.scanned ?? 0)}
+      ${detailRow("Limit", status.limit)}
+      ${detailRow("Dry Run", "yes")}
+    </div>
+    <div class="history readiness-checks">
+      <h3>Advisory Merge Candidates</h3>
+      <ul>${advisoryItems || "<li><span>No advisory merge candidates.</span></li>"}</ul>
+      <h3>Impact Key Candidates</h3>
+      <ul>${impactItems || "<li><span>No impact key candidates.</span></li>"}</ul>
     </div>
   `;
 }
@@ -396,7 +437,7 @@ async function selectImpact(impactId) {
 }
 
 function detailRow(label, value) {
-  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "-")}</strong></div>`;
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "-")}</strong></div>`;
 }
 
 function renderImpactDetailEmpty(message) {

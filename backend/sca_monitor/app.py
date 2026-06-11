@@ -134,6 +134,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.overview())
             if path == "/api/v1/operations/database-readiness" and method == "GET":
                 return self.json_response(request, self.database_readiness_summary())
+            if path == "/api/v1/operations/canonicalization" and method == "GET":
+                return self.json_response(request, self.canonicalization_status(parse_qs(parsed.query)))
             if path == "/api/v1/services" and method == "GET":
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
@@ -460,6 +462,23 @@ class ScaMonitorApp:
             **readiness,
             "cutover": assess_cutover(os.environ),
             "cutover_required": assess_cutover(os.environ, require_postgres=True),
+        }
+
+    def canonicalization_status(self, query: dict[str, list[str]] | None = None) -> dict:
+        query = query or {}
+        limit = bounded_int(first_query_value(query, "limit"), default=100, minimum=1, maximum=1000)
+        advisory_merge = self.merge_canonical_advisory_rows(limit=limit, dry_run=True)
+        impact_backfill = self.backfill_canonical_impact_keys(limit=limit, dry_run=True)
+        pending_advisory_merges = int(advisory_merge["candidates"])
+        pending_impact_updates = int(impact_backfill["candidates"])
+        status = "ready" if pending_advisory_merges == 0 and pending_impact_updates == 0 else "action_required"
+        return {
+            "status": status,
+            "limit": limit,
+            "advisory_merge": advisory_merge,
+            "impact_backfill": impact_backfill,
+            "pending_advisory_merges": pending_advisory_merges,
+            "pending_impact_updates": pending_impact_updates,
         }
 
     def sla_overdue_count(self, conn) -> int:
