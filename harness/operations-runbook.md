@@ -213,6 +213,7 @@ python3 scripts/create_daily_digest.py --limit 100 --timezone Asia/Seoul --actor
 
 Daily Digest는 active impact 중 Medium 이하 또는 비운영 환경 이슈를 `reason=daily_digest` outbox row 하나로 묶는다.
 기본 중복 억제 key는 `daily_digest:{YYYY-MM-DD}:all`이며, VM systemd timer는 매일 09:00 `Asia/Seoul` 운영 기준으로 실행하도록 설치된다.
+Web Console Settings의 Daily Digest preview와 `POST /api/v1/alerts/daily-digest/preview`는 같은 후보를 dry-run으로 확인하며 outbox row를 만들지 않는다.
 
 Dead-letter 재처리:
 

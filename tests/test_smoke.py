@@ -1782,6 +1782,50 @@ def test_create_daily_digest_cli(tmp_path):
         assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'daily_digest'").fetchone()["c"] == 1
 
 
+def test_daily_digest_preview_route_is_dry_run(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE impacts SET risk_level = 'medium', status = 'open'")
+
+    with run_test_server(app) as base_url:
+        payload = http_json(
+            f"{base_url}/api/v1/alerts/daily-digest/preview",
+            method="POST",
+            body={"date": "2026-01-03", "timezone": "Asia/Seoul", "limit": 25},
+        )
+
+    assert payload["dry_run"] is True
+    assert payload["matched"] == 1
+    assert payload["enqueued"] == 0
+    assert payload["alert_suppression_key"] == "daily_digest:2026-01-03:all"
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'daily_digest'").fetchone()["c"] == 0
+
+
+def test_daily_digest_preview_route_requires_admin_in_header_auth(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    create_alerting_impact(app)
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/alerts/daily-digest/preview",
+            method="POST",
+            body={"date": "2026-01-03"},
+            headers={"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"},
+            expect_status=403,
+        )
+        allowed = http_json(
+            f"{base_url}/api/v1/alerts/daily-digest/preview",
+            method="POST",
+            body={"date": "2026-01-03"},
+            headers={"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"},
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert allowed["dry_run"] is True
+
+
 def test_parse_osv_advisory_fixture():
     advisories = parse_osv_advisories(osv_fixture())
 

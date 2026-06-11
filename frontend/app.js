@@ -89,6 +89,7 @@ function applyRoleControls() {
   setDisabled("#service-form button[type='submit'], #endpoint-test", !can("manage_services"));
   setDisabled("#credential-form button[type='submit']", !can("manage_credentials"));
   setDisabled("#alert-channel-form button[type='submit']", !can("manage_alert_channels"));
+  setDisabled("#daily-digest-preview-form button[type='submit']", !can("manage_alert_channels"));
   setDisabled("#impact-bulk-action-form button[type='submit']", !can("bulk_update_impacts"));
   document.querySelectorAll("#impact-bulk-action-form select[name='target_status'] option").forEach((option) => {
     option.disabled = !canBulkImpactTarget(option.value);
@@ -519,6 +520,20 @@ document.querySelector("#audit-log-filter-form").addEventListener("submit", asyn
   await loadAuditLogs();
 });
 
+document.querySelector("#daily-digest-preview-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!can("manage_alert_channels")) return;
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const body = {
+    date: form.date,
+    timezone: form.timezone || "Asia/Seoul",
+    limit: form.limit,
+    actor: "web-console",
+  };
+  const data = await api.send("/api/v1/alerts/daily-digest/preview", "POST", body);
+  renderDailyDigestPreview(data);
+});
+
 document.querySelector("#bulk-requeue-alert-events").addEventListener("click", async () => {
   const form = Object.fromEntries(new FormData(document.querySelector("#alert-event-filter-form")).entries());
   const data = await api.send("/api/v1/alert-events/requeue", "POST", {
@@ -740,6 +755,28 @@ async function loadAlertEvents() {
       await Promise.all([loadAlertEvents(), loadAuditLogs(), loadOverview()]);
     });
   });
+}
+
+function renderDailyDigestPreview(data) {
+  const target = document.querySelector("#daily-digest-preview");
+  const items = data.items || [];
+  const sample = items.slice(0, 5).map((item) => `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(item.risk_level)} · ${escapeHtml(item.service_id)} / ${escapeHtml(item.package_name)}@${escapeHtml(item.resolved_version)}</strong>
+        <span>${escapeHtml(item.environment)} · ${escapeHtml(item.advisory_id)} · ${escapeHtml(item.status)}</span>
+      </div>
+    </div>
+  `).join("");
+  target.innerHTML = `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(data.matched)} candidates · ${escapeHtml(data.digest_date)}</strong>
+        <span>${escapeHtml(data.alert_suppression_key)} · ${escapeHtml(data.existing_alert_event_status || "not enqueued")}</span>
+      </div>
+    </div>
+    ${sample || "<p>No digest candidates for the selected scope.</p>"}
+  `;
 }
 
 function alertEventFilterQuery() {

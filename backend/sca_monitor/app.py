@@ -208,6 +208,11 @@ class ScaMonitorApp:
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
                 return self.json_response(request, self.bulk_requeue_alert_events(self.read_json(request)))
+            if path == "/api/v1/alerts/daily-digest/preview" and method == "POST":
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "daily digest preview requires admin role")
+                return self.json_response(request, self.preview_daily_digest(body))
             if path == "/api/v1/audit-logs" and method == "GET":
                 return self.json_response(request, self.search_audit_logs(parse_qs(parsed.query)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
@@ -2119,6 +2124,16 @@ class ScaMonitorApp:
             result["enqueued"] = 1
             result["alert_event_id"] = alert_event_id
             return result
+
+    def preview_daily_digest(self, body: dict) -> dict:
+        return self.enqueue_daily_digest_alert(
+            now=normalize_optional(body.get("now")),
+            digest_date=normalize_optional(body.get("date")),
+            timezone_name=normalize_optional(body.get("timezone")) or "Asia/Seoul",
+            limit=bounded_int(body.get("limit"), default=100, minimum=1, maximum=1000),
+            dry_run=True,
+            actor=body.get("actor", "web-console"),
+        )
 
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")
