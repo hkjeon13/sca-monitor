@@ -1503,6 +1503,8 @@ class ScaMonitorApp:
                 "published_at": nvd_advisory.published_at,
                 "modified_at": nvd_advisory.modified_at,
                 "cpe_matches": cpe_matches,
+                "cwes": nvd_cwes(nvd_advisory.raw_payload),
+                "references": nvd_references(nvd_advisory.raw_payload),
                 "raw_payload": nvd_advisory.raw_payload,
             }
             next_severity = highest_risk(row["severity"], nvd_advisory.severity)
@@ -3342,6 +3344,40 @@ def highest_risk(left, right) -> str:
         if RISK_RANK.get(right_value, RISK_RANK["info"]) < RISK_RANK.get(left_value, RISK_RANK["info"])
         else left_value
     )
+
+
+def nvd_cwes(raw_payload: dict) -> list[str]:
+    cwes: list[str] = []
+    seen: set[str] = set()
+    if not isinstance(raw_payload, dict):
+        return cwes
+    for weakness in raw_payload.get("weaknesses") or []:
+        for description in weakness.get("description") or []:
+            value = str(description.get("value") or "").strip().upper()
+            if value.startswith("CWE-") and value not in seen:
+                seen.add(value)
+                cwes.append(value)
+    return cwes
+
+
+def nvd_references(raw_payload: dict) -> list[dict[str, object]]:
+    references: list[dict[str, object]] = []
+    seen: set[str] = set()
+    if not isinstance(raw_payload, dict):
+        return references
+    for item in raw_payload.get("references") or []:
+        url = str(item.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        reference: dict[str, object] = {"url": url}
+        if item.get("source"):
+            reference["source"] = str(item["source"])
+        tags = [str(tag) for tag in item.get("tags") or [] if str(tag)]
+        if tags:
+            reference["tags"] = tags
+        references.append(reference)
+    return references
 
 
 def advisory_import_from_row(row: dict) -> AdvisoryImport:

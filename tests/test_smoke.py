@@ -4066,6 +4066,10 @@ def test_sync_nvd_cve_enriches_matching_osv_alias_and_rematches_impacts(tmp_path
     assert detail["raw_payload"]["_nvd_enrichment"]["cve_id"] == "CVE-2026-0001"
     assert detail["raw_payload"]["_nvd_enrichment"]["severity"] == "critical"
     assert detail["raw_payload"]["_nvd_enrichment"]["cpe_matches"][0]["criteria"].startswith("cpe:2.3:a:example:example-server")
+    assert detail["raw_payload"]["_nvd_enrichment"]["cwes"] == ["CWE-79"]
+    assert detail["raw_payload"]["_nvd_enrichment"]["references"] == [
+        {"source": "nvd@example.test", "url": "https://example.test/advisories/CVE-2026-0001", "tags": ["Vendor Advisory"]}
+    ]
     after = app.search_impacts({"service_id": ["nvd-enrichment-service"]})["impacts"][0]
     assert after["advisory_id"] == "OSV-TEST-0001"
     assert after["risk_level"] == "critical"
@@ -5407,6 +5411,20 @@ def nvd_cve_fixture(cve_id: str = "CVE-2026-0001", *, product: str = "example-se
                                     ],
                                 }
                             ]
+                        }
+                    ],
+                    "weaknesses": [
+                        {
+                            "source": "nvd@example.test",
+                            "type": "Primary",
+                            "description": [{"lang": "en", "value": "CWE-79"}],
+                        }
+                    ],
+                    "references": [
+                        {
+                            "source": "nvd@example.test",
+                            "url": "https://example.test/advisories/CVE-2026-0001",
+                            "tags": ["Vendor Advisory"],
                         }
                     ],
                     "cisaExploitAdd": "2026-06-10",
