@@ -351,6 +351,41 @@ def test_endpoint_poll_refuses_held_lock(tmp_path):
             poll_configured_endpoints(app, worker_name="smoke-worker", lock_owner="owner-b")
 
 
+def test_metrics_exposes_operational_indicators(tmp_path):
+    app = make_test_app(tmp_path)
+    zip_path = write_osv_fixture_zip(tmp_path)
+    sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, limit=1)
+    app.create_service(
+        {
+            "service_id": "metric-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "collection_mode": "poll",
+        }
+    )
+    poll_configured_endpoints(
+        app,
+        worker_name="metric-worker",
+        fetcher=lambda url, auth_header=None: {
+            "schema_version": "1.0",
+            "service_id": "metric-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        },
+    )
+    dispatch_pending_alerts(app, webhook_url="https://alerts.example.test/webhook", sender=lambda url, payload: None)
+
+    metrics = app.metrics()
+
+    assert 'sca_monitor_advisory_sync_lag_seconds{source="OSV"}' in metrics
+    assert 'sca_monitor_endpoint_poll_success_rate{worker="metric-worker"} 1.000000' in metrics
+    assert "sca_monitor_endpoint_poll_success_rate 1.000000" in metrics
+    assert "sca_monitor_alert_delivery_success_rate 1.000000" in metrics
+    assert "sca_monitor_alert_outbox_pending_count 0" in metrics
+    assert "sca_monitor_stale_services 0" in metrics
+
+
 def test_parse_osv_advisory_fixture():
     advisories = parse_osv_advisories(osv_fixture())
 

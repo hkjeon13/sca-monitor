@@ -1450,6 +1450,7 @@ POST /api/v1/settings/alert-channels
 - Endpoint Test: `POST /api/v1/services/{service_id}/endpoint/test` 기반 dependency status endpoint 단건 호출, schema/service/environment/dependency 필수 필드 검증, `endpoint_health` 상태 반영. Web Console에서 등록 폼 입력값으로 test action 제공
 - Endpoint Poll Worker: `scripts/poll_endpoints.py` 기반 등록된 `status_endpoint_url`을 1회 또는 반복 polling하고, 유효한 endpoint payload를 dependency snapshot으로 저장해 impact 매칭까지 수행. `endpoint_poll_state` DB lease로 중복 실행을 차단
 - Endpoint Bearer Auth: Web Console/API에서 `status_auth_type=bearer_token`과 token을 등록하면 endpoint test/polling에서 `Authorization: Bearer` 헤더를 사용. 서비스 조회 응답은 secret 원문을 제거하고 `status_auth_configured`만 표시
+- Operational Metrics: `/metrics`에서 service/open impact/critical/high/unhealthy count와 advisory sync lag, endpoint poll success rate, alert delivery success rate, alert outbox pending count, stale service count를 Prometheus text 형태로 노출
 - Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시

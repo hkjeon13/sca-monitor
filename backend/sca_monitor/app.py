@@ -1051,15 +1051,68 @@ class ScaMonitorApp:
 
     def metrics(self) -> str:
         overview = self.overview()
-        return "\n".join(
-            [
-                f"sca_monitor_services {overview['service_count']}",
-                f"sca_monitor_open_impacts {overview['open_impacts']}",
-                f"sca_monitor_critical_impacts {overview['critical_impacts']}",
-                f"sca_monitor_endpoint_unhealthy {overview['endpoint_unhealthy']}",
-                "",
-            ]
-        )
+        lines = [
+            f"sca_monitor_services {overview['service_count']}",
+            f"sca_monitor_open_impacts {overview['open_impacts']}",
+            f"sca_monitor_critical_impacts {overview['critical_impacts']}",
+            f"sca_monitor_high_impacts {overview['high_impacts']}",
+            f"sca_monitor_endpoint_unhealthy {overview['endpoint_unhealthy']}",
+        ]
+        lines.extend(self.operational_metric_lines())
+        lines.append("")
+        return "\n".join(lines)
+
+    def operational_metric_lines(self) -> list[str]:
+        now = datetime.now(timezone.utc)
+        lines = []
+        with self.db.connect() as conn:
+            advisory_rows = conn.execute(
+                "SELECT source, last_success_at FROM advisory_sync_state ORDER BY source"
+            ).fetchall()
+            poll_rows = conn.execute(
+                "SELECT worker_name, checked_count, succeeded_count, failed_count FROM endpoint_poll_state ORDER BY worker_name"
+            ).fetchall()
+            alert_counts = conn.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM alert_events
+                GROUP BY status
+                """
+            ).fetchall()
+            stale_services = conn.execute(
+                "SELECT COUNT(*) AS count FROM endpoint_health WHERE freshness_status = 'stale'"
+            ).fetchone()["count"]
+
+        for row in advisory_rows:
+            lag = seconds_since(row["last_success_at"], now)
+            if lag is not None:
+                lines.append(f'sca_monitor_advisory_sync_lag_seconds{{source="{metric_label(row["source"])}"}} {lag}')
+
+        total_checked = 0
+        total_succeeded = 0
+        for row in poll_rows:
+            checked = int(row["checked_count"] or 0)
+            succeeded = int(row["succeeded_count"] or 0)
+            failed = int(row["failed_count"] or 0)
+            total_checked += checked
+            total_succeeded += succeeded
+            worker_rate = succeeded / checked if checked else 0.0
+            lines.append(f'sca_monitor_endpoint_poll_success_rate{{worker="{metric_label(row["worker_name"])}"}} {worker_rate:.6f}')
+            lines.append(f'sca_monitor_endpoint_poll_checked_total{{worker="{metric_label(row["worker_name"])}"}} {checked}')
+            lines.append(f'sca_monitor_endpoint_poll_failed_total{{worker="{metric_label(row["worker_name"])}"}} {failed}')
+        total_rate = total_succeeded / total_checked if total_checked else 0.0
+        lines.append(f"sca_monitor_endpoint_poll_success_rate {total_rate:.6f}")
+
+        counts = {row["status"]: int(row["count"]) for row in alert_counts}
+        pending = counts.get("pending", 0)
+        sent = counts.get("sent", 0)
+        failed = counts.get("failed", 0)
+        delivered_total = sent + failed
+        delivery_rate = sent / delivered_total if delivered_total else 0.0
+        lines.append(f"sca_monitor_alert_delivery_success_rate {delivery_rate:.6f}")
+        lines.append(f"sca_monitor_alert_outbox_pending_count {pending}")
+        lines.append(f"sca_monitor_stale_services {stale_services}")
+        return lines
 
 
 def required(data: dict, key: str) -> str:
@@ -1123,6 +1176,25 @@ def normalize_optional(value) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def seconds_since(value: str | None, now: datetime) -> int | None:
+    if not value:
+        return None
+    text = str(value)
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0, int((now - parsed).total_seconds()))
+
+
+def metric_label(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:

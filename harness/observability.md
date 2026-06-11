@@ -25,14 +25,17 @@ GET /metrics
 
 | Metric | 설명 |
 |---|---|
-| advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |
-| endpoint_poll_success_rate | 등록 endpoint polling 성공률 |
+| sca_monitor_advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |
+| sca_monitor_endpoint_poll_success_rate | 등록 endpoint polling 성공률 |
 | new_advisory_to_alert_latency_seconds | 신규 advisory 수집부터 alert 발송까지 지연 |
-| alert_delivery_success_rate | alert 발송 성공률 |
-| alert_outbox_pending_count | pending alert outbox 수 |
-| open_critical_impacts | open Critical impact 수 |
-| stale_services | freshness 기준 초과 서비스 수 |
+| sca_monitor_alert_delivery_success_rate | alert 발송 성공률 |
+| sca_monitor_alert_outbox_pending_count | pending alert outbox 수 |
+| sca_monitor_critical_impacts | open Critical impact 수 |
+| sca_monitor_stale_services | freshness 기준 초과 서비스 수 |
 | worker_lease_acquire_failures | worker lease 획득 실패 수 |
+
+현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_stale_services`를 노출한다.
+`new_advisory_to_alert_latency_seconds`와 `worker_lease_acquire_failures`는 별도 event timestamp/lease failure counter가 필요하므로 후속 구현 대상이다.
 
 ## 4. Logs
 
@@ -79,4 +82,3 @@ Web Console은 frontend error tracking을 선택적으로 연동한다.
 - request_id
 
 사용자 개인정보와 secret은 전송하지 않는다.
-

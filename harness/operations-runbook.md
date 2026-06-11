@@ -21,13 +21,13 @@
 
 | 지표 | 설명 |
 |---|---|
-| advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |
-| endpoint_poll_success_rate | 등록 endpoint polling 성공률 |
+| sca_monitor_advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |
+| sca_monitor_endpoint_poll_success_rate | 등록 endpoint polling 성공률 |
 | new_advisory_to_alert_latency | 신규 advisory 수집부터 alert 발송까지 지연 |
-| alert_delivery_success_rate | alert 발송 성공률 |
-| open_critical_impacts | open Critical impact 수 |
-| stale_services | freshness 기준 초과 서비스 수 |
-| alert_outbox_pending_count | pending alert outbox 수 |
+| sca_monitor_alert_delivery_success_rate | alert 발송 성공률 |
+| sca_monitor_critical_impacts | open Critical impact 수 |
+| sca_monitor_stale_services | freshness 기준 초과 서비스 수 |
+| sca_monitor_alert_outbox_pending_count | pending alert outbox 수 |
 
 ## 3. 장애 대응
 
