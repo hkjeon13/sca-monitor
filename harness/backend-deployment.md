@@ -191,6 +191,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-alert-dispatcher.service` | alert outbox dispatch | long-running loop, per-alert lock |
 | `sca-monitor-alert-dispatcher-dry-run.service` | alert outbox dry-run dispatch | long-running loop, no row update/send |
 | `sca-monitor-accepted-risk-expiry.timer` | accepted risk 만료 처리 | 15분 주기 oneshot |
+| `sca-monitor-sla-escalation.timer` | SLA 만료 alert 후보 생성 | 15분 주기 oneshot |
 | `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
 | `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
 | `sca-monitor-openssf-malicious-sync.timer` | OpenSSF malicious package sync | 1시간 주기 oneshot |

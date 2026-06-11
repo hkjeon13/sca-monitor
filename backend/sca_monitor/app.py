@@ -1926,6 +1926,96 @@ class ScaMonitorApp:
             "impacts": expired,
         }
 
+    def enqueue_sla_expired_alerts(self, *, now: str | None = None, limit: int = 100, dry_run: bool = False, actor: str = "system") -> dict:
+        checked_at = now or utcnow()
+        checked_dt = parse_iso_datetime(checked_at)
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT i.id, i.alert_suppression_key, i.risk_level, i.status,
+                       i.first_detected_at, i.package_name, i.resolved_version,
+                       s.service_id, s.environment, a.advisory_id, a.summary
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                JOIN advisories a ON a.id = i.advisory_pk
+                WHERE i.status IN ({",".join("?" for _ in ACTIVE_IMPACT_STATUSES)})
+                ORDER BY i.first_detected_at ASC
+                LIMIT ?
+                """,
+                (*ACTIVE_IMPACT_STATUSES, limit),
+            ).fetchall()
+            candidates = []
+            for row in rows:
+                impact = row_to_dict(row)
+                sla = impact_sla(impact, checked_dt)
+                if not sla["overdue"]:
+                    continue
+                suppression_key = f"{impact['alert_suppression_key']}:sla_expired"
+                existing = conn.execute(
+                    """
+                    SELECT id, status
+                    FROM alert_events
+                    WHERE impact_pk = ? AND reason = 'sla_expired' AND alert_suppression_key = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (impact["id"], suppression_key),
+                ).fetchone()
+                candidate = {
+                    "impact_id": impact["id"],
+                    "service_id": impact["service_id"],
+                    "environment": impact["environment"],
+                    "advisory_id": impact["advisory_id"],
+                    "package_name": impact["package_name"],
+                    "risk_level": impact["risk_level"],
+                    "sla": sla,
+                    "alert_suppression_key": suppression_key,
+                    "existing_alert_event_id": existing["id"] if existing else None,
+                    "existing_alert_event_status": existing["status"] if existing else None,
+                }
+                candidates.append(candidate)
+                if dry_run or existing:
+                    continue
+                payload = {
+                    "impact_id": impact["id"],
+                    "service_id": impact["service_id"],
+                    "environment": impact["environment"],
+                    "advisory_id": impact["advisory_id"],
+                    "summary": impact["summary"],
+                    "risk_level": impact["risk_level"],
+                    "package_name": impact["package_name"],
+                    "resolved_version": impact["resolved_version"],
+                    "sla": sla,
+                    "reason": "sla_expired",
+                }
+                conn.execute(
+                    """
+                    INSERT INTO alert_events (id, impact_pk, alert_suppression_key, reason, status, payload, created_at)
+                    VALUES (?, ?, ?, 'sla_expired', 'pending', ?, ?)
+                    """,
+                    (str(uuid.uuid4()), impact["id"], suppression_key, json.dumps(payload, ensure_ascii=False), checked_at),
+                )
+                self.write_audit_log(
+                    conn,
+                    actor=actor,
+                    action="sla.escalation.enqueue",
+                    target_type="impact",
+                    target_id=impact["id"],
+                    reason="SLA expired alert enqueued",
+                    before=None,
+                    after={"alert_suppression_key": suppression_key, "sla": sla},
+                    occurred_at=checked_at,
+                )
+        enqueued = [item for item in candidates if not item["existing_alert_event_id"]]
+        return {
+            "checked_at": checked_at,
+            "matched": len(rows),
+            "candidates": len(candidates),
+            "enqueued": 0 if dry_run else len(enqueued),
+            "dry_run": dry_run,
+            "impacts": candidates,
+        }
+
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")
         reason = body.get("reason", "requeue dead-letter alert")

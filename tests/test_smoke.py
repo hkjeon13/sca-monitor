@@ -138,6 +138,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-alert-dispatcher-dry-run.service",
         "sca-monitor-accepted-risk-expiry.service",
         "sca-monitor-accepted-risk-expiry.timer",
+        "sca-monitor-sla-escalation.service",
+        "sca-monitor-sla-escalation.timer",
         "sca-monitor-cisa-kev-sync.service",
         "sca-monitor-cisa-kev-sync.timer",
         "sca-monitor-osv-npm-sync.service",
@@ -152,6 +154,10 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
     expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
     assert "OnUnitActiveSec=15min" in expiry_timer
+    sla_service = (unit_dir / "sca-monitor-sla-escalation.service").read_text(encoding="utf-8")
+    assert "scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler" in sla_service
+    sla_timer = (unit_dir / "sca-monitor-sla-escalation.timer").read_text(encoding="utf-8")
+    assert "Unit=sca-monitor-sla-escalation.service" in sla_timer
     openssf = (unit_dir / "sca-monitor-openssf-malicious-sync.service").read_text(encoding="utf-8")
     assert "scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only" in openssf
     dispatcher_dry_run = (unit_dir / "sca-monitor-alert-dispatcher-dry-run.service").read_text(encoding="utf-8")
@@ -189,7 +195,7 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 12, "present": 12, "valid": 12, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 14, "present": 14, "valid": 14, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
@@ -259,7 +265,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 12
+    assert payload["summary"]["missing"] == 14
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -281,7 +287,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 12, "present": 12, "valid": 12, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 14, "present": 14, "valid": 14, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -325,7 +331,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 12
+    assert payload["summary"]["valid"] == 14
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -394,7 +400,7 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 12
+    assert payload["summary"]["valid"] == 14
     assert api_status == {"enabled": "enabled", "active": "active"}
     assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
 
@@ -1620,6 +1626,79 @@ def test_fixed_impacts_are_not_sla_overdue(tmp_path):
 
     assert impact["sla"]["overdue"] is False
     assert app.overview()["sla_overdue_impacts"] == 0
+
+
+def test_sla_escalation_enqueues_pending_alert_once_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        impact_id = conn.execute("SELECT id FROM impacts").fetchone()["id"]
+        conn.execute(
+            """
+            UPDATE impacts
+            SET first_detected_at = '2026-01-01T00:00:00+00:00',
+                risk_level = 'critical',
+                status = 'open'
+            WHERE id = ?
+            """,
+            (impact_id,),
+        )
+
+    dry_run = app.enqueue_sla_expired_alerts(now="2026-01-03T00:00:00+00:00", dry_run=True, actor="sla-scheduler")
+    result = app.enqueue_sla_expired_alerts(now="2026-01-03T00:00:00+00:00", actor="sla-scheduler")
+    second = app.enqueue_sla_expired_alerts(now="2026-01-03T00:00:00+00:00", actor="sla-scheduler")
+
+    assert dry_run["candidates"] == 1
+    assert dry_run["enqueued"] == 0
+    assert result["candidates"] == 1
+    assert result["enqueued"] == 1
+    assert second["candidates"] == 1
+    assert second["enqueued"] == 0
+    with app.db.connect() as conn:
+        events = conn.execute("SELECT reason, status, payload FROM alert_events ORDER BY reason").fetchall()
+    assert {row["reason"] for row in events} == {"new", "sla_expired"}
+    sla_event = next(row for row in events if row["reason"] == "sla_expired")
+    sla_payload = json.loads(sla_event["payload"])
+    assert sla_payload["reason"] == "sla_expired"
+    assert sla_payload["sla"]["overdue"] is True
+    audit = app.search_audit_logs({"action": ["sla.escalation.enqueue"], "target_id": [impact_id]})
+    assert audit["pagination"]["total"] == 1
+
+
+def test_evaluate_sla_escalations_cli(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        impact_id = conn.execute("SELECT id FROM impacts").fetchone()["id"]
+        conn.execute(
+            """
+            UPDATE impacts
+            SET first_detected_at = '2026-01-01T00:00:00+00:00',
+                risk_level = 'critical',
+                status = 'open'
+            WHERE id = ?
+            """,
+            (impact_id,),
+        )
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/evaluate_sla_escalations.py", "--now", "2026-01-03T00:00:00+00:00", "--actor", "sla-scheduler"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["enqueued"] == 1
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'sla_expired'").fetchone()["c"] == 1
 
 
 def test_parse_osv_advisory_fixture():

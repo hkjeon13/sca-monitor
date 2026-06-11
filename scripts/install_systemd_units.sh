@@ -203,6 +203,29 @@ Unit=${PREFIX}-accepted-risk-expiry.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-sla-escalation.service" <<EOF
+[Unit]
+Description=SCA Monitor SLA escalation job
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler
+EOF
+
+write_unit "${PREFIX}-sla-escalation.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor SLA escalation every 15 minutes
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec=15min
+Unit=${PREFIX}-sla-escalation.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 write_unit "${PREFIX}-cisa-kev-sync.service" <<EOF
 [Unit]
 Description=SCA Monitor CISA KEV sync job
@@ -331,6 +354,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-endpoint-poller.service" \
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
+    "${PREFIX}-sla-escalation.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"
@@ -339,6 +363,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-endpoint-poller.service" \
     "${PREFIX}-alert-dispatcher.service" \
     "${PREFIX}-accepted-risk-expiry.timer" \
+    "${PREFIX}-sla-escalation.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"

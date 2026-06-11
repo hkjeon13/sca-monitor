@@ -194,6 +194,16 @@ ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_
 현재 MVP dispatcher는 webhook JSON 발송, 재시도 backoff, per-alert dispatch lock, 반복 실행 옵션을 지원한다.
 webhook 발송 시 idempotency header를 포함하고, max retry 초과 alert는 `dead_letter` 상태로 격리한다.
 
+SLA escalation 후보 생성:
+
+```bash
+python3 scripts/evaluate_sla_escalations.py --dry-run --limit 100
+python3 scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler
+```
+
+첫 명령은 active impact 중 SLA가 초과된 항목만 확인한다.
+두 번째 명령은 중복되지 않는 `sla_expired` alert outbox row를 생성한다.
+
 Dead-letter 재처리:
 
 ```bash

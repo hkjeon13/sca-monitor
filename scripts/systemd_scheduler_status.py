@@ -39,6 +39,14 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=15min", "Unit={prefix}-accepted-risk-expiry.service"],
         "kind": "timer",
     },
+    "sla-escalation.service": {
+        "required": ["scripts/evaluate_sla_escalations.py", "--actor sla-scheduler"],
+        "kind": "oneshot",
+    },
+    "sla-escalation.timer": {
+        "required": ["OnUnitActiveSec=15min", "Unit={prefix}-sla-escalation.service"],
+        "kind": "timer",
+    },
     "cisa-kev-sync.service": {
         "required": ["scripts/cisa_kev_sync.py", "--lock-owner systemd-cisa-kev-sync"],
         "kind": "oneshot",
