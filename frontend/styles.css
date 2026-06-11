@@ -327,7 +327,7 @@ th {
 
 .split {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 18px;
 }
 
@@ -382,6 +382,14 @@ input[readonly] {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+
+.audit-item {
+  align-items: flex-start;
+}
+
+.audit-item div {
+  min-width: 0;
 }
 
 pre {

@@ -1475,7 +1475,7 @@ GET /api/v1/audit-logs
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
 - Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시
 - Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록
-- Audit Log: `audit_logs` table과 `GET /api/v1/audit-logs` 기반 impact status 변경, alert channel 설정 변경, alert event requeue 이력을 actor/action/target/reason/before/after로 조회한다. webhook URL 같은 민감 target 값은 masked 값만 저장/노출한다
+- Audit Log: `audit_logs` table과 `GET /api/v1/audit-logs` 기반 impact status 변경, alert channel 설정 변경, alert event requeue 이력을 actor/action/target/reason/before/after로 조회한다. Web Console Settings에서 action/target/search/limit 필터로 최근 audit log를 확인할 수 있으며, webhook URL 같은 민감 target 값은 masked 값만 저장/노출한다
 - Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
 
 남은 구현:

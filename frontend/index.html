@@ -234,6 +234,38 @@
             </form>
             <div id="alert-event-list" class="credential-list"></div>
           </div>
+          <div>
+            <h2>Audit Logs</h2>
+            <form id="audit-log-filter-form" class="compact-filter">
+              <label>Action
+                <select name="action">
+                  <option value="">Any</option>
+                  <option value="impact.status.update">impact.status.update</option>
+                  <option value="alert_channel.upsert">alert_channel.upsert</option>
+                  <option value="alert_channel.update">alert_channel.update</option>
+                  <option value="alert_event.requeue">alert_event.requeue</option>
+                </select>
+              </label>
+              <label>Target
+                <select name="target_type">
+                  <option value="">Any</option>
+                  <option value="impact">impact</option>
+                  <option value="alert_channel">alert_channel</option>
+                  <option value="alert_event">alert_event</option>
+                </select>
+              </label>
+              <label>Limit
+                <select name="limit">
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <label>Search<input name="q" placeholder="actor, action, reason" /></label>
+              <button type="submit">Apply</button>
+            </form>
+            <div id="audit-log-list" class="credential-list"></div>
+          </div>
         </section>
       </main>
     </div>

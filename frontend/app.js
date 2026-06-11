@@ -222,7 +222,7 @@ function renderImpactPagination(pagination) {
 }
 
 async function refreshAll() {
-  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels(), loadAlertEvents()]);
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels(), loadAlertEvents(), loadAuditLogs()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);
@@ -244,6 +244,11 @@ document.querySelector("#clear-impact-filters").addEventListener("click", async 
 document.querySelector("#alert-event-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   await loadAlertEvents();
+});
+
+document.querySelector("#audit-log-filter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await loadAuditLogs();
 });
 
 document.querySelector("#bulk-requeue-alert-events").addEventListener("click", async () => {
@@ -428,7 +433,7 @@ async function loadAlertEvents() {
         actor: "web-console",
         reason: "manual requeue",
       });
-      await Promise.all([loadAlertEvents(), loadOverview()]);
+      await Promise.all([loadAlertEvents(), loadAuditLogs(), loadOverview()]);
     });
   });
 }
@@ -443,6 +448,54 @@ function alertEventFilterQuery() {
   }
   if (!params.has("limit")) params.set("limit", "10");
   return params.toString();
+}
+
+async function loadAuditLogs() {
+  const target = document.querySelector("#audit-log-list");
+  if (!target) return;
+  const query = auditLogFilterQuery();
+  const data = await api.get(`/api/v1/audit-logs?${query}`);
+  if (!data.audit_logs.length) {
+    target.innerHTML = `<p>No audit logs match the selected filters.</p>`;
+    return;
+  }
+  target.innerHTML = data.audit_logs.map((item) => `
+    <div class="credential-item audit-item">
+      <div>
+        <strong>${escapeHtml(item.action)} · ${escapeHtml(item.actor || "-")}</strong>
+        <span>${escapeHtml(item.target_type)}:${escapeHtml(item.target_id)} · ${escapeHtml(item.occurred_at)}</span>
+        ${item.reason ? `<span>${escapeHtml(item.reason)}</span>` : ""}
+        <span>${escapeHtml(auditChangeSummary(item))}</span>
+      </div>
+    </div>
+  `).join("");
+}
+
+function auditLogFilterQuery() {
+  const form = document.querySelector("#audit-log-filter-form");
+  const params = new URLSearchParams();
+  for (const [key, value] of new FormData(form).entries()) {
+    if (String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  if (!params.has("limit")) params.set("limit", "10");
+  return params.toString();
+}
+
+function auditChangeSummary(item) {
+  const before = item.before || {};
+  const after = item.after || {};
+  if (before.status || after.status) {
+    return `status ${before.status || "-"} → ${after.status || "-"}`;
+  }
+  if (before.enabled !== undefined || after.enabled !== undefined) {
+    return `enabled ${before.enabled ?? "-"} → ${after.enabled ?? "-"}`;
+  }
+  if (before.is_default !== undefined || after.is_default !== undefined) {
+    return `default ${before.is_default ?? "-"} → ${after.is_default ?? "-"}`;
+  }
+  return "change recorded";
 }
 
 loadImpactFiltersFromUrl();
