@@ -252,9 +252,10 @@ notes
 - 기존 OSV/GHSA row를 덮어쓰지 않기 위해 source-specific advisory ID를 사용한다.
 - 기존 OSV/GHSA raw payload의 `aliases`에 같은 CVE가 있으면 기존 package advisory를 `is_known_exploited=true`, `severity=critical`로 보강하고 기존 package impact를 재평가한다.
 - 별도 `advisory_aliases` 테이블은 구현되어 advisory import 시 CVE/GHSA/OSV/MAL alias를 저장하고 advisory list/detail API에 노출한다.
+- `scripts/merge_canonical_advisories.py`는 같은 ecosystem/package에서 alias가 겹치는 source별 advisory row를 canonical source priority(OSV, OpenSSF, GHSA, NVD, CISA_KEV) 기준 target row로 병합한다. 병합 시 alias, affected range/version, severity, KEV/malicious flag, 관련 impact FK, audit log를 보존한다.
 - impact 생성 시 같은 ecosystem/package에서 alias가 겹치는 advisory는 source 우선순위 기반 canonical advisory key를 `impact_identity`와 `alert_suppression_key`에 사용해 중복 impact/alert 생성을 억제한다.
-- `scripts/backfill_canonical_impact_keys.py --dry-run`은 기존 impact와 pending alert suppression key를 canonical advisory key 기준으로 갱신할 후보를 보고한다. `--dry-run`을 빼면 충돌이 없는 후보만 갱신하고, 이미 같은 canonical identity가 있는 항목은 conflict로 보고한다.
-- canonical advisory row 병합과 conflict impact merge는 FR-027 후속 범위이다.
+- `scripts/backfill_canonical_impact_keys.py --dry-run`은 기존 impact와 pending alert suppression key를 canonical advisory key 기준으로 갱신하거나 병합할 후보를 보고한다. `--dry-run`을 빼면 단순 후보는 key를 갱신하고, 이미 같은 canonical identity가 있는 항목은 target impact로 병합한다.
+- scheduler 기반 정기 canonical merge와 대량 재매칭 queue는 FR-027 후속 범위이다.
 
 ### 5.4 GitHub Security Advisory 수집 방식
 
@@ -1506,6 +1507,7 @@ GET /api/v1/audit-logs
 - PostgreSQL Production Preflight: `scripts/postgres_integration_smoke.py --production-preflight --json`은 `MIGRATION_DATABASE_URL`로 migration/write-rollback smoke를 실행하고, `API_DATABASE_URL`/`WORKER_DATABASE_URL`은 migrate 없이 read-only schema smoke로 검증해 실제 전환 전 최소권한 split credential을 한 번에 점검한다
 - Database Readiness Console: `GET /api/v1/operations/database-readiness`와 Web Console Overview는 `/ready`의 DB/migration 상태, 현재 PostgreSQL cutover 판정, require-postgres 전환 차단 사유를 함께 표시해 FR-030의 운영 모니터링 범위를 DB 전환 상태까지 확장한다
 - Canonical Impact Backfill/Merge: `scripts/backfill_canonical_impact_keys.py`는 기존 impact identity와 alert suppression key를 canonical advisory key 기준으로 dry-run/apply 할 수 있다. alias 수집 순서 때문에 동일 canonical identity로 legacy impact와 target impact가 공존하는 경우 target impact로 alert event, impact history, accepted risk를 이관하고 source impact를 삭제해 FR-027 canonicalization drift를 정리한다
+- Canonical Advisory Row Merge: `scripts/merge_canonical_advisories.py`는 alias가 겹치는 OSV/GHSA/NVD/OpenSSF/CISA_KEV advisory row를 canonical source priority 기준 target row로 병합하고, apply 후 기본적으로 impact canonical backfill을 이어서 실행한다
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `known_exploited`, `malicious_package`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/service/team/environment/package/advisory/KEV/malicious/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
 - Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시

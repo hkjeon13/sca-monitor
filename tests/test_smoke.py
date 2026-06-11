@@ -2543,6 +2543,61 @@ def test_import_osv_payload_syncs_advisory_aliases(tmp_path):
     assert [row_to_dict(row) for row in rows] == advisory["aliases"]
 
 
+def test_merge_canonical_advisory_rows_preserves_aliases_and_audit(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+
+    dry_run = app.merge_canonical_advisory_rows(limit=10, dry_run=True)
+    result = app.merge_canonical_advisory_rows(limit=10, actor="test-merge")
+
+    assert dry_run["candidates"] == 1
+    assert dry_run["items"][0]["target_advisory_id"] == "OSV-TEST-0001"
+    assert dry_run["items"][0]["source_advisory_ids"] == ["GHSA-xxxx-yyyy-zzzz"]
+    assert result["status"] == "ok"
+    assert result["merged_advisories"] == 1
+    with app.db.connect() as conn:
+        advisories = conn.execute(
+            """
+            SELECT advisory_id, source
+            FROM advisories
+            WHERE advisory_id IN ('OSV-TEST-0001', 'GHSA-xxxx-yyyy-zzzz')
+            ORDER BY advisory_id
+            """
+        ).fetchall()
+        aliases = conn.execute(
+            """
+            SELECT aa.alias_type, aa.alias_value
+            FROM advisory_aliases aa
+            JOIN advisories a ON a.id = aa.advisory_pk
+            WHERE a.advisory_id = 'OSV-TEST-0001'
+            ORDER BY aa.alias_type, aa.alias_value
+            """
+        ).fetchall()
+        audit = conn.execute(
+            """
+            SELECT actor, action, target_type, target_id, reason
+            FROM audit_logs
+            WHERE action = 'advisory.merge'
+            """
+        ).fetchone()
+    assert [row_to_dict(row) for row in advisories] == [{"advisory_id": "OSV-TEST-0001", "source": "OSV"}]
+    assert [row_to_dict(row) for row in aliases] == [
+        {"alias_type": "CVE", "alias_value": "CVE-2026-0001"},
+        {"alias_type": "GHSA", "alias_value": "GHSA-XXXX-YYYY-ZZZZ"},
+        {"alias_type": "OSV", "alias_value": "OSV-TEST-0001"},
+    ]
+    assert row_to_dict(audit) == {
+        "actor": "test-merge",
+        "action": "advisory.merge",
+        "target_type": "advisory",
+        "target_id": "OSV-TEST-0001",
+        "reason": "canonical advisory alias merge",
+    }
+
+
 def test_range_only_osv_advisory_matches_snapshot(tmp_path):
     app = make_test_app(tmp_path)
     payload = osv_fixture()

@@ -78,8 +78,11 @@ python3 scripts/ghsa_sync.py --limit 100 --lock-ttl-seconds 3600
 python3 scripts/ghsa_sync.py --type malware --limit 100 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py CVE-2026-0001 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100 --lock-ttl-seconds 3600
+python3 scripts/merge_canonical_advisories.py --dry-run --limit 100
 python3 scripts/backfill_canonical_impact_keys.py --dry-run --limit 100
 ```
+
+`merge_canonical_advisories.py`는 dry-run으로 alias-related advisory row merge 후보를 확인하고, apply 시 canonical target advisory로 alias, metadata, impact FK를 이관한다. 기본 apply는 이어서 impact canonical backfill도 실행하며, 분리 실행이 필요하면 `--skip-impact-backfill`을 사용한다.
 
 `backfill_canonical_impact_keys.py`는 dry-run 결과의 `action`이 `update`인 항목은 key만 갱신하고, `merge`인 항목은 apply 시 target impact로 alert event, impact history, accepted risk를 이관한 뒤 legacy impact를 제거한다.
 

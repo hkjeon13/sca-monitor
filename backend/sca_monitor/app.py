@@ -1220,6 +1220,140 @@ class ScaMonitorApp:
                 self.replace_advisory_aliases(conn, row["id"], advisory)
         return len(rows)
 
+    def merge_canonical_advisory_rows(self, *, limit: int = 100, dry_run: bool = False, actor: str = "canonical-advisory-merge") -> dict:
+        now = utcnow()
+        scanned_groups = 0
+        candidates = 0
+        merged_advisories = 0
+        items = []
+        processed_groups: set[tuple[str, ...]] = set()
+        with self.db.connect() as conn:
+            groups = conn.execute(
+                """
+                SELECT aa.alias_value, a.ecosystem, a.canonical_package_name
+                FROM advisory_aliases aa
+                JOIN advisories a ON a.id = aa.advisory_pk
+                GROUP BY aa.alias_value, a.ecosystem, a.canonical_package_name
+                HAVING COUNT(DISTINCT a.id) > 1
+                ORDER BY aa.alias_value ASC, a.ecosystem ASC, a.canonical_package_name ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            for group in groups:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT a.*
+                    FROM advisories a
+                    JOIN advisory_aliases aa ON aa.advisory_pk = a.id
+                    WHERE aa.alias_value = ?
+                      AND a.ecosystem = ?
+                      AND a.canonical_package_name = ?
+                    ORDER BY a.advisory_id ASC
+                    """,
+                    (group["alias_value"], group["ecosystem"], group["canonical_package_name"]),
+                ).fetchall()
+                if len(rows) < 2:
+                    continue
+                group_key = tuple(sorted(row["id"] for row in rows))
+                if group_key in processed_groups:
+                    continue
+                processed_groups.add(group_key)
+                scanned_groups += 1
+                target = min(rows, key=lambda row: (canonical_source_priority(row["source"]), row["advisory_id"]))
+                sources = [row for row in rows if row["id"] != target["id"]]
+                item = {
+                    "alias_value": group["alias_value"],
+                    "ecosystem": group["ecosystem"],
+                    "canonical_package_name": group["canonical_package_name"],
+                    "target_advisory_id": target["advisory_id"],
+                    "target_source": target["source"],
+                    "source_advisory_ids": [row["advisory_id"] for row in sources],
+                    "source_count": len(sources),
+                }
+                items.append(item)
+                candidates += len(sources)
+                if dry_run:
+                    continue
+                for source in sources:
+                    current_target = conn.execute("SELECT * FROM advisories WHERE id = ?", (target["id"],)).fetchone()
+                    self.merge_advisory_row(conn, source=source, target=current_target, actor=actor, now=now)
+                    merged_advisories += 1
+        return {
+            "status": "ok",
+            "scanned_groups": scanned_groups,
+            "candidates": candidates,
+            "merged_advisories": 0 if dry_run else merged_advisories,
+            "dry_run": dry_run,
+            "items": items,
+        }
+
+    def merge_advisory_row(self, conn, *, source, target, actor: str, now: str) -> None:
+        source_dict = row_to_dict(source)
+        target_dict = row_to_dict(target)
+        merged = merged_advisory_values(target_dict, source_dict)
+        source_aliases = conn.execute(
+            "SELECT alias_type, alias_value FROM advisory_aliases WHERE advisory_pk = ?",
+            (source["id"],),
+        ).fetchall()
+        target_aliases = conn.execute(
+            "SELECT alias_type, alias_value FROM advisory_aliases WHERE advisory_pk = ?",
+            (target["id"],),
+        ).fetchall()
+        conn.execute(
+            """
+            UPDATE advisories
+            SET severity = ?, affected_versions = ?, affected_ranges = ?, fixed_version = ?,
+                is_known_exploited = ?, is_malicious_package = ?, published_at = ?,
+                modified_at = ?, raw_payload = ?
+            WHERE id = ?
+            """,
+            (
+                merged["severity"],
+                json.dumps(merged["affected_versions"]),
+                json.dumps(merged["affected_ranges"]),
+                merged["fixed_version"],
+                int(merged["is_known_exploited"]),
+                int(merged["is_malicious_package"]),
+                merged["published_at"],
+                merged["modified_at"],
+                json.dumps(merged["raw_payload"], ensure_ascii=False),
+                target["id"],
+            ),
+        )
+        for alias in list(source_aliases) + list(target_aliases):
+            conn.execute(
+                """
+                INSERT INTO advisory_aliases (id, advisory_pk, alias_type, alias_value, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(advisory_pk, alias_value) DO NOTHING
+                """,
+                (str(uuid.uuid4()), target["id"], alias["alias_type"], alias["alias_value"], now),
+            )
+        conn.execute("UPDATE impacts SET advisory_pk = ? WHERE advisory_pk = ?", (target["id"], source["id"]))
+        conn.execute("DELETE FROM advisory_aliases WHERE advisory_pk = ?", (source["id"],))
+        conn.execute("DELETE FROM advisories WHERE id = ?", (source["id"],))
+        self.write_audit_log(
+            conn,
+            actor=actor,
+            action="advisory.merge",
+            target_type="advisory",
+            target_id=target["advisory_id"],
+            reason="canonical advisory alias merge",
+            before={
+                "target": {"advisory_id": target["advisory_id"], "source": target["source"]},
+                "source": {"advisory_id": source["advisory_id"], "source": source["source"]},
+            },
+            after={
+                "target_advisory_id": target["advisory_id"],
+                "merged_advisory_id": source["advisory_id"],
+                "severity": merged["severity"],
+                "is_known_exploited": merged["is_known_exploited"],
+                "is_malicious_package": merged["is_malicious_package"],
+            },
+            occurred_at=now,
+        )
+
     def rematch_latest_snapshots_for_advisory(self, conn, advisory: AdvisoryImport) -> int:
         rows = conn.execute(
             """
@@ -3000,6 +3134,62 @@ def canonical_source_priority(source: str) -> int:
         "CISA_KEV": 4,
     }
     return priorities.get(str(source), 100)
+
+
+def merged_advisory_values(target: dict, source: dict) -> dict:
+    target_severity = str(target.get("severity") or "medium").lower()
+    source_severity = str(source.get("severity") or "medium").lower()
+    severity = (
+        source_severity
+        if RISK_RANK.get(source_severity, RISK_RANK["info"]) < RISK_RANK.get(target_severity, RISK_RANK["info"])
+        else target_severity
+    )
+    target_raw = json_column(target.get("raw_payload"), {})
+    source_raw = json_column(source.get("raw_payload"), {})
+    if not isinstance(target_raw, dict):
+        target_raw = {"value": target_raw}
+    merged_sources = list(target_raw.get("_merged_sources") or [])
+    merged_sources.append(
+        {
+            "advisory_id": source.get("advisory_id"),
+            "source": source.get("source"),
+            "raw_payload": source_raw,
+        }
+    )
+    raw_payload = {**target_raw, "_merged_sources": merged_sources}
+    return {
+        "severity": severity,
+        "affected_versions": merge_json_lists(json_column(target.get("affected_versions"), []), json_column(source.get("affected_versions"), [])),
+        "affected_ranges": merge_json_lists(json_column(target.get("affected_ranges"), []), json_column(source.get("affected_ranges"), [])),
+        "fixed_version": target.get("fixed_version") or source.get("fixed_version"),
+        "is_known_exploited": bool(target.get("is_known_exploited")) or bool(source.get("is_known_exploited")),
+        "is_malicious_package": bool(target.get("is_malicious_package")) or bool(source.get("is_malicious_package")),
+        "published_at": min_optional_text(target.get("published_at"), source.get("published_at")),
+        "modified_at": max_optional_text(target.get("modified_at"), source.get("modified_at")),
+        "raw_payload": raw_payload,
+    }
+
+
+def merge_json_lists(left: list, right: list) -> list:
+    seen = set()
+    merged = []
+    for item in list(left or []) + list(right or []):
+        key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
+def min_optional_text(left, right):
+    values = [str(value) for value in (left, right) if value]
+    return min(values) if values else None
+
+
+def max_optional_text(left, right):
+    values = [str(value) for value in (left, right) if value]
+    return max(values) if values else None
 
 
 def advisory_import_from_row(row: dict) -> AdvisoryImport:

@@ -108,6 +108,7 @@ Phase 0 착수 전 선행 조건:
 - `advisory_aliases` migration과 advisory import 시 CVE/GHSA/OSV/MAL alias 저장 및 API 노출 추가
 - alias가 겹치는 같은 package advisory의 impact identity와 alert suppression key를 canonical advisory key 기준으로 계산
 - `scripts/backfill_canonical_impact_keys.py` 기반 기존 impact/suppression key canonical backfill dry-run/apply job과 conflict impact merge 추가
+- `scripts/merge_canonical_advisories.py` 기반 alias-related advisory row canonical merge dry-run/apply job 추가
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
 - `scripts/dispatch_alerts.py` webhook alert outbox dispatcher CLI 추가
@@ -149,7 +150,7 @@ Phase 0 착수 전 선행 조건:
 - endpoint polling worker
 - snapshot normalization
 - advisory feed-sync worker
-- advisory canonicalization row merge
+- advisory canonicalization scheduler와 대량 merge queue
 - impact matcher
 - risk scoring
 - alert outbox dispatcher
