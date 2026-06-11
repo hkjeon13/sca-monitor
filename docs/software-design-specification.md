@@ -253,7 +253,8 @@ notes
 - 기존 OSV/GHSA raw payload의 `aliases`에 같은 CVE가 있으면 기존 package advisory를 `is_known_exploited=true`, `severity=critical`로 보강하고 기존 package impact를 재평가한다.
 - 별도 `advisory_aliases` 테이블은 구현되어 advisory import 시 CVE/GHSA/OSV/MAL alias를 저장하고 advisory list/detail API에 노출한다.
 - impact 생성 시 같은 ecosystem/package에서 alias가 겹치는 advisory는 source 우선순위 기반 canonical advisory key를 `impact_identity`와 `alert_suppression_key`에 사용해 중복 impact/alert 생성을 억제한다.
-- canonical advisory row 병합과 기존 impact의 full backfill은 FR-027 후속 범위이다.
+- `scripts/backfill_canonical_impact_keys.py --dry-run`은 기존 impact와 pending alert suppression key를 canonical advisory key 기준으로 갱신할 후보를 보고한다. `--dry-run`을 빼면 충돌이 없는 후보만 갱신하고, 이미 같은 canonical identity가 있는 항목은 conflict로 보고한다.
+- canonical advisory row 병합과 conflict impact merge는 FR-027 후속 범위이다.
 
 ### 5.4 GitHub Security Advisory 수집 방식
 

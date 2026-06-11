@@ -2614,6 +2614,41 @@ def test_alias_related_advisories_share_canonical_impact_identity(tmp_path):
     assert row["alert_suppression_key"] == "canonical-service:prod:OSV-TEST-0001:example-package:high:open"
 
 
+def test_backfill_canonical_impact_keys_updates_legacy_identity_and_alert(tmp_path):
+    app = make_test_app(tmp_path)
+    ghsa_path = tmp_path / "ghsa.json"
+    ghsa_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    sync_github_advisories(app, json_path=ghsa_path, limit=1)
+    app.push_snapshot(
+        {
+            "service_id": "legacy-canonical-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    with app.db.connect() as conn:
+        legacy = conn.execute("SELECT id, impact_identity, alert_suppression_key FROM impacts").fetchone()
+        assert legacy["impact_identity"] == "legacy-canonical-service:prod:GHSA-xxxx-yyyy-zzzz:example-package"
+        app.upsert_advisory(conn, parse_osv_advisories(osv_fixture())[0])
+
+    dry_run = app.backfill_canonical_impact_keys(limit=10, dry_run=True)
+    result = app.backfill_canonical_impact_keys(limit=10, actor="test-backfill")
+
+    assert dry_run["candidates"] == 1
+    assert dry_run["updated"] == 0
+    assert result["status"] == "ok"
+    assert result["updated"] == 1
+    with app.db.connect() as conn:
+        impact = conn.execute("SELECT impact_identity, alert_suppression_key FROM impacts").fetchone()
+        alert = conn.execute("SELECT alert_suppression_key FROM alert_events").fetchone()
+        history = conn.execute("SELECT actor, reason FROM impact_history").fetchone()
+    assert impact["impact_identity"] == "legacy-canonical-service:prod:OSV-TEST-0001:example-package"
+    assert impact["alert_suppression_key"] == "legacy-canonical-service:prod:OSV-TEST-0001:example-package:high:open"
+    assert alert["alert_suppression_key"] == impact["alert_suppression_key"]
+    assert history["actor"] == "test-backfill"
+    assert history["reason"] == "canonical impact key backfill"
+
+
 def test_service_detail_includes_snapshot_dependencies_and_impacts(tmp_path):
     app = make_test_app(tmp_path)
     app.import_osv_payload(osv_fixture())

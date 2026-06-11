@@ -1710,6 +1710,98 @@ class ScaMonitorApp:
         )
         return best["advisory_id"]
 
+    def backfill_canonical_impact_keys(self, *, limit: int = 100, dry_run: bool = False, actor: str = "canonical-backfill") -> dict:
+        now = utcnow()
+        scanned = 0
+        candidates = 0
+        updated = 0
+        conflicts = 0
+        unchanged = 0
+        items = []
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT i.id, i.impact_identity, i.alert_suppression_key, i.risk_level,
+                       i.canonical_package_name, s.service_id, s.environment,
+                       a.id AS advisory_pk, a.advisory_id, a.source, a.ecosystem,
+                       a.canonical_package_name AS advisory_canonical_package_name
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                JOIN advisories a ON a.id = i.advisory_pk
+                ORDER BY i.updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                scanned += 1
+                advisory_row = {
+                    "id": row["advisory_pk"],
+                    "advisory_id": row["advisory_id"],
+                    "source": row["source"],
+                    "ecosystem": row["ecosystem"],
+                    "canonical_package_name": row["advisory_canonical_package_name"],
+                }
+                canonical_key = self.canonical_advisory_key(conn, advisory_row)
+                next_identity = ":".join([row["service_id"], row["environment"], canonical_key, row["canonical_package_name"]])
+                next_alert_key = ":".join([next_identity, row["risk_level"], "open"])
+                if row["impact_identity"] == next_identity and row["alert_suppression_key"] == next_alert_key:
+                    unchanged += 1
+                    continue
+                candidates += 1
+                conflict = conn.execute(
+                    "SELECT id FROM impacts WHERE impact_identity = ? AND id != ?",
+                    (next_identity, row["id"]),
+                ).fetchone()
+                item = {
+                    "impact_id": row["id"],
+                    "from_identity": row["impact_identity"],
+                    "to_identity": next_identity,
+                    "from_alert_suppression_key": row["alert_suppression_key"],
+                    "to_alert_suppression_key": next_alert_key,
+                    "conflict_impact_id": conflict["id"] if conflict else None,
+                }
+                items.append(item)
+                if conflict:
+                    conflicts += 1
+                    continue
+                if dry_run:
+                    continue
+                conn.execute(
+                    """
+                    UPDATE impacts
+                    SET impact_identity = ?, alert_suppression_key = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (next_identity, next_alert_key, now, row["id"]),
+                )
+                conn.execute(
+                    """
+                    UPDATE alert_events
+                    SET alert_suppression_key = ?
+                    WHERE impact_pk = ? AND alert_suppression_key = ?
+                    """,
+                    (next_alert_key, row["id"], row["alert_suppression_key"]),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO impact_history (id, impact_pk, from_status, to_status, actor, reason, created_at)
+                    VALUES (?, ?, NULL, 'open', ?, ?, ?)
+                    """,
+                    (str(uuid.uuid4()), row["id"], actor, "canonical impact key backfill", now),
+                )
+                updated += 1
+        return {
+            "status": "ok" if conflicts == 0 else "partial",
+            "scanned": scanned,
+            "candidates": candidates,
+            "updated": 0 if dry_run else updated,
+            "conflicts": conflicts,
+            "unchanged": unchanged,
+            "dry_run": dry_run,
+            "items": items,
+        }
+
     def list_impacts(self, query: dict[str, list[str]]) -> list[dict]:
         return self.search_impacts(query)["impacts"]
 
