@@ -9,6 +9,7 @@ UNIT_DIR=""
 ENABLE=0
 ENABLE_API_ONLY=0
 ENABLE_POLLER_ONLY=0
+ENABLE_DISPATCHER_DRY_RUN=0
 DRY_RUN=0
 
 usage() {
@@ -25,6 +26,8 @@ Options:
   --enable              Run daemon-reload and enable/restart units.
   --enable-api-only     Run daemon-reload and enable/restart only the API service.
   --enable-poller-only  Run daemon-reload and enable/restart API and endpoint poller services.
+  --enable-dispatcher-dry-run
+                        Run daemon-reload and enable/restart API, endpoint poller, and dry-run dispatcher services.
   --dry-run             Write unit files but do not call systemctl.
   -h, --help            Show this help.
 USAGE
@@ -66,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --enable-poller-only)
       ENABLE_POLLER_ONLY=1
+      shift
+      ;;
+    --enable-dispatcher-dry-run)
+      ENABLE_DISPATCHER_DRY_RUN=1
       shift
       ;;
     --dry-run)
@@ -150,6 +157,22 @@ After=network-online.target
 Type=simple
 $(unit_header)
 ExecStart=$PYTHON_BIN scripts/dispatch_alerts.py --limit 50 --iterations 0 --interval-seconds 30 --retry-backoff-seconds 300 --max-retries 5 --lock-owner systemd-alert-dispatcher
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+write_unit "${PREFIX}-alert-dispatcher-dry-run.service" <<EOF
+[Unit]
+Description=SCA Monitor alert dispatcher dry-run worker
+After=network-online.target
+
+[Service]
+Type=simple
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/dispatch_alerts.py --limit 50 --iterations 0 --interval-seconds 30 --retry-backoff-seconds 300 --max-retries 5 --lock-owner systemd-alert-dispatcher-dry-run --dry-run
 Restart=always
 RestartSec=10
 
@@ -275,6 +298,18 @@ elif [[ "$ENABLE_POLLER_ONLY" == "1" ]]; then
   "${SYSTEMCTL[@]}" enable --now \
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service"
+elif [[ "$ENABLE_DISPATCHER_DRY_RUN" == "1" ]]; then
+  if [[ "$UNIT_SCOPE" == "system" ]]; then
+    SYSTEMCTL=(systemctl)
+  else
+    SYSTEMCTL=(systemctl --user)
+  fi
+  "${SYSTEMCTL[@]}" daemon-reload
+  "${SYSTEMCTL[@]}" disable --now "${PREFIX}-alert-dispatcher.service" 2>/dev/null || true
+  "${SYSTEMCTL[@]}" enable --now \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service" \
+    "${PREFIX}-alert-dispatcher-dry-run.service"
 elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
@@ -282,6 +317,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     SYSTEMCTL=(systemctl --user)
   fi
   "${SYSTEMCTL[@]}" daemon-reload
+  "${SYSTEMCTL[@]}" disable --now "${PREFIX}-alert-dispatcher-dry-run.service" 2>/dev/null || true
   "${SYSTEMCTL[@]}" enable --now \
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service" \

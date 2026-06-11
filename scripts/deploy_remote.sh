@@ -59,7 +59,7 @@ ssh "$REMOTE" "set -euo pipefail
     start_legacy_api
     exit 1
   fi
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
     rm -f .data/sca-monitor.pid
   else
     start_legacy_api
@@ -72,7 +72,7 @@ ssh "$REMOTE" "set -euo pipefail
     sleep 1
   done
   tail -80 logs/sca-monitor.log || true
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
     systemctl --user status sca-monitor-api.service --no-pager || true
   fi
   exit 1

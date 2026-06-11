@@ -22,6 +22,15 @@ EXPECTED_UNITS = {
         "required": ["scripts/dispatch_alerts.py", "--iterations 0", "--lock-owner systemd-alert-dispatcher"],
         "kind": "service",
     },
+    "alert-dispatcher-dry-run.service": {
+        "required": [
+            "scripts/dispatch_alerts.py",
+            "--iterations 0",
+            "--lock-owner systemd-alert-dispatcher-dry-run",
+            "--dry-run",
+        ],
+        "kind": "service",
+    },
     "accepted-risk-expiry.service": {
         "required": ["scripts/expire_accepted_risks.py", "--actor risk-scheduler"],
         "kind": "oneshot",

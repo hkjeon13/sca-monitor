@@ -119,6 +119,16 @@ SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
 scripts/deploy_remote.sh
 ```
 
+alert dispatcher는 실제 webhook 발송 전에 dry-run service로 먼저 canary 전환한다.
+이 모드는 pending alert count만 확인하고 row update나 외부 발송을 수행하지 않는다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+scripts/deploy_remote.sh
+```
+
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
 

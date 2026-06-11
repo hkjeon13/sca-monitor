@@ -68,6 +68,13 @@ install_units() {
       --python "$PYTHON_BIN" \
       --prefix "$PREFIX" \
       --enable-poller-only
+  elif [[ "$1" == "enable-dispatcher-dry-run" ]]; then
+    bash scripts/install_systemd_units.sh \
+      "$SCOPE_FLAG" \
+      --repo-dir "$REPO_DIR" \
+      --python "$PYTHON_BIN" \
+      --prefix "$PREFIX" \
+      --enable-dispatcher-dry-run
   elif [[ "$1" == "enable" ]]; then
     bash scripts/install_systemd_units.sh \
       "$SCOPE_FLAG" \
@@ -82,7 +89,7 @@ install_units() {
       --python "$PYTHON_BIN" \
       --prefix "$PREFIX"
   fi
-  if [[ "$1" == "enable" || "$1" == "enable-api" || "$1" == "enable-poller" ]]; then
+  if [[ "$1" == "enable" || "$1" == "enable-api" || "$1" == "enable-poller" || "$1" == "enable-dispatcher-dry-run" ]]; then
     python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl --json
   else
     python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
@@ -115,9 +122,14 @@ case "$MODE" in
     validate_units >/dev/null
     install_units enable-poller
     ;;
+  enable-dispatcher-dry-run)
+    preflight_enable
+    validate_units >/dev/null
+    install_units enable-dispatcher-dry-run
+    ;;
   *)
     echo "invalid SCA_MONITOR_SYSTEMD_MODE: $MODE" >&2
-    echo "expected one of: off, validate, install, enable-api, enable-poller, enable" >&2
+    echo "expected one of: off, validate, install, enable-api, enable-poller, enable-dispatcher-dry-run, enable" >&2
     exit 2
     ;;
 esac

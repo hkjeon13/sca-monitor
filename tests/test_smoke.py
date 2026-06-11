@@ -135,6 +135,7 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-api.service",
         "sca-monitor-endpoint-poller.service",
         "sca-monitor-alert-dispatcher.service",
+        "sca-monitor-alert-dispatcher-dry-run.service",
         "sca-monitor-accepted-risk-expiry.service",
         "sca-monitor-accepted-risk-expiry.timer",
         "sca-monitor-cisa-kev-sync.service",
@@ -153,6 +154,9 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "OnUnitActiveSec=15min" in expiry_timer
     openssf = (unit_dir / "sca-monitor-openssf-malicious-sync.service").read_text(encoding="utf-8")
     assert "scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only" in openssf
+    dispatcher_dry_run = (unit_dir / "sca-monitor-alert-dispatcher-dry-run.service").read_text(encoding="utf-8")
+    assert "scripts/dispatch_alerts.py --limit 50 --iterations 0" in dispatcher_dry_run
+    assert "--lock-owner systemd-alert-dispatcher-dry-run --dry-run" in dispatcher_dry_run
 
 
 def test_systemd_scheduler_status_reports_generated_units(tmp_path):
@@ -185,7 +189,7 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 11, "present": 11, "valid": 11, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 12, "present": 12, "valid": 12, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
@@ -203,7 +207,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 11
+    assert payload["summary"]["missing"] == 12
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -225,7 +229,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 11, "present": 11, "valid": 11, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 12, "present": 12, "valid": 12, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -269,7 +273,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 11
+    assert payload["summary"]["valid"] == 12
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -338,7 +342,7 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 11
+    assert payload["summary"]["valid"] == 12
     assert api_status == {"enabled": "enabled", "active": "active"}
     assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
 
@@ -430,6 +434,50 @@ exit 0
     assert payload["systemctl"]["sca-monitor-api.service"] == {"enabled": "enabled", "active": "active"}
     assert payload["systemctl"]["sca-monitor-endpoint-poller.service"] == {"enabled": "enabled", "active": "active"}
     assert "--user enable --now sca-monitor-api.service sca-monitor-endpoint-poller.service" in log_text
+    assert "sca-monitor-alert-dispatcher.service" not in enabled_now_lines(log_text)
+
+
+def test_deploy_systemd_gate_enable_dispatcher_dry_run_mode_does_not_enable_live_dispatcher(tmp_path):
+    home_dir = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        f"""#!/bin/sh
+echo "$@" >> "{log_path}"
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable-dispatcher-dry-run",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    log_text = log_path.read_text(encoding="utf-8")
+    assert payload["status"] == "ok"
+    assert payload["systemctl"]["sca-monitor-alert-dispatcher-dry-run.service"] == {"enabled": "enabled", "active": "active"}
+    assert "sca-monitor-alert-dispatcher-dry-run.service" in enabled_now_lines(log_text)
     assert "sca-monitor-alert-dispatcher.service" not in enabled_now_lines(log_text)
 
 
@@ -550,6 +598,7 @@ def test_remote_deploy_uses_db_gate():
     assert "systemd deploy gate failed; restarting legacy API runtime" in script
     assert 'if [ \\"\\$SYSTEMD_MODE\\" = ' in script
     assert '"\\$SYSTEMD_MODE\\" = ' in script and "enable-api" in script and "enable-poller" in script
+    assert "enable-dispatcher-dry-run" in script
     assert "rm -f .data/sca-monitor.pid" in script
     assert "nohup python3 -m backend.sca_monitor" in script
 
