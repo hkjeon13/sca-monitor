@@ -684,17 +684,18 @@ document.querySelector("#daily-digest-preview-form").addEventListener("submit", 
 
 document.querySelector("#bulk-requeue-alert-events").addEventListener("click", async () => {
   const form = Object.fromEntries(new FormData(document.querySelector("#alert-event-filter-form")).entries());
+  const reason = alertEventRequeueReason(form, "bulk requeue from web console");
   const data = await api.send("/api/v1/alert-events/requeue", "POST", {
     status: "dead_letter",
     q: form.q,
     limit: form.limit,
     actor: "web-console",
-    reason: alertEventRequeueReason(form, "bulk requeue from web console"),
+    reason,
   });
-  await Promise.all([loadAlertEvents(), loadOverview()]);
+  await Promise.all([loadAlertEvents(), loadOverview(), focusRequeueAuditLogs(reason)]);
   document.querySelector("#alert-event-list").insertAdjacentHTML(
     "afterbegin",
-    `<p><strong>${escapeHtml(data.requeued)} dead-letter events requeued.</strong></p>`,
+    `<p><strong>${escapeHtml(data.requeued)} dead-letter events requeued.</strong> Audit filter updated to alert_event.requeue.</p>`,
   );
 });
 
@@ -979,11 +980,12 @@ async function loadAlertEvents() {
   target.querySelectorAll("[data-alert-requeue]").forEach((button) => {
     button.addEventListener("click", async () => {
       const form = Object.fromEntries(new FormData(document.querySelector("#alert-event-filter-form")).entries());
+      const reason = alertEventRequeueReason(form, "manual requeue");
       await api.send(`/api/v1/alert-events/${encodeURIComponent(button.dataset.alertRequeue)}/requeue`, "POST", {
         actor: "web-console",
-        reason: alertEventRequeueReason(form, "manual requeue"),
+        reason,
       });
-      await Promise.all([loadAlertEvents(), loadAuditLogs(), loadOverview()]);
+      await Promise.all([loadAlertEvents(), loadOverview(), focusRequeueAuditLogs(reason)]);
     });
   });
 }
@@ -1047,6 +1049,19 @@ function alertEventFilterQuery() {
 
 function alertEventRequeueReason(form, fallback) {
   return String(form.requeue_reason || "").trim() || fallback;
+}
+
+async function focusRequeueAuditLogs(reason) {
+  const form = document.querySelector("#audit-log-filter-form");
+  if (!form) return;
+  form.elements.action.value = "alert_event.requeue";
+  form.elements.target_type.value = "alert_event";
+  form.elements.q.value = reason || "";
+  await loadAuditLogs();
+  document.querySelector("#audit-log-list").insertAdjacentHTML(
+    "afterbegin",
+    `<p><strong>Audit filter updated to alert_event.requeue.</strong></p>`,
+  );
 }
 
 async function loadAuditLogs() {

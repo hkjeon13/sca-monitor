@@ -1378,6 +1378,8 @@ def test_web_console_renders_database_readiness_panel():
     assert "JSON.stringify(payload, null, 2)" in script
     assert "alertEventRequeueReason" in script
     assert "form.requeue_reason" in script
+    assert "focusRequeueAuditLogs" in script
+    assert "Audit filter updated to alert_event.requeue" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
