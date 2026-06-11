@@ -186,6 +186,14 @@ references
 - `modified` 변경 시 advisory 재매칭을 수행한다.
 - 로컬 DB에 존재하는 canonical advisory와 alias가 겹치면 신규 row를 만들지 않고 병합한다.
 
+현재 MVP 구현 상태:
+
+- `POST /api/v1/advisories/osv/import`는 `advisory_id`를 받아 `GET https://api.osv.dev/v1/vulns/{id}`로 단건 상세를 수집한다.
+- `GET /api/v1/advisories`는 저장된 advisory를 조회한다.
+- `advisory_sync_state`는 OSV 단건 import 성공/실패 상태를 기록한다.
+- 현재 matcher는 `affected[].versions`의 exact version 목록만 즉시 매칭한다.
+- OSV dump 기반 bulk feed-sync, alias canonical merge, affected range matcher, advisory 변경분 재매칭은 후속 구현 대상이다.
+
 ### 5.3 CISA KEV 수집 방식
 
 CISA KEV는 실제 악용 여부를 판단하는 enrichment source이다.

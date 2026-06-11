@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, row_to_dict, utcnow
+from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 
 
 class ScaMonitorApp:
@@ -76,6 +77,10 @@ class ScaMonitorApp:
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
+            if path == "/api/v1/advisories" and method == "GET":
+                return self.json_response(request, {"advisories": self.list_advisories(parse_qs(parsed.query))})
+            if path == "/api/v1/advisories/osv/import" and method == "POST":
+                return self.json_response(request, self.import_osv_advisory(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/snapshots" and method == "POST":
                 return self.json_response(request, self.push_snapshot(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/impacts" and method == "GET":
@@ -142,15 +147,26 @@ class ScaMonitorApp:
             critical = conn.execute("SELECT COUNT(*) AS c FROM impacts WHERE status != 'fixed' AND risk_level = 'critical'").fetchone()["c"]
             high = conn.execute("SELECT COUNT(*) AS c FROM impacts WHERE status != 'fixed' AND risk_level = 'high'").fetchone()["c"]
             unhealthy = conn.execute("SELECT COUNT(*) AS c FROM endpoint_health WHERE collection_status != 'ok'").fetchone()["c"]
+            advisory_sync = self.advisory_sync_overview(conn)
         return {
             "service_count": service_count,
             "open_impacts": open_impacts,
             "critical_impacts": critical,
             "high_impacts": high,
             "endpoint_unhealthy": unhealthy,
-            "advisory_sync": {"OSV": "seeded-demo", "CISA_KEV": "pending"},
+            "advisory_sync": advisory_sync,
             "system": {"environment": self.settings.app_env},
         }
+
+    def advisory_sync_overview(self, conn) -> dict:
+        sync = {"OSV": "seeded-demo", "CISA_KEV": "pending"}
+        try:
+            rows = conn.execute("SELECT source, status FROM advisory_sync_state").fetchall()
+        except Exception:
+            return sync
+        for row in rows:
+            sync[row["source"]] = row["status"]
+        return sync
 
     def list_services(self) -> list[dict]:
         with self.db.connect() as conn:
@@ -213,6 +229,144 @@ class ScaMonitorApp:
                 (row["id"], now),
             )
         return {"service": row_to_dict(row)}
+
+    def list_advisories(self, query: dict[str, list[str]]) -> list[dict]:
+        where = []
+        params = []
+        if source := query.get("source", [None])[0]:
+            where.append("source = ?")
+            params.append(source)
+        if ecosystem := query.get("ecosystem", [None])[0]:
+            where.append("ecosystem = ?")
+            params.append(ecosystem)
+        sql_where = "WHERE " + " AND ".join(where) if where else ""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT advisory_id, source, summary, severity, ecosystem, package_name,
+                       affected_versions, fixed_version, is_known_exploited,
+                       is_malicious_package, published_at, modified_at
+                FROM advisories
+                {sql_where}
+                ORDER BY COALESCE(modified_at, published_at, advisory_id) DESC
+                LIMIT 200
+                """,
+                tuple(params),
+            ).fetchall()
+        advisories = []
+        for row in rows:
+            advisory = row_to_dict(row)
+            advisory["affected_versions"] = json.loads(advisory["affected_versions"])
+            advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
+            advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
+            advisories.append(advisory)
+        return advisories
+
+    def import_osv_advisory(self, body: dict) -> dict:
+        advisory_id = required(body, "advisory_id")
+        try:
+            payload = fetch_osv_advisory(advisory_id)
+            imported = self.import_osv_payload(payload)
+            return {"source": "OSV", "advisory_id": advisory_id, "imported": imported}
+        except Exception as exc:
+            self.record_advisory_sync("OSV", "error", advisory_id, str(exc))
+            raise
+
+    def import_osv_payload(self, payload: dict) -> int:
+        advisories = parse_osv_advisories(payload)
+        source_advisory_id = str(payload.get("id") or advisories[0].advisory_id)
+        with self.db.connect() as conn:
+            for advisory in advisories:
+                self.upsert_advisory(conn, advisory)
+            self.record_advisory_sync("OSV", "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
+        return len(advisories)
+
+    def upsert_advisory(self, conn, advisory: AdvisoryImport) -> None:
+        conn.execute(
+            """
+            INSERT INTO advisories (
+                id, advisory_id, source, summary, severity, ecosystem, package_name,
+                canonical_package_name, affected_versions, fixed_version,
+                is_known_exploited, is_malicious_package, published_at, modified_at, raw_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(advisory_id) DO UPDATE SET
+                source=excluded.source,
+                summary=excluded.summary,
+                severity=excluded.severity,
+                ecosystem=excluded.ecosystem,
+                package_name=excluded.package_name,
+                canonical_package_name=excluded.canonical_package_name,
+                affected_versions=excluded.affected_versions,
+                fixed_version=excluded.fixed_version,
+                is_known_exploited=excluded.is_known_exploited,
+                is_malicious_package=excluded.is_malicious_package,
+                published_at=excluded.published_at,
+                modified_at=excluded.modified_at,
+                raw_payload=excluded.raw_payload
+            """,
+            (
+                str(uuid.uuid4()),
+                advisory.advisory_id,
+                advisory.source,
+                advisory.summary,
+                advisory.severity,
+                advisory.ecosystem,
+                advisory.package_name,
+                advisory.canonical_package_name,
+                json.dumps(advisory.affected_versions),
+                advisory.fixed_version,
+                int(advisory.is_known_exploited),
+                int(advisory.is_malicious_package),
+                advisory.published_at,
+                advisory.modified_at,
+                json.dumps(advisory.raw_payload, ensure_ascii=False),
+            ),
+        )
+
+    def record_advisory_sync(
+        self,
+        source: str,
+        status: str,
+        advisory_id: str | None,
+        error_message: str | None,
+        conn=None,
+        imported_count: int = 0,
+    ) -> None:
+        now = utcnow()
+
+        def write(connection) -> None:
+            connection.execute(
+                """
+                INSERT INTO advisory_sync_state (
+                    source, status, last_success_at, last_error_at, last_error_message,
+                    last_advisory_id, imported_count, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source) DO UPDATE SET
+                    status=excluded.status,
+                    last_success_at=COALESCE(excluded.last_success_at, advisory_sync_state.last_success_at),
+                    last_error_at=COALESCE(excluded.last_error_at, advisory_sync_state.last_error_at),
+                    last_error_message=excluded.last_error_message,
+                    last_advisory_id=excluded.last_advisory_id,
+                    imported_count=advisory_sync_state.imported_count + excluded.imported_count,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    source,
+                    status,
+                    now if status == "ok" else None,
+                    now if status != "ok" else None,
+                    error_message,
+                    advisory_id,
+                    imported_count,
+                    now,
+                ),
+            )
+
+        if conn is not None:
+            write(conn)
+            return
+        with self.db.connect() as connection:
+            write(connection)
 
     def get_service_detail(self, service_id: str) -> dict:
         with self.db.connect() as conn:
