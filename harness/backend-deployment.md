@@ -54,6 +54,11 @@ rolling deployment와 image-only rollback 중 구버전 인스턴스가 새 sche
   "status": "ready",
   "database": "ok",
   "database_backend": "sqlite",
+  "advisory_sync_readiness": {
+    "status": "initializing",
+    "required_count": 3,
+    "initialized_count": 0
+  },
   "migration": {
     "current": 5,
     "required": 5,

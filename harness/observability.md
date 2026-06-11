@@ -91,7 +91,8 @@ secret, token, endpoint credential, private registry credential은 로그에 남
 advisory source sync 실패는 `/metrics`의 `sca_monitor_advisory_sync_failed`로 노출되며, 동시에 `reason='system_advisory_sync_failed'` alert outbox row로 기록된다.
 source별 suppression key는 `system:advisory_sync:{source}:failed`이다. 같은 source sync가 이후 성공하면 active 실패 alert는 `resolved`로 해소되고, 그 뒤 재실패하면 새 pending alert가 생성된다.
 
-`GET /api/v1/overview`의 `advisory_sync_readiness.freshness`는 source별 최신 성공 lag를 `fresh`, `stale`, `partial`, `failed`, `pending`으로 요약한다.
+`GET /api/v1/overview`와 `/ready`의 `advisory_sync_readiness.freshness`는 source별 최신 성공 lag를 `fresh`, `stale`, `partial`, `failed`, `pending`으로 요약한다.
+`/ready`의 HTTP readiness 판정은 DB readiness를 기준으로 유지하며, advisory sync readiness는 bootstrap과 feed 동기화 상태를 확인하는 운영 신호로 사용한다.
 기본 stale 기준은 24시간이며, `SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS`로 환경별 조정이 가능하다.
 Web Console Overview는 stale/partial/failed count를 Advisory Sync 카드에 표시한다.
 `scripts/evaluate_advisory_sync_freshness.py`는 stale source에 대해 `reason='system_advisory_sync_stale'` alert outbox row를 생성한다.

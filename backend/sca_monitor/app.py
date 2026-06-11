@@ -473,6 +473,26 @@ class ScaMonitorApp:
     def database_readiness_summary(self) -> dict:
         readiness = self.db.readiness()
         readiness["database_url_source"] = self.settings.database_url_source
+        try:
+            with self.db.connect() as conn:
+                advisory_sync_readiness = self.advisory_sync_readiness_overview(conn)
+        except Exception as exc:
+            advisory_sync_readiness = {
+                "status": "degraded",
+                "error": str(exc),
+                "required_count": len(INITIAL_ADVISORY_SYNC_SOURCES),
+                "initialized_count": 0,
+                "freshness": {
+                    "status": "degraded",
+                    "stale_after_seconds": self.settings.advisory_sync_stale_after_seconds,
+                    "stale_count": 0,
+                    "failed_count": len(INITIAL_ADVISORY_SYNC_SOURCES),
+                    "partial_count": 0,
+                    "max_lag_seconds": None,
+                    "oldest_source": None,
+                },
+                "sources": [],
+            }
         cutover = assess_cutover(os.environ)
         require_split_error = None
         try:
@@ -497,6 +517,7 @@ class ScaMonitorApp:
         return {
             "status": "ready" if readiness["database"] == "ok" else "not_ready",
             **readiness,
+            "advisory_sync_readiness": advisory_sync_readiness,
             "runtime_database_urls": runtime_database_url_summary(self.settings),
             "cutover": cutover,
             "cutover_required": required_cutover,

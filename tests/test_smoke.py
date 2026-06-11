@@ -2157,6 +2157,26 @@ def test_ready_endpoint_exposes_postgres_cutover_summary(tmp_path):
     assert payload["postgres_preflight"]["next_action"] == "no PostgreSQL database URL configured"
 
 
+def test_ready_endpoint_exposes_advisory_sync_readiness_without_blocking_db_readiness(tmp_path):
+    app = make_test_app(tmp_path)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "error", "catalog:test", "upstream unavailable", imported_count=0)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["status"] == "ready"
+    assert payload["database"] == "ok"
+    readiness = payload["advisory_sync_readiness"]
+    assert readiness["status"] == "degraded"
+    assert readiness["required_count"] == 3
+    assert readiness["initialized_count"] == 1
+    assert readiness["freshness"]["failed_count"] == 1
+    sources = {item["source"]: item for item in readiness["sources"]}
+    assert sources["OSV"]["initialized"] is True
+    assert sources["CISA_KEV"]["freshness_status"] == "failed"
+
+
 def test_ready_endpoint_reflects_required_split_cutover(monkeypatch, tmp_path):
     monkeypatch.setenv("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT", "true")
     monkeypatch.setenv("SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE", "required")
