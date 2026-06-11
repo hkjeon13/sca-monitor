@@ -36,6 +36,11 @@ ssh "$REMOTE" "set -euo pipefail
     SCA_MONITOR_SYSTEMD_PYTHON=\"\$SYSTEMD_PYTHON_OVERRIDE\"
   fi
   SYSTEMD_MODE=\"\${SCA_MONITOR_SYSTEMD_MODE:-validate}\"
+  export SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE\"
+  export SCA_MONITOR_SYSTEMD_SCOPE=\"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\"
+  export SCA_MONITOR_SYSTEMD_PREFIX=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\"
+  export SCA_MONITOR_SYSTEMD_PYTHON=\"\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\"
+  python3 scripts/deployment_input_readiness.py --env-file .env --json
   systemd_worker_units_for_migration() {
     case \"\$SYSTEMD_MODE\" in
       enable-poller)

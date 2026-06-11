@@ -1070,6 +1070,37 @@ def test_deployment_input_readiness_requires_split_postgres_inputs(tmp_path):
     assert "sqlite:////tmp" not in result.stdout
 
 
+def test_deployment_input_readiness_env_overrides_env_file(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_SYSTEMD_MODE=validate",
+                "SMOKE_TEST_TOKEN=dev-smoke-token",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/deployment_input_readiness.py", "--env-file", str(env_file), "--json"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_SYSTEMD_MODE": "enable-dispatcher-dry-run",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    systemd_check = next(check for check in payload["checks"] if check["id"] == "systemd_mode")
+    assert systemd_check["detail"] == "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run"
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1433,6 +1464,8 @@ def test_ci_smoke_runs_core_gates():
     script = (REPO_ROOT / "scripts" / "ci_smoke.sh").read_text(encoding="utf-8")
 
     assert "python3 -m pytest tests" in script
+    assert "scripts/deployment_input_readiness.py" in script
+    assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "node --check frontend/app.js" in script
     assert "bash scripts/deploy_db_gate.sh" in script
     assert "bash scripts/deploy_systemd_gate.sh" in script
@@ -1442,6 +1475,13 @@ def test_ci_smoke_runs_core_gates():
     assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" in script
     assert "--expect-postgres-split-required" in script
+
+
+def test_deploy_remote_runs_deployment_input_readiness_before_migration():
+    script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
+
+    assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
+    assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
 
 
 def test_harness_documents_deployment_input_readiness():

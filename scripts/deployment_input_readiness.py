@@ -117,11 +117,11 @@ def readiness(env: dict[str, str], *, require_postgres: bool, require_split: boo
 
 def main() -> int:
     args = parse_args()
-    env = dict(os.environ)
     file_env = parse_env_file(args.env_file)
     if args.env_file:
         file_env["_SCA_MONITOR_ENV_FILE_LOADED"] = "1"
-    env.update(file_env)
+    env = file_env
+    env.update(os.environ)
     result = readiness(env, require_postgres=args.require_postgres, require_split=args.require_split)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

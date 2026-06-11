@@ -121,6 +121,10 @@ POST /api/v1/snapshots with test credential in stage
 GET /api/v1/impacts
 ```
 
+`scripts/ci_smoke.sh`는 기본값으로 `SCA_MONITOR_DEPLOYMENT_ENV_FILE=deploy/sca-monitor.env.example`을 사용해
+`scripts/deployment_input_readiness.py`를 실행한다. 배포 자동화가 실제 원격 `.env`를 검증해야 할 때는
+`SCA_MONITOR_DEPLOYMENT_ENV_FILE=.env`처럼 명시한다.
+
 `SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
 원격 VM 배포에서 systemd unit 설치 단계까지 검증하려면 다음처럼 명시한다.
