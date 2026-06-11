@@ -4,6 +4,7 @@ set -euo pipefail
 REMOTE="${REMOTE:-ai-assistant}"
 REMOTE_DIR="${REMOTE_DIR:-/data/psyche/Projects/sca-monitor}"
 PORT="${SCA_MONITOR_PORT:-18780}"
+SYSTEMD_MODE="${SCA_MONITOR_SYSTEMD_MODE:-validate}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -17,7 +18,7 @@ ssh "$REMOTE" "set -euo pipefail
   set +a
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
-  python3 scripts/systemd_scheduler_status.py --json || true
+  SCA_MONITOR_SYSTEMD_MODE='$SYSTEMD_MODE' SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' bash scripts/deploy_systemd_gate.sh
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)
     if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then

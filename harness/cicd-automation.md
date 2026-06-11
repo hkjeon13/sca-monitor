@@ -81,7 +81,7 @@ GET /health
 GET /ready
 python3 scripts/db_smoke.py --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
-python3 scripts/systemd_scheduler_status.py --json
+SCA_MONITOR_SYSTEMD_MODE=validate bash scripts/deploy_systemd_gate.sh
 GET /api/v1/overview
 GET frontend /
 GET frontend static asset

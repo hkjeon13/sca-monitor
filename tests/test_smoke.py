@@ -206,6 +206,47 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     assert payload["summary"]["missing"] == 11
 
 
+def test_deploy_systemd_gate_validates_generated_units():
+    env = {
+        **os.environ,
+        "SCA_MONITOR_SYSTEMD_MODE": "validate",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["summary"] == {"expected": 11, "present": 11, "valid": 11, "missing": 0, "invalid": 0}
+
+
+def test_deploy_systemd_gate_rejects_invalid_mode():
+    env = {
+        **os.environ,
+        "SCA_MONITOR_SYSTEMD_MODE": "sometimes",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "invalid SCA_MONITOR_SYSTEMD_MODE" in result.stderr
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -306,6 +347,7 @@ def test_remote_deploy_uses_db_gate():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
     assert "bash scripts/deploy_db_gate.sh" in script
+    assert "bash scripts/deploy_systemd_gate.sh" in script
 
 
 def test_postgres_sql_translates_placeholders_outside_string_literals():
