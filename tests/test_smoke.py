@@ -2548,6 +2548,33 @@ def test_advisory_sync_error_enqueues_deduplicated_system_alert(tmp_path):
     assert payload["error_message"] == "rate limit"
 
 
+def test_advisory_sync_success_resolves_active_system_alert_and_allows_new_failure(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST", "rate limit")
+    app.record_advisory_sync("GHSA", "ok", "GHSA-TEST", None)
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST-2", "gateway timeout")
+
+    with app.db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT status, alert_suppression_key, payload
+            FROM alert_events
+            WHERE reason = 'system_advisory_sync_failed'
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+
+    assert [row["status"] for row in rows] == ["resolved", "pending"]
+    assert all(row["alert_suppression_key"] == "system:advisory_sync:GHSA:failed" for row in rows)
+    resolved_payload = json.loads(rows[0]["payload"])
+    assert resolved_payload["resolved_at"] is not None
+    assert resolved_payload["resolved_by_status"] == "ok"
+    pending_payload = json.loads(rows[1]["payload"])
+    assert pending_payload["advisory_id"] == "GHSA-TEST-2"
+    assert pending_payload["error_message"] == "gateway timeout"
+
+
 def test_overview_counts_pending_system_alerts(tmp_path):
     app = make_test_app(tmp_path)
 

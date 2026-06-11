@@ -89,7 +89,7 @@ secret, token, endpoint credential, private registry credential은 로그에 남
 - frontend error rate 급증
 
 advisory source sync 실패는 `/metrics`의 `sca_monitor_advisory_sync_failed`로 노출되며, 동시에 `reason='system_advisory_sync_failed'` alert outbox row로 기록된다.
-source별 suppression key는 `system:advisory_sync:{source}:failed`이다.
+source별 suppression key는 `system:advisory_sync:{source}:failed`이다. 같은 source sync가 이후 성공하면 active 실패 alert는 `resolved`로 해소되고, 그 뒤 재실패하면 새 pending alert가 생성된다.
 
 ## 6. Frontend Error Tracking
 

@@ -1622,6 +1622,8 @@ class ScaMonitorApp:
                     error_message=error_message,
                     occurred_at=now,
                 )
+            else:
+                self.resolve_advisory_sync_failure_alert(connection, source=source, resolved_at=now)
 
         if conn is not None:
             write(conn)
@@ -1645,6 +1647,7 @@ class ScaMonitorApp:
             FROM alert_events
             WHERE reason = 'system_advisory_sync_failed'
               AND alert_suppression_key = ?
+              AND status IN ('pending', 'failed', 'dispatching')
             LIMIT 1
             """,
             (suppression_key,),
@@ -1665,6 +1668,36 @@ class ScaMonitorApp:
             """,
             (str(uuid.uuid4()), suppression_key, json.dumps(payload, ensure_ascii=False), occurred_at),
         )
+
+    def resolve_advisory_sync_failure_alert(self, conn, *, source: str, resolved_at: str) -> None:
+        suppression_key = f"system:advisory_sync:{source}:failed"
+        rows = conn.execute(
+            """
+            SELECT id, payload
+            FROM alert_events
+            WHERE reason = 'system_advisory_sync_failed'
+              AND alert_suppression_key = ?
+              AND status IN ('pending', 'failed', 'dispatching')
+            """,
+            (suppression_key,),
+        ).fetchall()
+        for row in rows:
+            payload = parse_json_field(row["payload"])
+            if not isinstance(payload, dict):
+                payload = {}
+            payload.update({"resolved_at": resolved_at, "resolved_by_status": "ok"})
+            conn.execute(
+                """
+                UPDATE alert_events
+                SET status = 'resolved',
+                    payload = ?,
+                    next_attempt_at = NULL,
+                    dispatch_lock_owner = NULL,
+                    dispatch_lock_expires_at = NULL
+                WHERE id = ?
+                """,
+                (json.dumps(payload, ensure_ascii=False), row["id"]),
+            )
 
     @contextmanager
     def advisory_sync_lock(self, source: str, owner: str, ttl_seconds: int = 3600):
