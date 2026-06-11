@@ -7,6 +7,7 @@ PREFIX="${PREFIX:-sca-monitor}"
 UNIT_SCOPE="user"
 UNIT_DIR=""
 ENABLE=0
+ENABLE_API_ONLY=0
 DRY_RUN=0
 
 usage() {
@@ -21,6 +22,7 @@ Options:
   --system              Install system units under /etc/systemd/system.
   --unit-dir PATH       Override target unit directory.
   --enable              Run daemon-reload and enable/restart units.
+  --enable-api-only     Run daemon-reload and enable/restart only the API service.
   --dry-run             Write unit files but do not call systemctl.
   -h, --help            Show this help.
 USAGE
@@ -54,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --enable)
       ENABLE=1
+      shift
+      ;;
+    --enable-api-only)
+      ENABLE_API_ONLY=1
       shift
       ;;
     --dry-run)
@@ -245,7 +251,15 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-if [[ "$ENABLE" == "1" ]]; then
+if [[ "$ENABLE_API_ONLY" == "1" ]]; then
+  if [[ "$UNIT_SCOPE" == "system" ]]; then
+    SYSTEMCTL=(systemctl)
+  else
+    SYSTEMCTL=(systemctl --user)
+  fi
+  "${SYSTEMCTL[@]}" daemon-reload
+  "${SYSTEMCTL[@]}" enable --now "${PREFIX}-api.service"
+elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
   else

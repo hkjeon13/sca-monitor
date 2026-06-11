@@ -214,17 +214,17 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 
 | 환경변수 | 기본값 | 설명 |
 |---|---:|---|
-| `SCA_MONITOR_SYSTEMD_MODE` | `validate` | `off`, `validate`, `install`, `enable` 중 하나. `validate`는 staging directory에 unit을 생성하고 검증만 한다. |
+| `SCA_MONITOR_SYSTEMD_MODE` | `validate` | `off`, `validate`, `install`, `enable-api`, `enable` 중 하나. `validate`는 staging directory에 unit을 생성하고 검증만 한다. |
 | `SCA_MONITOR_SYSTEMD_SCOPE` | `user` | `user` 또는 `system`. 운영 system unit은 root 권한이 필요하다. |
 | `SCA_MONITOR_SYSTEMD_PREFIX` | `sca-monitor` | unit 이름 prefix |
 | `SCA_MONITOR_SYSTEMD_PYTHON` | `python3` | unit `ExecStart`에 사용할 Python 실행 파일 |
 | `SCA_MONITOR_SYSTEMD_REPO_DIR` | 현재 checkout | unit `WorkingDirectory`와 `EnvironmentFile` 기준 repository 경로 |
 
 원격 배포 스크립트는 DB gate 후 `scripts/deploy_systemd_gate.sh`를 실행한다.
-운영에서 실제 unit 파일만 설치하려면 `SCA_MONITOR_SYSTEMD_MODE=install`, 설치와 enable/start까지 수행하려면 `SCA_MONITOR_SYSTEMD_MODE=enable`을 명시한다.
-`enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
+운영에서 실제 unit 파일만 설치하려면 `SCA_MONITOR_SYSTEMD_MODE=install`, API service만 canary로 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable-api`, worker와 timer까지 전체 enable/start하려면 `SCA_MONITOR_SYSTEMD_MODE=enable`을 명시한다.
+`enable-api`와 `enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
 `off`, `validate`, `install` 모드에서는 기존 nohup API runtime을 유지한다.
-`enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
+`enable-api`와 `enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
 원격 배포는 기본적으로 원격 `.env`의 `SCA_MONITOR_SYSTEMD_*` 값을 사용한다.
 CI/CD 또는 수동 자동화에서 `SCA_MONITOR_SYSTEMD_MODE`, `SCA_MONITOR_SYSTEMD_SCOPE`, `SCA_MONITOR_SYSTEMD_PREFIX`, `SCA_MONITOR_SYSTEMD_PYTHON`을 로컬 환경변수로 명시하면 해당 값이 원격 `.env` 값을 override한다.
 

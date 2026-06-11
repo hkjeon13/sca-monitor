@@ -54,7 +54,14 @@ preflight_enable() {
 }
 
 install_units() {
-  if [[ "$1" == "enable" ]]; then
+  if [[ "$1" == "enable-api" ]]; then
+    bash scripts/install_systemd_units.sh \
+      "$SCOPE_FLAG" \
+      --repo-dir "$REPO_DIR" \
+      --python "$PYTHON_BIN" \
+      --prefix "$PREFIX" \
+      --enable-api-only
+  elif [[ "$1" == "enable" ]]; then
     bash scripts/install_systemd_units.sh \
       "$SCOPE_FLAG" \
       --repo-dir "$REPO_DIR" \
@@ -68,7 +75,7 @@ install_units() {
       --python "$PYTHON_BIN" \
       --prefix "$PREFIX"
   fi
-  if [[ "$1" == "enable" ]]; then
+  if [[ "$1" == "enable" || "$1" == "enable-api" ]]; then
     python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl --json
   else
     python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
@@ -91,9 +98,14 @@ case "$MODE" in
     validate_units >/dev/null
     install_units enable
     ;;
+  enable-api)
+    preflight_enable
+    validate_units >/dev/null
+    install_units enable-api
+    ;;
   *)
     echo "invalid SCA_MONITOR_SYSTEMD_MODE: $MODE" >&2
-    echo "expected one of: off, validate, install, enable" >&2
+    echo "expected one of: off, validate, install, enable-api, enable" >&2
     exit 2
     ;;
 esac

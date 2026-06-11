@@ -343,6 +343,51 @@ exit 0
     assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
 
 
+def test_deploy_systemd_gate_enable_api_mode_only_enables_api_service(tmp_path):
+    home_dir = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        f"""#!/bin/sh
+echo "$@" >> "{log_path}"
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable-api",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    log_text = log_path.read_text(encoding="utf-8")
+    assert payload["status"] == "ok"
+    assert payload["systemctl"]["sca-monitor-api.service"] == {"enabled": "enabled", "active": "active"}
+    assert "--user enable --now sca-monitor-api.service" in log_text
+    assert "--user enable --now sca-monitor-endpoint-poller.service" not in log_text
+    assert "--user enable --now sca-monitor-alert-dispatcher.service" not in log_text
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -457,6 +502,7 @@ def test_remote_deploy_uses_db_gate():
     assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\\"' in script
     assert 'if [ \\"\\$SYSTEMD_MODE\\" = ' in script
+    assert '"\\$SYSTEMD_MODE\\" = ' in script and "enable-api" in script
     assert "rm -f .data/sca-monitor.pid" in script
     assert "nohup python3 -m backend.sca_monitor" in script
 

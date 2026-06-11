@@ -51,7 +51,7 @@ ssh "$REMOTE" "set -euo pipefail
     SCA_MONITOR_SYSTEMD_PYTHON=\"\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\" \
     SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' \
     bash scripts/deploy_systemd_gate.sh
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ]; then
     rm -f .data/sca-monitor.pid
   else
     nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
@@ -65,7 +65,7 @@ ssh "$REMOTE" "set -euo pipefail
     sleep 1
   done
   tail -80 logs/sca-monitor.log || true
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ]; then
     systemctl --user status sca-monitor-api.service --no-pager || true
   fi
   exit 1

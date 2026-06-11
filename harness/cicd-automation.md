@@ -99,6 +99,16 @@ SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
 scripts/deploy_remote.sh
 ```
 
+API service만 systemd runtime으로 canary 전환하려면 다음처럼 실행한다.
+worker와 timer는 enable하지 않는다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable-api \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+scripts/deploy_remote.sh
+```
+
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
 
