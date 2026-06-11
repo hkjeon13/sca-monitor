@@ -104,6 +104,7 @@ GET /health
 GET /ready
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-postgres-split-metrics --json
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
 python3 scripts/db_smoke.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --production-preflight --json
@@ -117,6 +118,8 @@ GET frontend static asset
 POST /api/v1/snapshots with test credential in stage
 GET /api/v1/impacts
 ```
+
+`SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
 원격 VM 배포에서 systemd unit 설치 단계까지 검증하려면 다음처럼 명시한다.
 이 모드는 unit 파일을 설치하지만 API runtime은 기존 nohup 방식을 유지한다.
