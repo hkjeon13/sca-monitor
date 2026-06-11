@@ -91,6 +91,9 @@ secret, token, endpoint credential, private registry credential은 로그에 남
 advisory source sync 실패는 `/metrics`의 `sca_monitor_advisory_sync_failed`로 노출되며, 동시에 `reason='system_advisory_sync_failed'` alert outbox row로 기록된다.
 source별 suppression key는 `system:advisory_sync:{source}:failed`이다. 같은 source sync가 이후 성공하면 active 실패 alert는 `resolved`로 해소되고, 그 뒤 재실패하면 새 pending alert가 생성된다.
 
+`GET /api/v1/overview`의 `advisory_sync_readiness.freshness`는 source별 최신 성공 lag를 `fresh`, `stale`, `partial`, `failed`, `pending`으로 요약한다.
+기본 stale 기준은 24시간이며, Web Console Overview는 stale/partial/failed count를 Advisory Sync 카드에 표시한다.
+
 ## 6. Frontend Error Tracking
 
 Web Console은 frontend error tracking을 선택적으로 연동한다.

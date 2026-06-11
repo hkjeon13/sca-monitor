@@ -125,7 +125,14 @@ function alertReadinessMetric(readiness) {
 function advisorySyncReadinessMetric(readiness) {
   const status = readiness?.status || "unknown";
   const count = `${readiness?.initialized_count ?? 0}/${readiness?.required_count ?? 0}`;
-  return `<div class="metric ${status === "ready" ? "" : "warning"}"><strong>${escapeHtml(status)}</strong><span>Advisory Sync ${escapeHtml(count)}</span></div>`;
+  const freshness = readiness?.freshness || {};
+  const freshnessStatus = freshness.status || status;
+  const staleCount = Number(freshness.stale_count || 0);
+  const partialCount = Number(freshness.partial_count || 0);
+  const failedCount = Number(freshness.failed_count || 0);
+  const warning = status !== "ready" || freshnessStatus !== "fresh";
+  const detail = `${count} · ${freshnessStatus} · ${staleCount} stale / ${partialCount} partial / ${failedCount} failed`;
+  return `<div class="metric ${warning ? "warning" : ""}"><strong>${escapeHtml(status)}</strong><span>Advisory Sync ${escapeHtml(detail)}</span></div>`;
 }
 
 function readinessClass(status) {

@@ -654,6 +654,7 @@ def test_http_smoke_can_expect_advisory_sync_ready():
                             "status": "ok",
                             "advisory_sync_readiness": {
                                 "status": "ready",
+                                "freshness": {"status": "fresh"},
                                 "required_count": 3,
                                 "initialized_count": 3,
                             },
@@ -707,6 +708,7 @@ def test_http_smoke_can_expect_advisory_sync_ready():
     assert payload["advisory_sync_readiness"] == {
         "expected_ready": True,
         "overview_status": "ready",
+        "freshness_status": "fresh",
         "initialized_count": 3,
         "required_count": 3,
         "ok": True,
@@ -780,6 +782,7 @@ def test_http_smoke_fails_when_advisory_sync_not_ready_but_expected():
     assert payload["advisory_sync_readiness"] == {
         "expected_ready": True,
         "overview_status": "initializing",
+        "freshness_status": None,
         "initialized_count": 1,
         "required_count": 3,
         "ok": False,
@@ -3776,6 +3779,32 @@ def test_overview_advisory_sync_readiness_ready_when_initial_sources_succeed(tmp
     assert all(item["initialized"] for item in overview["advisory_sync_readiness"]["sources"])
     assert "sca_monitor_advisory_sync_ready 1" in metrics
     assert 'sca_monitor_advisory_sync_initialized{source="OpenSSF"} 1' in metrics
+
+
+def test_overview_advisory_sync_readiness_summarizes_stale_and_failed_sources(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "partial", "npm:dump", "scan limit reached", imported_count=0)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisory_sync_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE source = 'OSV'")
+
+    overview = app.overview()
+    freshness = overview["advisory_sync_readiness"]["freshness"]
+    sources = {item["source"]: item for item in overview["advisory_sync_readiness"]["sources"]}
+
+    assert overview["advisory_sync_readiness"]["status"] == "degraded"
+    assert freshness["status"] == "degraded"
+    assert freshness["stale_after_seconds"] == 86400
+    assert freshness["stale_count"] == 1
+    assert freshness["partial_count"] == 1
+    assert freshness["failed_count"] == 0
+    assert freshness["oldest_source"] == "OSV"
+    assert freshness["max_lag_seconds"] > 86400
+    assert sources["OSV"]["freshness_status"] == "stale"
+    assert sources["CISA_KEV"]["freshness_status"] == "fresh"
+    assert sources["OpenSSF"]["freshness_status"] == "partial"
 
 
 def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):

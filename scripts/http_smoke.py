@@ -195,11 +195,13 @@ def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready:
     try:
         status, overview = fetch_json(base_url, "/api/v1/overview", timeout)
         readiness = overview.get("advisory_sync_readiness") or {}
+        freshness = readiness.get("freshness") or {}
         overview_status = readiness.get("status")
         is_ready = overview_status == "ready"
         return {
             "expected_ready": expected_ready,
             "overview_status": overview_status,
+            "freshness_status": freshness.get("status"),
             "initialized_count": readiness.get("initialized_count"),
             "required_count": readiness.get("required_count"),
             "ok": status == 200 and is_ready == expected_ready,
@@ -208,6 +210,7 @@ def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready:
         return {
             "expected_ready": expected_ready,
             "overview_status": None,
+            "freshness_status": None,
             "initialized_count": None,
             "required_count": None,
             "ok": False,
@@ -273,6 +276,7 @@ def run_smoke(
         result["advisory_sync_readiness"] = {
             "expected_ready": readiness["expected_ready"],
             "overview_status": readiness["overview_status"],
+            "freshness_status": readiness["freshness_status"],
             "initialized_count": readiness["initialized_count"],
             "required_count": readiness["required_count"],
             "ok": readiness["ok"],

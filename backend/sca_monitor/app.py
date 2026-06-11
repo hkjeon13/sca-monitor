@@ -26,6 +26,7 @@ from .versioning import version_is_affected
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
 INITIAL_ADVISORY_SYNC_SOURCES = ("OSV", "CISA_KEV", "OpenSSF")
+ADVISORY_SYNC_STALE_AFTER_SECONDS = 24 * 60 * 60
 RISK_RANK = {
     "critical": 0,
     "high": 1,
@@ -592,11 +593,22 @@ class ScaMonitorApp:
             last_success_at = row["last_success_at"] if row else None
             initialized = status == "ok" and bool(last_success_at)
             lag_seconds = seconds_since(last_success_at, now)
+            if status == "error":
+                freshness_status = "failed"
+            elif status == "partial":
+                freshness_status = "partial"
+            elif not initialized:
+                freshness_status = "pending"
+            elif lag_seconds is not None and lag_seconds > ADVISORY_SYNC_STALE_AFTER_SECONDS:
+                freshness_status = "stale"
+            else:
+                freshness_status = "fresh"
             sources.append(
                 {
                     "source": source,
                     "status": status,
                     "initialized": initialized,
+                    "freshness_status": freshness_status,
                     "cursor": row["cursor"] if row else None,
                     "last_run_at": row["last_run_at"] if row else None,
                     "last_success_at": last_success_at,
@@ -611,6 +623,19 @@ class ScaMonitorApp:
 
         initialized_count = sum(1 for item in sources if item["initialized"])
         has_error = any(item["status"] in {"error", "partial"} for item in sources)
+        stale_sources = [item for item in sources if item["freshness_status"] == "stale"]
+        lagged_sources = [item for item in sources if item["lag_seconds"] is not None]
+        oldest_source = max(lagged_sources, key=lambda item: item["lag_seconds"]) if lagged_sources else None
+        max_lag_seconds = oldest_source["lag_seconds"] if oldest_source else None
+        failed_count = sum(1 for item in sources if item["freshness_status"] == "failed")
+        partial_count = sum(1 for item in sources if item["freshness_status"] == "partial")
+        freshness_status = "fresh"
+        if failed_count or partial_count:
+            freshness_status = "degraded"
+        elif stale_sources:
+            freshness_status = "stale"
+        elif initialized_count < len(sources):
+            freshness_status = "initializing"
         if initialized_count == len(sources):
             readiness_status = "ready"
         elif has_error:
@@ -621,6 +646,15 @@ class ScaMonitorApp:
             "status": readiness_status,
             "required_count": len(sources),
             "initialized_count": initialized_count,
+            "freshness": {
+                "status": freshness_status,
+                "stale_after_seconds": ADVISORY_SYNC_STALE_AFTER_SECONDS,
+                "stale_count": len(stale_sources),
+                "failed_count": failed_count,
+                "partial_count": partial_count,
+                "max_lag_seconds": max_lag_seconds,
+                "oldest_source": oldest_source["source"] if oldest_source else None,
+            },
             "sources": sources,
         }
 
