@@ -161,6 +161,17 @@ scripts/deploy_remote.sh
 `scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정된 `scripts/deploy_remote.sh` 실행은 `.env` 병합 전에 이 validator를 stop gate로 먼저 실행한다.
 
+실제 secret 파일을 준비하기 전에는 synthetic split credential로 같은 병합/준비도 경로를 dry-run한다.
+이 검증은 DB에 접속하지 않고 `validate_database_env_file.py`, `configure_runtime_inputs.py`, `deployment_input_readiness.py` 흐름이 서로 맞물리는지만 확인하며, 출력에는 DB URL 원문이나 password를 포함하지 않는다.
+
+```bash
+python3 scripts/database_env_dry_run_gate.py --json
+python3 scripts/database_env_dry_run_gate.py --database-env-file deploy/postgres.env.example --json
+```
+
+첫 번째 명령은 synthetic split credential로 성공해야 한다.
+두 번째 명령은 placeholder template 검증 예시이며 `placeholder_values` blocker로 중단되는 것이 정상이다.
+
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.
 `scripts/postgres_docker_smoke_gate.sh`는 CI/stage에서 Docker가 있으면 `--use-docker --with-api-workflow` smoke를 실행하고, `SCA_MONITOR_POSTGRES_DOCKER_SMOKE=auto`에서는 Docker executable 미설치 또는 daemon unavailable 시 skip, `required`에서는 배포 stop condition으로 처리한다.

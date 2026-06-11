@@ -1300,6 +1300,53 @@ def test_postgres_env_example_is_placeholder_and_blocked_by_validator():
     assert "postgresql://<migration_user>" not in result.stdout
 
 
+def test_database_env_dry_run_gate_accepts_synthetic_split_without_leaking_urls():
+    result = subprocess.run(
+        ["python3", "scripts/database_env_dry_run_gate.py", "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["mode"] == "synthetic_split"
+    assert payload["validator"]["status"] == "ok"
+    assert payload["configure"]["status"] == "ok"
+    assert payload["deployment_readiness"]["status"] == "ok"
+    assert "MIGRATION_DATABASE_URL" in payload["configure"]["updated"]
+    assert "postgresql://migration:synthetic" not in result.stdout
+    assert "postgresql://api:synthetic" not in result.stdout
+    assert "postgresql://worker:synthetic" not in result.stdout
+    assert "synthetic-secret" not in result.stdout
+
+
+def test_database_env_dry_run_gate_rejects_placeholder_template_without_leaking_urls():
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/database_env_dry_run_gate.py",
+            "--database-env-file",
+            "deploy/postgres.env.example",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert payload["mode"] == "provided_file"
+    assert payload["validator"]["status"] == "blocked"
+    assert any(check["id"] == "placeholder_values" and check["status"] == "blocker" for check in payload["validator"]["checks"])
+    assert "postgresql://<migration_user>" not in result.stdout
+    assert "<password>" not in result.stdout
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1665,6 +1712,7 @@ def test_ci_smoke_runs_core_gates():
     assert "python3 -m pytest tests" in script
     assert "scripts/deployment_input_readiness.py" in script
     assert "scripts/validate_database_env_file.py" in script
+    assert "scripts/database_env_dry_run_gate.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "node --check frontend/app.js" in script
@@ -1705,6 +1753,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
+    assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
