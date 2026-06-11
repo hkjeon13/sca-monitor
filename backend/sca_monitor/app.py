@@ -1236,12 +1236,26 @@ class ScaMonitorApp:
                 """,
                 (impact_id,),
             ).fetchall()
+            accepted_risk = conn.execute(
+                """
+                SELECT id, approved_by, reason, expires_at, revoked_at, created_at
+                FROM accepted_risks
+                WHERE impact_pk = ? AND revoked_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (impact_id,),
+            ).fetchone()
         if not row:
             raise ValueError("impact not found")
         impact = row_to_dict(row)
         impact["affected_versions"] = json.loads(impact["affected_versions"] or "[]")
         impact["affected_ranges"] = json.loads(impact["affected_ranges"] or "[]")
-        return {"impact": impact, "history": [row_to_dict(history) for history in history_rows]}
+        return {
+            "impact": impact,
+            "history": [row_to_dict(history) for history in history_rows],
+            "accepted_risk": row_to_dict(accepted_risk),
+        }
 
     def search_alert_events(self, query: dict[str, list[str]]) -> dict:
         where = []
@@ -1319,12 +1333,22 @@ class ScaMonitorApp:
             raise ValueError(f"status must be one of {', '.join(sorted(IMPACT_STATUSES))}")
         reason = body.get("reason")
         actor = body.get("actor", "system")
+        if status == "accepted_risk":
+            if not normalize_optional(reason):
+                raise ValueError("reason is required for accepted_risk")
+            if not normalize_optional(body.get("expires_at")):
+                raise ValueError("expires_at is required for accepted_risk")
         now = utcnow()
         with self.db.connect() as conn:
             current = conn.execute("SELECT id, status, risk_level, package_name, resolved_version FROM impacts WHERE id = ?", (impact_id,)).fetchone()
             if not current:
                 raise ValueError("impact not found")
             conn.execute("UPDATE impacts SET status = ?, resolved_at = CASE WHEN ? = 'fixed' THEN ? ELSE resolved_at END, updated_at = ? WHERE id = ?", (status, status, now, now, impact_id))
+            accepted_risk = None
+            if status == "accepted_risk":
+                accepted_risk = self.record_accepted_risk(conn, impact_id, actor, reason, body["expires_at"], now)
+            elif current["status"] == "accepted_risk":
+                self.revoke_active_accepted_risk(conn, impact_id, now)
             conn.execute(
                 "INSERT INTO impact_history (id, impact_pk, from_status, to_status, actor, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(uuid.uuid4()), impact_id, current["status"], status, actor, reason, now),
@@ -1341,7 +1365,38 @@ class ScaMonitorApp:
                 after=row_to_dict(updated),
                 occurred_at=now,
             )
-        return {"impact_id": impact_id, "status": status}
+        return {"impact_id": impact_id, "status": status, "accepted_risk": accepted_risk}
+
+    def record_accepted_risk(self, conn, impact_id: str, approved_by: str, reason: str, expires_at: str, created_at: str) -> dict:
+        self.revoke_active_accepted_risk(conn, impact_id, created_at)
+        accepted_risk_id = str(uuid.uuid4())
+        conn.execute(
+            """
+            INSERT INTO accepted_risks (
+                id, impact_pk, approved_by, reason, expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (accepted_risk_id, impact_id, approved_by, reason, expires_at, created_at),
+        )
+        row = conn.execute(
+            """
+            SELECT id, approved_by, reason, expires_at, revoked_at, created_at
+            FROM accepted_risks
+            WHERE id = ?
+            """,
+            (accepted_risk_id,),
+        ).fetchone()
+        return row_to_dict(row)
+
+    def revoke_active_accepted_risk(self, conn, impact_id: str, revoked_at: str) -> None:
+        conn.execute(
+            """
+            UPDATE accepted_risks
+            SET revoked_at = ?
+            WHERE impact_pk = ? AND revoked_at IS NULL
+            """,
+            (revoked_at, impact_id),
+        )
 
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")

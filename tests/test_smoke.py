@@ -653,6 +653,47 @@ def test_impact_status_rejects_unknown_status(tmp_path):
         app.update_impact_status(impact_id, {"status": "waiting_for_magic"})
 
 
+def test_accepted_risk_requires_reason_and_expiry(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    with pytest.raises(ValueError, match="reason is required"):
+        app.update_impact_status(impact_id, {"status": "accepted_risk", "actor": "approver", "expires_at": "2026-07-10T00:00:00Z"})
+    with pytest.raises(ValueError, match="expires_at is required"):
+        app.update_impact_status(impact_id, {"status": "accepted_risk", "actor": "approver", "reason": "compensating control"})
+
+
+def test_accepted_risk_records_approval_and_revokes_on_status_change(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    result = app.update_impact_status(
+        impact_id,
+        {
+            "status": "accepted_risk",
+            "actor": "security-approver",
+            "reason": "compensating control",
+            "expires_at": "2026-07-10T00:00:00Z",
+        },
+    )
+
+    assert result["status"] == "accepted_risk"
+    assert result["accepted_risk"]["approved_by"] == "security-approver"
+    assert result["accepted_risk"]["reason"] == "compensating control"
+    detail = app.get_impact(impact_id)
+    assert detail["accepted_risk"]["expires_at"] == "2026-07-10T00:00:00Z"
+    assert app.overview()["open_impacts"] == 0
+
+    app.update_impact_status(impact_id, {"status": "in_progress", "actor": "security-approver", "reason": "risk expired"})
+
+    assert app.get_impact(impact_id)["accepted_risk"] is None
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT revoked_at FROM accepted_risks WHERE impact_pk = ?", (impact_id,)).fetchone()
+    assert row["revoked_at"] is not None
+
+
 def test_closed_workflow_statuses_are_excluded_from_open_counts(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

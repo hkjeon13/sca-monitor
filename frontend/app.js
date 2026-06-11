@@ -198,6 +198,9 @@ async function loadImpactDetail(impactId) {
       </li>
     `).join("")
     : `<li><span>No status changes recorded.</span></li>`;
+  const acceptedRisk = data.accepted_risk
+    ? `<p class="detail-summary"><strong>Accepted Risk</strong><br>Approved by ${escapeHtml(data.accepted_risk.approved_by)} until ${escapeHtml(data.accepted_risk.expires_at)} · ${escapeHtml(data.accepted_risk.reason)}</p>`
+    : "";
 
   document.querySelector("#impact-detail").innerHTML = `
     <div class="detail-grid">
@@ -213,6 +216,7 @@ async function loadImpactDetail(impactId) {
       ${detailRow("Affected Range", affectedRanges)}
     </div>
     <p class="detail-summary">${escapeHtml(impact.summary)}</p>
+    ${acceptedRisk}
     <form id="impact-status-form" class="status-form">
       <label>Status
         <select name="status">
@@ -220,6 +224,7 @@ async function loadImpactDetail(impactId) {
         </select>
       </label>
       <label>Actor<input name="actor" value="web-console" /></label>
+      <label>Accepted Until<input name="expires_at" type="datetime-local" /></label>
       <label>Reason<input name="reason" placeholder="Short note for audit history" /></label>
       <button type="submit">Update Status</button>
     </form>
