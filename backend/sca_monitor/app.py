@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import os
 import secrets
 from contextlib import contextmanager
 import uuid
@@ -18,6 +19,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, json_column, row_to_dict, utcnow
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
+from .postgres_cutover import assess_cutover
 from .versioning import version_is_affected
 
 
@@ -121,6 +123,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.session(request))
             if path == "/api/v1/overview" and method == "GET":
                 return self.json_response(request, self.overview())
+            if path == "/api/v1/operations/database-readiness" and method == "GET":
+                return self.json_response(request, self.database_readiness_summary())
             if path == "/api/v1/services" and method == "GET":
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
@@ -438,6 +442,15 @@ class ScaMonitorApp:
             "advisory_sync": advisory_sync,
             "advisory_sync_readiness": advisory_sync_readiness,
             "system": {"environment": self.settings.app_env},
+        }
+
+    def database_readiness_summary(self) -> dict:
+        readiness = self.db.readiness()
+        return {
+            "status": "ready" if readiness["database"] == "ok" else "not_ready",
+            **readiness,
+            "cutover": assess_cutover(os.environ),
+            "cutover_required": assess_cutover(os.environ, require_postgres=True),
         }
 
     def sla_overdue_count(self, conn) -> int:

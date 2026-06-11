@@ -25,6 +25,7 @@ Target production: postgresql://...
 
 PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, credential, network access, migration dry-run이 먼저 완료되어야 한다.
 전환 직전에는 `scripts/postgres_cutover_readiness.py --require-postgres --json`을 실행해 DB URL 조합, PostgreSQL 여부, integration smoke 설정, runtime auto-migrate 비활성화 여부를 먼저 확인한다.
+운영자는 Web Console Overview 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, migration version, cutover mode, require-postgres 차단 사유를 확인할 수 있다.
 
 ## 2. Migration
 
@@ -116,6 +117,7 @@ open impact가 참조하는 snapshot/dependency는 보존하거나 FK를 `ON DEL
 
 ```bash
 python3 scripts/db_smoke.py --json
+curl -fsS "$PUBLIC_URL/api/v1/operations/database-readiness"
 ```
 
 실제 PostgreSQL 연결 검증:

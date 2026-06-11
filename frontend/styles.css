@@ -378,11 +378,43 @@ th {
   color: var(--critical);
 }
 
+.badge.ok {
+  background: #e7f6ec;
+  color: var(--ok);
+}
+
+.badge.warning {
+  background: #fff8f0;
+  color: var(--high);
+}
+
 .badge-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.readiness-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.readiness-panel h3 {
+  margin: 0;
+}
+
+.readiness-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.readiness-checks li {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 0.5fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .split {

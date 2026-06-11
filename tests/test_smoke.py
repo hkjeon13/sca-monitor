@@ -787,6 +787,21 @@ def test_postgres_cutover_readiness_accepts_split_postgres_urls(tmp_path):
     assert payload["postgres_configured"] is True
 
 
+def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/operations/database-readiness")
+
+    assert payload["status"] == "ready"
+    assert payload["database"] == "ok"
+    assert payload["database_backend"] == "sqlite"
+    assert payload["migration"]["compatible"] is True
+    assert payload["cutover"]["status"] == "sqlite_fallback"
+    assert payload["cutover_required"]["status"] == "blocked"
+    assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
+
+
 def test_remote_deploy_uses_db_gate():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
@@ -822,6 +837,15 @@ def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
     assert 'run_postgres_smoke "${API_DATABASE_URL:-}" api "--skip-migrate"' in script
     assert 'run_postgres_smoke "$WORKER_URL" worker "--skip-migrate --read-only"' in script
     assert "postgres integration smoke required for $label but database URL is not configured" in script
+
+
+def test_web_console_renders_database_readiness_panel():
+    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="database-readiness"' in html
+    assert "/api/v1/operations/database-readiness" in script
+    assert "renderDatabaseReadiness" in script
 
 
 def enabled_now_lines(text: str) -> str:

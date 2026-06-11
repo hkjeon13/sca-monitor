@@ -127,8 +127,21 @@ function advisorySyncReadinessMetric(readiness) {
   return `<div class="metric ${status === "ready" ? "" : "warning"}"><strong>${escapeHtml(status)}</strong><span>Advisory Sync ${escapeHtml(count)}</span></div>`;
 }
 
+function readinessClass(status) {
+  if (["ready", "ok", "sqlite_fallback"].includes(status)) return "ok";
+  if (["blocked", "not_ready", "failed"].includes(status)) return "danger";
+  return "warning";
+}
+
+function renderReadinessBadge(status) {
+  return `<span class="badge ${readinessClass(status)}">${escapeHtml(status || "unknown")}</span>`;
+}
+
 async function loadOverview() {
-  const overview = await api.get("/api/v1/overview");
+  const [overview, databaseReadiness] = await Promise.all([
+    api.get("/api/v1/overview"),
+    api.get("/api/v1/operations/database-readiness"),
+  ]);
   const alertReadiness = overview.alert_readiness || {};
   const advisorySyncReadiness = overview.advisory_sync_readiness || {};
   document.querySelector("#metrics").innerHTML = [
@@ -143,6 +156,38 @@ async function loadOverview() {
     advisorySyncReadinessMetric(advisorySyncReadiness),
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
+  renderDatabaseReadiness(databaseReadiness);
+}
+
+function renderDatabaseReadiness(readiness) {
+  const migration = readiness.migration || {};
+  const cutover = readiness.cutover || {};
+  const required = readiness.cutover_required || {};
+  const checks = (required.checks || []).map((check) => `
+    <li>
+      ${renderReadinessBadge(check.status)}
+      <span>${escapeHtml(check.id)}</span>
+      <strong>${escapeHtml(check.detail)}</strong>
+    </li>
+  `).join("");
+  document.querySelector("#database-readiness").innerHTML = `
+    <div class="section-header">
+      <h3>Database Readiness</h3>
+      ${renderReadinessBadge(readiness.status)}
+    </div>
+    <div class="detail-grid readiness-grid">
+      ${detailRow("Backend", readiness.database_backend)}
+      ${detailRow("Migration", `${migration.current ?? 0}/${migration.required ?? 0}`)}
+      ${detailRow("Cutover Mode", cutover.mode || "unknown")}
+      ${detailRow("Current Cutover", cutover.status || "unknown")}
+      ${detailRow("PostgreSQL Required", required.status || "unknown")}
+      ${detailRow("PostgreSQL Configured", cutover.postgres_configured ? "yes" : "no")}
+    </div>
+    <div class="history readiness-checks">
+      <h3>PostgreSQL Cutover Checks</h3>
+      <ul>${checks || "<li><span>No checks reported.</span></li>"}</ul>
+    </div>
+  `;
 }
 
 async function loadServices() {
