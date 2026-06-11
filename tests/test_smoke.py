@@ -1303,6 +1303,7 @@ def test_list_impacts_supports_server_side_filters(tmp_path):
     assert [impact["service_id"] for impact in app.list_impacts({"package_name": ["Second-Package"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"advisory_id": ["OSV-TEST-0002"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"known_exploited": ["false"], "service_id": ["billing-service"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"malicious_package": ["false"], "service_id": ["billing-service"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"q": ["billing"]})] == ["billing-service"]
 
     page = app.search_impacts({"limit": ["1"], "offset": ["1"], "sort": ["service"], "direction": ["asc"]})
@@ -1429,6 +1430,8 @@ def test_openssf_malicious_advisory_matches_as_critical_impact(tmp_path):
     assert impacts[0]["advisory_id"] == "MAL-2026-0001"
     assert impacts[0]["risk_level"] == "critical"
     assert impacts[0]["is_malicious_package"] is True
+    assert app.search_impacts({"malicious_package": ["true"]})["impacts"][0]["service_id"] == "malicious-service"
+    assert app.search_impacts({"malicious_package": ["false"], "service_id": ["malicious-service"]})["impacts"] == []
     assert app.overview()["critical_impacts"] == 1
 
 

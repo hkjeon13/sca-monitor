@@ -1390,6 +1390,9 @@ class ScaMonitorApp:
         if known_exploited := query.get("known_exploited", [None])[0]:
             where.append("a.is_known_exploited = ?")
             params.append(1 if str(known_exploited).lower() in {"1", "true", "yes"} else 0)
+        if malicious_package := query.get("malicious_package", [None])[0]:
+            where.append("a.is_malicious_package = ?")
+            params.append(1 if str(malicious_package).lower() in {"1", "true", "yes"} else 0)
         if search := query.get("q", [None])[0]:
             like = f"%{search.lower()}%"
             where.append(
