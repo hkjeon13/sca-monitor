@@ -38,6 +38,7 @@ function defaultSession() {
     roles: ["admin", "security-approver", "service-owner"],
     owner_teams: [],
     capabilities: {
+      view_console: true,
       manage_services: true,
       manage_credentials: true,
       manage_alert_channels: true,

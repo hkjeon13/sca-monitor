@@ -377,6 +377,7 @@ class ScaMonitorApp:
         can_manage = "admin" in roles
         can_update_impacts = bool(roles.intersection({"admin", "security-approver", "service-owner"}))
         return {
+            "view_console": bool(roles.intersection({"admin", "security-approver", "service-owner", "viewer"})),
             "manage_services": can_manage,
             "manage_credentials": can_manage,
             "manage_alert_channels": can_manage,

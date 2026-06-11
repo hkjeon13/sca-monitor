@@ -3017,6 +3017,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in secrets_doc
     assert "X-SCA-Proxy-Secret" in secrets_doc
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in requirements_doc
+    assert "viewer" in requirements_doc
+    assert "view_console=true" in requirements_doc
 
 
 def test_harness_documents_advisory_source_preflight():
@@ -3108,6 +3110,7 @@ def test_web_console_renders_database_readiness_panel():
     assert "alertEventRequeueReason" in script
     assert "form.requeue_reason" in script
     assert "focusRequeueAuditLogs" in script
+    assert "view_console" in script
     assert "Audit filter updated to alert_event.requeue" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
@@ -5858,6 +5861,10 @@ def test_header_auth_session_reports_principal_roles_and_capabilities(tmp_path):
             f"{base_url}/api/v1/session",
             headers={"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"},
         )
+        viewer_session = http_json(
+            f"{base_url}/api/v1/session",
+            headers={"X-SCA-Principal": "viewer@example.test", "X-SCA-Roles": "viewer"},
+        )
 
     assert "missing authenticated principal" in forbidden["error"]
     assert owner_session["authenticated"] is True
@@ -5873,6 +5880,13 @@ def test_header_auth_session_reports_principal_roles_and_capabilities(tmp_path):
     assert admin_session["capabilities"]["manage_services"] is True
     assert admin_session["capabilities"]["manage_credentials"] is True
     assert admin_session["capabilities"]["manage_alert_channels"] is True
+    assert viewer_session["authenticated"] is True
+    assert viewer_session["principal"] == "viewer@example.test"
+    assert viewer_session["roles"] == ["viewer"]
+    assert viewer_session["capabilities"]["view_console"] is True
+    assert viewer_session["capabilities"]["manage_services"] is False
+    assert viewer_session["capabilities"]["update_impacts"] is False
+    assert viewer_session["capabilities"]["accept_risk"] is False
 
 
 def test_header_auth_requires_proxy_shared_secret_when_configured(tmp_path):
