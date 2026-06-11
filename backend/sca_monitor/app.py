@@ -41,6 +41,10 @@ BULK_IMPACT_TARGET_STATUSES = {
 }
 
 
+class PayloadTooLargeError(ValueError):
+    pass
+
+
 class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -161,7 +165,14 @@ class ScaMonitorApp:
             if path == "/api/v1/advisories/osv/import" and method == "POST":
                 return self.json_response(request, self.import_osv_advisory(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/snapshots" and method == "POST":
-                return self.json_response(request, self.push_snapshot(self.read_json(request), request.headers.get("Authorization")), HTTPStatus.CREATED)
+                return self.json_response(
+                    request,
+                    self.push_snapshot(
+                        self.read_json(request, max_length=self.settings.max_snapshot_payload_bytes),
+                        request.headers.get("Authorization"),
+                    ),
+                    HTTPStatus.CREATED,
+                )
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
             if path == "/api/v1/impacts/status" and method == "POST":
@@ -190,6 +201,8 @@ class ScaMonitorApp:
             if path.startswith("/api/"):
                 return self.json_response(request, {"error": "not_found"}, HTTPStatus.NOT_FOUND)
             return self.serve_static(request, path)
+        except PayloadTooLargeError as exc:
+            return self.json_response(request, {"error": str(exc)}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         except ValueError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except PermissionError as exc:
@@ -197,10 +210,12 @@ class ScaMonitorApp:
         except Exception as exc:  # noqa: BLE001 - keep MVP server alive and visible.
             return self.json_response(request, {"error": "internal_error", "detail": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def read_json(self, request: BaseHTTPRequestHandler) -> dict:
+    def read_json(self, request: BaseHTTPRequestHandler, max_length: int | None = None) -> dict:
         length = int(request.headers.get("Content-Length", "0"))
         if length <= 0:
             return {}
+        if max_length is not None and length > max_length:
+            raise PayloadTooLargeError(f"payload exceeds maximum size of {max_length} bytes")
         return json.loads(request.rfile.read(length).decode("utf-8"))
 
     def json_response(self, request: BaseHTTPRequestHandler, body: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
@@ -1161,6 +1176,10 @@ class ScaMonitorApp:
         dependencies = body.get("dependencies") or []
         if not dependencies:
             raise ValueError("dependencies required")
+        if not isinstance(dependencies, list):
+            raise ValueError("dependencies must be a list")
+        if len(dependencies) > self.settings.max_snapshot_dependencies:
+            raise ValueError(f"dependencies exceed maximum count of {self.settings.max_snapshot_dependencies}")
         if authorization:
             self.validate_push_authorization(authorization, service_id, environment)
         service = self.create_service(

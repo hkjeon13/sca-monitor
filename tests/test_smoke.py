@@ -213,6 +213,40 @@ def test_push_credential_issue_and_bound_snapshot_push(tmp_path):
         assert conn.execute("SELECT last_used_at FROM push_credentials").fetchone()["last_used_at"] is not None
 
 
+def test_snapshot_push_rejects_too_many_dependencies(tmp_path):
+    app = make_test_app(tmp_path, max_snapshot_dependencies=1)
+
+    with pytest.raises(ValueError, match="dependencies exceed maximum count of 1"):
+        app.push_snapshot(
+            {
+                "service_id": "limited-service",
+                "environment": "prod",
+                "dependencies": [
+                    {"ecosystem": "npm", "name": "first-package", "version": "1.0.0"},
+                    {"ecosystem": "npm", "name": "second-package", "version": "1.0.0"},
+                ],
+            }
+        )
+
+
+def test_snapshot_push_route_rejects_oversized_payload(tmp_path):
+    app = make_test_app(tmp_path, max_snapshot_payload_bytes=120)
+
+    with run_test_server(app) as base_url:
+        response = http_json(
+            f"{base_url}/api/v1/snapshots",
+            method="POST",
+            body={
+                "service_id": "payload-limited-service",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "large-package-name", "version": "1.0.0"}],
+            },
+            expect_status=413,
+        )
+
+    assert response["error"] == "payload exceeds maximum size of 120 bytes"
+
+
 def test_push_credential_rejects_service_environment_spoofing(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
@@ -1835,7 +1869,7 @@ def test_dispatch_alert_batches_repeats_with_sleep(tmp_path):
     assert len(delivered) == 1
 
 
-def make_test_app(tmp_path, auth_mode="disabled"):
+def make_test_app(tmp_path, auth_mode="disabled", **setting_overrides):
     settings = Settings(
         app_env="test",
         host="127.0.0.1",
@@ -1846,6 +1880,7 @@ def make_test_app(tmp_path, auth_mode="disabled"):
         frontend_dir=tmp_path,
         smoke_token="test",
         auth_mode=auth_mode,
+        **setting_overrides,
     )
     return ScaMonitorApp(settings)
 

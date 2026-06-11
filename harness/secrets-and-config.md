@@ -44,6 +44,8 @@ OIDC_CLIENT_ID
 OIDC_CLIENT_SECRET
 OIDC_REDIRECT_URI
 CORS_ALLOWED_ORIGINS
+SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES
+SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES
 ```
 
 `CORS_ALLOWED_ORIGINS`는 frontend와 API가 split domain일 때만 필수이다.
@@ -58,6 +60,15 @@ X-SCA-Owner-Teams: platform-security,billing
 ```
 
 `SCA_MONITOR_AUTH_MODE` 기본값은 `disabled`이며, 운영에서 `header`를 사용할 경우 public 인터넷에서 클라이언트가 임의 헤더를 직접 주입할 수 없도록 proxy에서 외부 입력 헤더를 제거하고 인증 후 재주입해야 한다.
+
+Snapshot push 보호 기본값:
+
+```text
+SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES=10485760
+SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES=10000
+```
+
+운영 환경에서 service dependency 규모가 더 크면 먼저 stage에서 push smoke를 통과시킨 뒤 상향한다.
 
 ### Worker
 
