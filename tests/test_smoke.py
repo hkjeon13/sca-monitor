@@ -802,6 +802,141 @@ def test_http_smoke_can_expect_advisory_sync_ready():
     }
 
 
+def test_http_smoke_can_expect_cutover_report_status():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/v1/operations/cutover-readiness-report":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "artifact": {"status": "available", "path": "configured"},
+                            "report": {"status": "ok", "summary": {"ok": 2, "blockers": 0}},
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-cutover-report-status",
+                "ok",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["cutover_readiness_report"] == {
+        "expected_status": "ok",
+        "artifact_status": "available",
+        "report_status": "ok",
+        "ok": True,
+    }
+
+
+def test_http_smoke_fails_when_cutover_report_status_differs():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/v1/operations/cutover-readiness-report":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "artifact": {"status": "available", "path": "configured"},
+                            "report": {"status": "blocked", "summary": {"blockers": 1}},
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--expect-cutover-report-status",
+                "ok",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["cutover_readiness_report"] == {
+        "expected_status": "ok",
+        "artifact_status": "available",
+        "report_status": "blocked",
+        "ok": False,
+    }
+
+
 def test_http_smoke_fails_when_advisory_sync_not_ready_but_expected():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -2577,6 +2712,8 @@ def test_ci_smoke_runs_core_gates():
     assert "--expect-advisory-sync-ready" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "--expect-database-backend" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
+    assert "--expect-cutover-report-status" in script
 
 
 def test_deploy_remote_runs_deployment_input_readiness_before_migration():
@@ -2594,6 +2731,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
@@ -2621,6 +2759,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "cutover_report_args+=(--require-postgres --require-split)" in script
     assert "cutover report with SCA_MONITOR_DATABASE_ENV_FILE requires PostgreSQL split readiness" in script
     assert "--expect-database-backend" in script
+    assert "--expect-cutover-report-status" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
@@ -2672,6 +2811,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
+    assert "--expect-cutover-report-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
     assert "--expect-database-backend sqlite" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")

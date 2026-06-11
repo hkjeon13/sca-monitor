@@ -218,6 +218,29 @@ def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready:
         }
 
 
+def check_cutover_report_status(base_url: str, timeout: float, expected_status: str) -> dict[str, Any]:
+    try:
+        status, payload = fetch_json(base_url, "/api/v1/operations/cutover-readiness-report", timeout)
+        artifact = payload.get("artifact") or {}
+        report = payload.get("report") or {}
+        artifact_status = artifact.get("status")
+        report_status = report.get("status")
+        return {
+            "expected_status": expected_status,
+            "artifact_status": artifact_status,
+            "report_status": report_status,
+            "ok": status == 200 and artifact_status == "available" and report_status == expected_status,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "expected_status": expected_status,
+            "artifact_status": None,
+            "report_status": None,
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def run_smoke(
     base_url: str,
     paths: list[str],
@@ -227,6 +250,7 @@ def run_smoke(
     expect_postgres_split_required: bool | None = None,
     expect_database_backend: str | None = None,
     expect_advisory_sync_ready: bool | None = None,
+    expect_cutover_report_status: str | None = None,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
         paths = [*paths, "/metrics"]
@@ -285,6 +309,18 @@ def run_smoke(
             if readiness.get("error"):
                 result["advisory_sync_readiness"]["error"] = readiness["error"]
             result["status"] = "failed"
+    if expect_cutover_report_status is not None:
+        cutover_report = check_cutover_report_status(base_url, timeout, expect_cutover_report_status)
+        result["cutover_readiness_report"] = {
+            "expected_status": cutover_report["expected_status"],
+            "artifact_status": cutover_report["artifact_status"],
+            "report_status": cutover_report["report_status"],
+            "ok": cutover_report["ok"],
+        }
+        if not cutover_report["ok"]:
+            if cutover_report.get("error"):
+                result["cutover_readiness_report"]["error"] = cutover_report["error"]
+            result["status"] = "failed"
     return result
 
 
@@ -301,6 +337,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
     parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
     parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
+    parser.add_argument("--expect-cutover-report-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report artifact has the expected report status.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -316,6 +353,7 @@ def main() -> int:
         expect_postgres_split_required=args.expect_postgres_split_required,
         expect_database_backend=args.expect_database_backend,
         expect_advisory_sync_ready=args.expect_advisory_sync_ready,
+        expect_cutover_report_status=args.expect_cutover_report_status,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

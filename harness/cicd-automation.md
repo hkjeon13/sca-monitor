@@ -110,6 +110,7 @@ python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-postgres-split-metrics --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-advisory-sync-ready true --json
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-cutover-report-status ok --json
 python3 scripts/deployment_input_readiness.py --env-file .env --json
 python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
 python3 scripts/db_smoke.py --json
@@ -136,6 +137,7 @@ bootstrap 완료 또는 운영 승격 단계에서 advisory source 초기 동기
 초기 bootstrap 중에는 이 값을 설정하지 않아 기본 health/readiness smoke만 수행한다.
 현재 runtime DB backend까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite` 또는 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres`를 설정한다.
 현재 SQLite fallback 운영 검증은 `sqlite`, PostgreSQL cutover stage 검증은 `postgres`를 사용한다.
+cutover readiness report artifact 상태까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok` 또는 stage 의도에 맞는 `action_required`/`blocked`를 설정한다.
 원격 배포 스크립트 안에서 재시작 후 HTTP smoke를 stop gate로 강제하려면 `SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required`를 설정한다.
 이 gate는 원격 VM의 `http://127.0.0.1:$SCA_MONITOR_PORT`에 대해 `/health`, `/ready`, `/api/v1/overview`, `/api/v1/operations/cutover-readiness-report`, `/`를 확인하고, 설정된 advisory/database backend 기대값도 함께 검증한다.
 원격 배포 중 bootstrap readiness를 stop gate로 연결하려면 `SCA_MONITOR_BOOTSTRAP_READINESS=advisory`를 먼저 사용한다.
@@ -150,6 +152,7 @@ SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net \
 SCA_MONITOR_GENERATE_SMOKE_TOKEN=true \
 SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true \
 SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite \
+SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok \
 SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
 SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic \
 SCA_MONITOR_BOOTSTRAP_READINESS=advisory \

@@ -6,6 +6,7 @@ RUN_HTTP_SMOKE="${SCA_MONITOR_CI_HTTP_SMOKE:-auto}"
 EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
+EXPECT_CUTOVER_REPORT_STATUS="${SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS:-}"
 DEPLOYMENT_ENV_FILE="${SCA_MONITOR_DEPLOYMENT_ENV_FILE:-deploy/sca-monitor.env.example}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 
@@ -57,6 +58,9 @@ case "$RUN_HTTP_SMOKE" in
     if [ -n "$EXPECT_DATABASE_BACKEND" ]; then
       http_smoke_args+=(--expect-database-backend "$EXPECT_DATABASE_BACKEND")
     fi
+    if [ -n "$EXPECT_CUTOVER_REPORT_STATUS" ]; then
+      http_smoke_args+=(--expect-cutover-report-status "$EXPECT_CUTOVER_REPORT_STATUS")
+    fi
     python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     ;;
   auto|"")
@@ -70,6 +74,9 @@ case "$RUN_HTTP_SMOKE" in
       fi
       if [ -n "$EXPECT_DATABASE_BACKEND" ]; then
         http_smoke_args+=(--expect-database-backend "$EXPECT_DATABASE_BACKEND")
+      fi
+      if [ -n "$EXPECT_CUTOVER_REPORT_STATUS" ]; then
+        http_smoke_args+=(--expect-cutover-report-status "$EXPECT_CUTOVER_REPORT_STATUS")
       fi
       python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     else
