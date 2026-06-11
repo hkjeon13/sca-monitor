@@ -33,6 +33,8 @@ class CisaKevSyncResult:
     source: str
     processed: int
     imported_rows: int
+    enriched_advisories: int
+    rematched_impacts: int
     failed: int
     catalog_url: str
     catalog_version: str | None
@@ -99,6 +101,8 @@ def sync_cisa_kev_catalog(
     catalog = load_cisa_kev_catalog(catalog_url=catalog_url, json_path=json_path)
     processed = 0
     imported_rows = 0
+    enriched_advisories = 0
+    rematched_impacts = 0
     failed = 0
     owner = lock_owner or default_lock_owner("cisa-kev")
     catalog_version = catalog.get("catalogVersion")
@@ -114,6 +118,9 @@ def sync_cisa_kev_catalog(
                     advisory = parse_cisa_kev_vulnerability(item, catalog)
                     with app.db.connect() as conn:
                         app.upsert_advisory(conn, advisory)
+                        enrichment = app.enrich_known_exploited_advisories(conn, item.get("cveID"))
+                        enriched_advisories += enrichment["enriched_advisories"]
+                        rematched_impacts += enrichment["rematched_impacts"]
                     imported_rows += 1
                 except Exception:
                     failed += 1
@@ -133,6 +140,8 @@ def sync_cisa_kev_catalog(
         source="CISA_KEV",
         processed=processed,
         imported_rows=imported_rows,
+        enriched_advisories=enriched_advisories,
+        rematched_impacts=rematched_impacts,
         failed=failed,
         catalog_url=catalog_url,
         catalog_version=str(catalog_version) if catalog_version else None,

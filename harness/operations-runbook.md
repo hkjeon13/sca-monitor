@@ -74,6 +74,7 @@ python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
 
 CISA KEV는 `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` JSON feed를 기본으로 사용한다.
 운영 검증에는 작은 `--limit`으로 먼저 실행하고, 폐쇄망 또는 테스트 fixture 검증에는 `--json-path /path/to/cisa-kev.json`을 사용할 수 있다.
+실행 결과의 `imported_rows`, `enriched_advisories`, `rematched_impacts`, `failed`를 확인한다.
 
 ### Endpoint polling failed
 

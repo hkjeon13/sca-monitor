@@ -197,7 +197,7 @@ references
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
 - 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
 - OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
-- `scripts/cisa_kev_sync.py`는 CISA KEV JSON catalog를 읽어 `source=CISA_KEV`, `is_known_exploited=true`, `severity=critical` advisory로 저장하고 `advisory_sync_state`에 sync 상태를 기록한다.
+- `scripts/cisa_kev_sync.py`는 CISA KEV JSON catalog를 읽어 `source=CISA_KEV`, `is_known_exploited=true`, `severity=critical` advisory로 저장하고 `advisory_sync_state`에 sync 상태를 기록한다. KEV `cveID`가 기존 OSV/GHSA raw `aliases`에 있으면 해당 package advisory도 known-exploited critical로 보강하고 latest snapshot을 재매칭한다.
 - endpoint polling worker는 등록된 `status_endpoint_url`을 순회해 snapshot을 수집하고, `endpoint_poll_state` DB lease로 중복 실행을 차단한다.
 - endpoint polling CLI는 `--iterations`, `--interval-seconds`, `--worker-name`, `--lock-owner`, `--lock-ttl-seconds` 옵션을 지원한다.
 - endpoint polling/test는 MVP 범위에서 저장된 bearer token을 `Authorization: Bearer` 헤더로 전달한다. 서비스 조회 API와 Web Console에는 secret 원문을 노출하지 않고 설정 여부만 표시한다.
@@ -248,7 +248,8 @@ notes
 - `scripts/cisa_kev_sync.py`는 CISA KEV JSON feed 또는 로컬 JSON fixture를 읽어 `CISA_KEV:{cveID}` advisory row로 저장한다.
 - `vendorProject/product`, `requiredAction`, `dueDate`, `knownRansomwareCampaignUse`, `notes`, `cwes`는 `raw_payload`에 보존한다.
 - 기존 OSV/GHSA row를 덮어쓰지 않기 위해 source-specific advisory ID를 사용한다.
-- CVE alias 기반 canonical advisory 병합과 기존 package impact의 KEV enrichment 재평가는 FR-027 후속 범위이다.
+- 기존 OSV/GHSA raw payload의 `aliases`에 같은 CVE가 있으면 기존 package advisory를 `is_known_exploited=true`, `severity=critical`로 보강하고 기존 package impact를 재평가한다.
+- 별도 `advisory_aliases` 테이블과 canonical advisory row 병합은 FR-027 후속 범위이다.
 
 ### 5.4 GitHub Security Advisory 수집 방식
 

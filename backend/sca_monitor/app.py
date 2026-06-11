@@ -705,6 +705,33 @@ class ScaMonitorApp:
             count += self.match_impacts(conn, row["service_pk"], row["snapshot_pk"])
         return count
 
+    def enrich_known_exploited_advisories(self, conn, cve_id: str) -> dict:
+        cve = normalize_cve_id(cve_id)
+        if not cve:
+            raise ValueError("cve_id required")
+        enriched = 0
+        rematched = 0
+        rows = conn.execute("SELECT * FROM advisories WHERE source != 'CISA_KEV'").fetchall()
+        for row in rows:
+            aliases = advisory_alias_values(row_to_dict(row))
+            if cve not in aliases:
+                continue
+            if row["is_known_exploited"] and row["severity"] == "critical":
+                continue
+            conn.execute(
+                """
+                UPDATE advisories
+                SET is_known_exploited = 1,
+                    severity = 'critical'
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+            updated = conn.execute("SELECT * FROM advisories WHERE id = ?", (row["id"],)).fetchone()
+            enriched += 1
+            rematched += self.rematch_latest_snapshots_for_advisory(conn, advisory_import_from_row(row_to_dict(updated)))
+        return {"enriched_advisories": enriched, "rematched_impacts": rematched}
+
     def record_advisory_sync(
         self,
         source: str,
@@ -1453,6 +1480,61 @@ def seconds_since(value: str | None, now: datetime) -> int | None:
 
 def metric_label(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def advisory_import_from_row(row: dict) -> AdvisoryImport:
+    return AdvisoryImport(
+        advisory_id=row["advisory_id"],
+        source=row["source"],
+        summary=row["summary"],
+        severity=row["severity"],
+        ecosystem=row["ecosystem"],
+        package_name=row["package_name"],
+        canonical_package_name=row["canonical_package_name"],
+        affected_versions=json.loads(row["affected_versions"] or "[]"),
+        affected_ranges=json.loads(row["affected_ranges"] or "[]"),
+        fixed_version=row.get("fixed_version"),
+        is_known_exploited=bool(row["is_known_exploited"]),
+        is_malicious_package=bool(row["is_malicious_package"]),
+        published_at=row.get("published_at"),
+        modified_at=row.get("modified_at"),
+        raw_payload=json.loads(row["raw_payload"] or "{}"),
+    )
+
+
+def advisory_alias_values(row: dict | None) -> set[str]:
+    if not row:
+        return set()
+    values = {normalize_cve_id(row.get("advisory_id"))}
+    try:
+        raw_payload = json.loads(row.get("raw_payload") or "{}")
+    except (TypeError, ValueError):
+        raw_payload = {}
+    values.update(extract_cve_values(raw_payload))
+    return {value for value in values if value}
+
+
+def extract_cve_values(value) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for item in value.values():
+            found.update(extract_cve_values(item))
+        return found
+    if isinstance(value, list):
+        for item in value:
+            found.update(extract_cve_values(item))
+        return found
+    cve = normalize_cve_id(value)
+    return {cve} if cve else found
+
+
+def normalize_cve_id(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if text.startswith("CISA_KEV:"):
+        text = text.split(":", 1)[1]
+    return text if text.startswith("CVE-") else None
 
 
 def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:

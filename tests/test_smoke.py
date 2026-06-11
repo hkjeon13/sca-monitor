@@ -705,6 +705,33 @@ def test_sync_cisa_kev_catalog_from_json_file(tmp_path):
     assert app.overview()["advisory_sync"]["CISA_KEV"] == "ok"
 
 
+def test_cisa_kev_sync_enriches_matching_osv_alias_and_rematches_impacts(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "kev-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    assert app.overview()["critical_impacts"] == 0
+    assert app.search_impacts({"service_id": ["kev-service"]})["impacts"][0]["risk_level"] == "high"
+    catalog_path = tmp_path / "cisa-kev.json"
+    catalog_path.write_text(json.dumps(cisa_kev_fixture()), encoding="utf-8")
+
+    result = sync_cisa_kev_catalog(app, json_path=catalog_path, limit=1)
+
+    assert result.enriched_advisories == 1
+    assert result.rematched_impacts == 1
+    with app.db.connect() as conn:
+        advisory = conn.execute("SELECT is_known_exploited, severity FROM advisories WHERE advisory_id = 'OSV-TEST-0001'").fetchone()
+    assert advisory["is_known_exploited"] == 1
+    assert advisory["severity"] == "critical"
+    assert app.search_impacts({"service_id": ["kev-service"]})["impacts"][0]["risk_level"] == "critical"
+    assert app.overview()["critical_impacts"] == 1
+
+
 def test_advisory_sync_lock_releases_after_success(tmp_path):
     app = make_test_app(tmp_path)
 
@@ -1061,6 +1088,7 @@ def create_alerting_impact(app):
 def osv_fixture():
     return {
         "id": "OSV-TEST-0001",
+        "aliases": ["CVE-2026-0001"],
         "summary": "Fixture advisory for example-package",
         "published": "2026-01-01T00:00:00Z",
         "modified": "2026-01-02T00:00:00Z",
