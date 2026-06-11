@@ -1183,6 +1183,60 @@ def test_configure_runtime_inputs_updates_public_url_and_generates_smoke_token(t
     assert token not in result.stdout
 
 
+def test_configure_runtime_inputs_merges_database_env_file_without_leaking_urls(tmp_path):
+    env_file = tmp_path / "sca.env"
+    database_env_file = tmp_path / "database.env"
+    env_file.write_text("APP_ENV=prod\nSCA_MONITOR_PORT=18780\n", encoding="utf-8")
+    database_env_file.write_text(
+        "\n".join(
+            [
+                "MIGRATION_DATABASE_URL=postgresql://migration:secret@db.internal:5432/sca",
+                "API_DATABASE_URL=postgresql://api:secret@db.internal:5432/sca",
+                "WORKER_DATABASE_URL=postgresql://worker:secret@db.internal:5432/sca",
+                "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required",
+                "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true",
+                "SCA_MONITOR_API_AUTO_MIGRATE=false",
+                "IGNORED_DATABASE_PASSWORD=do-not-copy",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/configure_runtime_inputs.py",
+            "--env-file",
+            str(env_file),
+            "--database-env-file",
+            str(database_env_file),
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    env_text = env_file.read_text(encoding="utf-8")
+    assert payload["status"] == "ok"
+    assert payload["updated"] == [
+        "MIGRATION_DATABASE_URL",
+        "API_DATABASE_URL",
+        "WORKER_DATABASE_URL",
+        "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE",
+        "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT",
+        "SCA_MONITOR_API_AUTO_MIGRATE",
+    ]
+    assert "postgresql://migration:secret@db.internal:5432/sca" in env_text
+    assert "IGNORED_DATABASE_PASSWORD" not in env_text
+    assert "postgresql://migration:secret" not in result.stdout
+    assert "postgresql://api:secret" not in result.stdout
+    assert "postgresql://worker:secret" not in result.stdout
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1565,6 +1619,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
 
     assert "scripts/configure_runtime_inputs.py" in script
     assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
+    assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
+    assert "--database-env-file" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
@@ -1580,6 +1636,8 @@ def test_harness_documents_deployment_input_readiness():
     for text in (database_doc, cicd_doc, values_doc):
         assert "scripts/deployment_input_readiness.py" in text
     assert "--require-postgres --require-split" in values_doc
+    assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
+    assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
 
 

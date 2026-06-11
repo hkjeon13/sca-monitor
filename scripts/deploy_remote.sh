@@ -11,6 +11,7 @@ SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
 GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
+DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -21,9 +22,13 @@ ssh "$REMOTE" "set -euo pipefail
   sed -i 's/^SCA_MONITOR_PORT=.*/SCA_MONITOR_PORT=$PORT/' .env
   PUBLIC_URL_OVERRIDE='$PUBLIC_URL_OVERRIDE'
   GENERATE_SMOKE_TOKEN='$GENERATE_SMOKE_TOKEN'
+  DATABASE_ENV_FILE='$DATABASE_ENV_FILE'
   runtime_input_args=''
   if [ -n \"\$PUBLIC_URL_OVERRIDE\" ]; then
     runtime_input_args=\"\$runtime_input_args --public-url \$PUBLIC_URL_OVERRIDE\"
+  fi
+  if [ -n \"\$DATABASE_ENV_FILE\" ]; then
+    runtime_input_args=\"\$runtime_input_args --database-env-file \$DATABASE_ENV_FILE\"
   fi
   case \"\$GENERATE_SMOKE_TOKEN\" in
     true|1|yes|on)
