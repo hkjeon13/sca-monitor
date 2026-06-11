@@ -1145,11 +1145,29 @@ def test_alert_channel_create_list_redacts_target(tmp_path):
     assert created["channel"]["channel_type"] == "webhook"
     assert created["channel"]["target_configured"] is True
     assert created["channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    assert created["channel"]["placeholder_target"] is True
     assert "secret-token" not in json.dumps(created)
     channels = app.list_alert_channels()
     assert channels[0]["is_default"] is True
+    assert channels[0]["placeholder_target"] is True
     assert "secret-token" not in json.dumps(channels)
     assert app.default_alert_webhook_url() == "https://alerts.example.test/hooks/secret-token"
+
+
+def test_alert_channel_marks_non_placeholder_target_ready(tmp_path):
+    app = make_test_app(tmp_path)
+
+    created = app.create_alert_channel(
+        {
+            "name": "security-router",
+            "channel_type": "webhook",
+            "target_url": "https://alerts.internal/hooks/secret-token",
+            "is_default": True,
+        }
+    )
+
+    assert created["channel"]["target_url_masked"] == "https://alerts.internal/..."
+    assert created["channel"]["placeholder_target"] is False
 
 
 def test_alert_channel_only_one_default(tmp_path):

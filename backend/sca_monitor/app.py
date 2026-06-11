@@ -2412,12 +2412,15 @@ def sanitize_service(service: dict | None) -> dict | None:
 
 
 def sanitize_alert_channel(channel: dict | None) -> dict | None:
+    from .alert_preflight import is_placeholder_url
+
     if channel is None:
         return None
     sanitized = dict(channel)
     target_url = sanitized.pop("target_url", None)
     sanitized["target_configured"] = bool(target_url)
     sanitized["target_url_masked"] = mask_url(target_url)
+    sanitized["placeholder_target"] = is_placeholder_url(target_url)
     sanitized["enabled"] = bool(sanitized.get("enabled"))
     sanitized["is_default"] = bool(sanitized.get("is_default"))
     return sanitized
