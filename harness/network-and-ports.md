@@ -17,7 +17,7 @@
 | 목적 | 대상 | 포트 | 프로토콜 | 필수 여부 |
 |---|---|---:|---|---|
 | OSV API 보조 조회 | `api.osv.dev` | 443 | HTTPS | 필수 |
-| OSV 데이터 덤프 | `storage.googleapis.com` | 443 | HTTPS | 필수 |
+| OSV 데이터 덤프 | `osv-vulnerabilities.storage.googleapis.com` | 443 | HTTPS | 필수 |
 | CISA KEV 수집 | `www.cisa.gov` | 443 | HTTPS | 필수 |
 | GitHub Advisory / OpenSSF | `api.github.com`, `github.com`, `raw.githubusercontent.com` | 443 | HTTPS | 조건부 |
 | NVD CVE API | `services.nvd.nist.gov` | 443 | HTTPS | 조건부 |
@@ -25,6 +25,18 @@
 | 사용자 webhook | 사용자 지정 webhook endpoint | 443 | HTTPS | 조건부 |
 | Registered service polling | 각 서비스 dependency status endpoint | 443 또는 내부 포트 | HTTPS 권장 | 필수 |
 | Container registry | registry endpoint | 443 | HTTPS | 배포 시 필수 |
+
+외부 advisory source allowlist와 실제 egress 연결은 다음 preflight로 확인한다.
+기본 CI는 네트워크를 호출하지 않고 목록만 검증하며, stage/prod 배포 전에는 `--check`를 실행한다.
+
+```bash
+python3 scripts/advisory_source_preflight.py --list-only --json
+python3 scripts/advisory_source_preflight.py --check --json
+```
+
+`--check`는 OSV API, OSV dump, CISA KEV, GitHub Security Advisory, NVD CVE API, OpenSSF malicious packages source에 HTTP GET을 수행한다.
+출력에는 query string이나 token 값을 포함하지 않고 host/port, requirement reference, HTTP status만 남긴다.
+`REQ-NET-006`이 미확정이거나 방화벽 allowlist가 적용되지 않은 환경에서는 이 gate가 `blocked` 또는 `degraded`를 반환할 수 있다.
 
 ## 3. Registered Service Endpoint 접근
 

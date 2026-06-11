@@ -1347,6 +1347,103 @@ def test_database_env_dry_run_gate_rejects_placeholder_template_without_leaking_
     assert "<password>" not in result.stdout
 
 
+def test_advisory_source_preflight_lists_required_outbound_domains():
+    result = subprocess.run(
+        ["python3", "scripts/advisory_source_preflight.py", "--list-only", "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    sources = {source["id"]: source for source in payload["sources"]}
+    assert payload["status"] == "configured"
+    assert sources["OSV_API"]["host"] == "api.osv.dev"
+    assert sources["OSV_DUMP"]["host"] == "osv-vulnerabilities.storage.googleapis.com"
+    assert sources["CISA_KEV"]["host"] == "www.cisa.gov"
+    assert sources["GHSA"]["host"] == "api.github.com"
+    assert sources["NVD"]["host"] == "services.nvd.nist.gov"
+    assert sources["OpenSSF"]["host"] == "github.com"
+    assert all(source["port"] == 443 for source in sources.values())
+    assert all(source["required_by"] for source in sources.values())
+
+
+def test_advisory_source_preflight_checks_local_sources_without_secret_output(tmp_path):
+    seen_paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen_paths.append(self.path)
+            if self.path.startswith("/ok"):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            self.send_response(503)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    source_spec = tmp_path / "sources.json"
+    source_spec.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "TEST_OK",
+                    "url": f"http://127.0.0.1:{server.server_port}/ok?token=super-secret",
+                    "required_by": ["FR-009"],
+                    "required": True,
+                },
+                {
+                    "id": "TEST_FAIL",
+                    "url": f"http://127.0.0.1:{server.server_port}/fail?token=super-secret",
+                    "required_by": ["FR-010"],
+                    "required": True,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/advisory_source_preflight.py",
+                "--source-spec",
+                str(source_spec),
+                "--check",
+                "--timeout",
+                "2",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    payload = json.loads(result.stdout)
+    checks = {check["id"]: check for check in payload["checks"]}
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert checks["TEST_OK"]["status"] == "ok"
+    assert checks["TEST_FAIL"]["status"] == "blocker"
+    assert checks["TEST_OK"]["url"] == f"http://127.0.0.1:{server.server_port}/ok"
+    assert "super-secret" not in result.stdout
+    assert seen_paths == ["/ok?token=super-secret", "/fail?token=super-secret"]
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1713,6 +1810,7 @@ def test_ci_smoke_runs_core_gates():
     assert "scripts/deployment_input_readiness.py" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py" in script
+    assert "scripts/advisory_source_preflight.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "node --check frontend/app.js" in script
@@ -1757,6 +1855,17 @@ def test_harness_documents_deployment_input_readiness():
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
+
+
+def test_harness_documents_advisory_source_preflight():
+    network_doc = (REPO_ROOT / "harness" / "network-and-ports.md").read_text(encoding="utf-8")
+    cicd_doc = (REPO_ROOT / "harness" / "cicd-automation.md").read_text(encoding="utf-8")
+
+    assert "scripts/advisory_source_preflight.py --list-only --json" in network_doc
+    assert "scripts/advisory_source_preflight.py --check --json" in network_doc
+    assert "osv-vulnerabilities.storage.googleapis.com" in network_doc
+    assert "REQ-NET-006" in network_doc
+    assert "scripts/advisory_source_preflight.py --list-only --json" in cicd_doc
 
 
 def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):

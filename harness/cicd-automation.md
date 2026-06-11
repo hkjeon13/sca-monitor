@@ -57,6 +57,8 @@ bash scripts/ci_smoke.sh
 
 GitHub Actions에서는 `.github/workflows/ci.yml`이 `pull_request`와 `main` push에서 같은 entrypoint를 실행한다.
 이 workflow는 PostgreSQL 16 service container를 붙여 `scripts/postgres_integration_smoke.py --with-api-workflow`를 실행하고, public URL smoke는 배포 환경이 아니므로 비활성화한다.
+기본 CI smoke는 외부 네트워크 호출 없이 `python3 scripts/advisory_source_preflight.py --list-only --json`으로 advisory source allowlist 계약만 검증한다.
+stage/prod 배포 전 실제 outbound 검증은 `python3 scripts/advisory_source_preflight.py --check --json`으로 실행한다.
 
 Docker 기반 PostgreSQL adapter/API workflow smoke를 필수로 강제하려면 다음처럼 실행한다.
 
