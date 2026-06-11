@@ -241,7 +241,7 @@ class ScaMonitorApp:
                 ON CONFLICT(service_id, environment) DO UPDATE SET
                     service_name=excluded.service_name,
                     owner_team=excluded.owner_team,
-                    status_endpoint_url=excluded.status_endpoint_url,
+                    status_endpoint_url=COALESCE(excluded.status_endpoint_url, services.status_endpoint_url),
                     collection_mode=excluded.collection_mode,
                     internet_facing=excluded.internet_facing,
                     business_criticality=excluded.business_criticality,
@@ -368,6 +368,16 @@ class ScaMonitorApp:
         return {"credential": credential}
 
     def test_service_endpoint(self, service_id: str, body: dict, fetcher=None) -> dict:
+        collected = self.collect_service_endpoint_payload(service_id, body, fetcher)
+        return {
+            "service_id": service_id,
+            "environment": collected["environment"],
+            "endpoint_url": collected["endpoint_url"],
+            "collection_status": "ok",
+            "freshness_status": "fresh",
+        }
+
+    def collect_service_endpoint_payload(self, service_id: str, body: dict, fetcher=None) -> dict:
         environment = body.get("environment", "prod")
         with self.db.connect() as conn:
             service = conn.execute(
@@ -394,7 +404,7 @@ class ScaMonitorApp:
             self.record_endpoint_health(service["id"], "invalid_response", "stale", "invalid_response", str(exc))
             raise
         self.record_endpoint_health(service["id"], "ok", "fresh", None, None, success=True)
-        return {"service_id": service_id, "environment": environment, "endpoint_url": endpoint_url, "collection_status": "ok", "freshness_status": "fresh"}
+        return {"service_id": service_id, "environment": environment, "endpoint_url": endpoint_url, "payload": payload}
 
     def validate_endpoint_payload(self, payload: dict, service_id: str, environment: str) -> None:
         if not isinstance(payload, dict):

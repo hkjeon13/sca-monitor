@@ -42,7 +42,7 @@
 | REQ-AUTH-002 | 역할 모델 | ASSUMED | `admin`, `service-owner`, `security-approver`, `viewer` |
 | REQ-AUTH-003 | 서비스 owner 매핑 | REQUIRED | team/user 정보를 어디서 가져올지 결정 |
 | REQ-AUTH-004 | push credential 발급 | PARTIAL | API/UI 발급, revoke, service/environment 바인딩 검증은 구현됨. CI/CD secret 주입과 rotation 운영 방식 결정 필요 |
-| REQ-AUTH-005 | endpoint polling 인증 | PARTIAL | endpoint test API/UI와 schema 검증은 구현됨. bearer token, mTLS, HMAC 중 운영 인증 범위와 저장 방식 결정 필요 |
+| REQ-AUTH-005 | endpoint polling 인증 | PARTIAL | endpoint test API/UI, schema 검증, 1회 polling worker는 구현됨. bearer token, mTLS, HMAC 중 운영 인증 범위, 저장 방식, scheduler 설정 결정 필요 |
 
 ## 4. 외부 데이터 소스 요구사항
 

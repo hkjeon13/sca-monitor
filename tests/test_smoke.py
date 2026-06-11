@@ -5,6 +5,7 @@ import pytest
 
 from backend.sca_monitor.alert_dispatch import dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
+from backend.sca_monitor.endpoint_poll import poll_configured_endpoints
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp
@@ -161,6 +162,67 @@ def test_service_endpoint_test_records_invalid_response(tmp_path):
         assert row["collection_status"] == "invalid_response"
         assert row["freshness_status"] == "stale"
         assert row["last_error_code"] == "invalid_response"
+
+
+def test_poll_configured_endpoints_pushes_endpoint_snapshot(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "collection_mode": "poll",
+        }
+    )
+
+    result = poll_configured_endpoints(
+        app,
+        fetcher=lambda url, auth_header=None: {
+            "schema_version": "1.0",
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "generated_at": "2026-06-11T00:00:00Z",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result.checked == 1
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert result.snapshots_created_or_updated == 1
+    service = app.list_services()[0]
+    assert service["status_endpoint_url"] == "https://endpoint.example.test/dependencies"
+    assert service["collection_status"] == "ok"
+    assert app.list_impacts({"service_id": ["endpoint-service"]})[0]["package_name"] == "lodash"
+
+
+def test_poll_configured_endpoints_counts_failed_endpoint(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "collection_mode": "poll",
+        }
+    )
+
+    result = poll_configured_endpoints(
+        app,
+        fetcher=lambda url, auth_header=None: {
+            "schema_version": "1.0",
+            "service_id": "other-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result.checked == 1
+    assert result.succeeded == 0
+    assert result.failed == 1
+    assert app.list_services()[0]["collection_status"] == "invalid_response"
 
 
 def test_parse_osv_advisory_fixture():
