@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument("--interval-seconds", type=float, default=0, help="Sleep interval between iterations")
     args = parser.parse_args()
 
-    app = ScaMonitorApp(load_settings())
+    app = ScaMonitorApp(load_settings(component="worker"))
     iteration = 0
     results = []
     while args.iterations == 0 or iteration < args.iterations:

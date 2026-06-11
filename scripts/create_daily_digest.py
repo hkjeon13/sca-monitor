@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument("--timezone", default="Asia/Seoul", help="Timezone used to derive the digest date")
     args = parser.parse_args()
 
-    app = ScaMonitorApp(load_settings())
+    app = ScaMonitorApp(load_settings(component="worker"))
     result = app.enqueue_daily_digest_alert(
         now=args.now,
         digest_date=args.date,

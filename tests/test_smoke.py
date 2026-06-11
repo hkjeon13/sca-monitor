@@ -17,7 +17,7 @@ from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configure
 from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp, advisory_import_from_row
-from backend.sca_monitor.config import Settings
+from backend.sca_monitor.config import Settings, load_settings
 from backend.sca_monitor.osv import parse_osv_advisories
 from backend.sca_monitor.versioning import version_is_affected
 
@@ -107,6 +107,26 @@ def test_sqlite_migration_records_version(tmp_path):
         snapshot_columns = {row["name"] for row in conn.execute("PRAGMA table_info(dependency_snapshots)").fetchall()}
         assert "last_confirmed_at" in snapshot_columns
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_push_rate_limits'").fetchone()
+
+
+def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)
+    monkeypatch.setenv("API_DATABASE_URL", "sqlite:////tmp/sca-api.sqlite3")
+    monkeypatch.setenv("WORKER_DATABASE_URL", "sqlite:////tmp/sca-worker.sqlite3")
+
+    assert load_settings(component="api").database_url == "sqlite:////tmp/sca-api.sqlite3"
+    assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-worker.sqlite3"
+
+
+def test_load_settings_global_database_url_overrides_component_urls(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SCA_MONITOR_DATABASE_URL", "sqlite:////tmp/sca-global.sqlite3")
+    monkeypatch.setenv("API_DATABASE_URL", "sqlite:////tmp/sca-api.sqlite3")
+    monkeypatch.setenv("WORKER_DATABASE_URL", "sqlite:////tmp/sca-worker.sqlite3")
+
+    assert load_settings(component="api").database_url == "sqlite:////tmp/sca-global.sqlite3"
+    assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-global.sqlite3"
 
 
 def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
@@ -616,6 +636,36 @@ def test_deploy_db_gate_runs_sqlite_smoke(tmp_path):
     )
 
     assert "db smoke ok: backend=sqlite" in result.stdout
+
+
+def test_deploy_db_gate_checks_worker_database_url_when_split(tmp_path):
+    api_database_url = f"sqlite:///{tmp_path / 'sca-api.sqlite3'}"
+    worker_database_url = f"sqlite:///{tmp_path / 'sca-worker.sqlite3'}"
+    base_env = {**os.environ, "SCA_MONITOR_DATA_DIR": str(tmp_path)}
+    for database_url in (api_database_url, worker_database_url):
+        subprocess.run(
+            ["python3", "scripts/migrate.py"],
+            cwd=REPO_ROOT,
+            env={**base_env, "SCA_MONITOR_DATABASE_URL": database_url},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_db_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            **base_env,
+            "API_DATABASE_URL": api_database_url,
+            "WORKER_DATABASE_URL": worker_database_url,
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.count("db smoke ok: backend=sqlite") == 2
 
 
 def test_deploy_db_gate_rejects_invalid_postgres_smoke_mode(tmp_path):

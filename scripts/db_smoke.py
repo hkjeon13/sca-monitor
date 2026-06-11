@@ -71,7 +71,13 @@ def run_smoke(database: Database, *, write_check: bool = True) -> dict[str, Any]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run SCA Monitor database connectivity and schema smoke checks.")
-    parser.add_argument("--database-url", help="Override SCA_MONITOR_DATABASE_URL/API_DATABASE_URL for this check.")
+    parser.add_argument("--database-url", help="Override configured database URL for this check.")
+    parser.add_argument(
+        "--component",
+        choices=("api", "worker"),
+        default="api",
+        help="Configured database role to check when --database-url is not provided.",
+    )
     parser.add_argument("--read-only", action="store_true", help="Skip transactional write/rollback check.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
@@ -79,7 +85,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    settings = load_settings()
+    settings = load_settings(component=args.component)
     database = Database(args.database_url or settings.database_url)
     try:
         result = run_smoke(database, write_check=not args.read_only)

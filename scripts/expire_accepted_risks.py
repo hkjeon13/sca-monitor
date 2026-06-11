@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument("--now", default=None, help="Override current time for testing, as ISO-8601")
     args = parser.parse_args()
 
-    app = ScaMonitorApp(load_settings())
+    app = ScaMonitorApp(load_settings(component="worker"))
     result = app.expire_accepted_risks(now=args.now, limit=args.limit, dry_run=args.dry_run, actor=args.actor)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

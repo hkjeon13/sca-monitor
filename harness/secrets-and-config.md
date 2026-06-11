@@ -25,11 +25,15 @@ WORKER_DATABASE_URL
 ENCRYPTION_KEY_REF
 ```
 
-현재 MVP는 `SCA_MONITOR_DATABASE_URL`을 우선 사용하고, 값이 없으면 `API_DATABASE_URL`을 사용한다.
+현재 MVP는 `SCA_MONITOR_DATABASE_URL`을 우선 사용한다.
+이 값이 없으면 API runtime은 `API_DATABASE_URL`, worker/scheduler runtime은 `WORKER_DATABASE_URL`을 우선 사용한다.
 PostgreSQL 전환 전 임시값은 SQLite URL이다.
 
 ```text
 SCA_MONITOR_DATABASE_URL=sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3
+# PostgreSQL 계정 분리 시에는 SCA_MONITOR_DATABASE_URL을 비우고 아래 값을 사용한다.
+API_DATABASE_URL=postgresql://sca_api:...
+WORKER_DATABASE_URL=postgresql://sca_worker:...
 ```
 
 `SCA_MONITOR_DB`는 이전 MVP 호환용 path 설정으로만 유지한다.
@@ -81,6 +85,7 @@ SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=auto
 
 `auto`는 PostgreSQL DB URL일 때만 integration smoke를 실행한다.
 `required`는 DB URL 종류와 관계없이 실행을 강제하며, `disabled`는 임시 비활성화에만 사용한다.
+`WORKER_DATABASE_URL`이 별도로 설정되고 `SCA_MONITOR_DATABASE_URL`이 비어 있으면 `deploy_db_gate.sh`는 API DB smoke 이후 worker DB read-only smoke를 추가 실행한다.
 
 ### Worker
 

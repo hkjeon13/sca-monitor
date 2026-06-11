@@ -4,7 +4,10 @@ set -euo pipefail
 MODE="${SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE:-auto}"
 DATABASE_URL="${SCA_MONITOR_DATABASE_URL:-${API_DATABASE_URL:-}}"
 
-python3 scripts/db_smoke.py
+python3 scripts/db_smoke.py --component api
+if [ -n "${WORKER_DATABASE_URL:-}" ] && [ -z "${SCA_MONITOR_DATABASE_URL:-}" ]; then
+  python3 scripts/db_smoke.py --component worker --read-only
+fi
 
 case "$MODE" in
   disabled|skip|false|0)

@@ -13,7 +13,8 @@ Access: API/worker private network only
 ```
 
 현재 MVP 배포는 PostgreSQL 전환 전 단계로 SQLite fallback을 사용한다.
-애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 `API_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 SQLite URL을 구성한다.
+애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 API runtime은 `API_DATABASE_URL`, worker/scheduler runtime은 `WORKER_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 DB URL을 구성한다.
+PostgreSQL 계정 분리를 활성화하려면 `SCA_MONITOR_DATABASE_URL`을 비우고 `API_DATABASE_URL`/`WORKER_DATABASE_URL`을 각각 설정한다.
 
 ```text
 Temporary fallback: sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3

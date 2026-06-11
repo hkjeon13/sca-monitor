@@ -21,12 +21,16 @@ class Settings:
     max_snapshot_pushes_per_minute: int = 30
 
 
-def load_settings() -> Settings:
+def load_settings(component: str = "api") -> Settings:
     data_dir = Path(os.getenv("SCA_MONITOR_DATA_DIR", ".data")).resolve()
     frontend_dir = Path(os.getenv("SCA_MONITOR_FRONTEND_DIR", "frontend")).resolve()
     legacy_database_path = Path(os.getenv("SCA_MONITOR_DB", str(data_dir / "sca-monitor.sqlite3"))).resolve()
+    if component not in {"api", "worker"}:
+        raise ValueError(f"unsupported settings component: {component}")
+    component_database_url = os.getenv("WORKER_DATABASE_URL" if component == "worker" else "API_DATABASE_URL")
     database_url = (
         os.getenv("SCA_MONITOR_DATABASE_URL")
+        or component_database_url
         or os.getenv("API_DATABASE_URL")
         or f"sqlite:///{legacy_database_path}"
     )

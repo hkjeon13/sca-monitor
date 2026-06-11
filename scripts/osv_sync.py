@@ -28,7 +28,7 @@ def main() -> None:
     parser.add_argument("--lock-ttl-seconds", type=int, default=3600, help="Sync lock time-to-live in seconds")
     args = parser.parse_args()
 
-    app = ScaMonitorApp(load_settings())
+    app = ScaMonitorApp(load_settings(component="worker"))
     result = sync_osv_ecosystem_dump(
         app,
         args.ecosystem,
