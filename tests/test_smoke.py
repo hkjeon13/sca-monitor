@@ -842,6 +842,89 @@ def test_header_auth_service_owner_bulk_requires_owned_team_filter(tmp_path):
     assert result["updated"] == 1
 
 
+def test_header_auth_admin_required_for_service_registration_and_credentials(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    owner_headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+    admin_headers = {"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"}
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/services",
+            method="POST",
+            body={"service_id": "admin-service", "environment": "prod", "owner_team": "platform"},
+            headers=owner_headers,
+            expect_status=403,
+        )
+        created = http_json(
+            f"{base_url}/api/v1/services",
+            method="POST",
+            body={"service_id": "admin-service", "environment": "prod", "owner_team": "platform"},
+            headers=admin_headers,
+            expect_status=201,
+        )
+        credential_forbidden = http_json(
+            f"{base_url}/api/v1/services/admin-service/push-credentials",
+            method="POST",
+            body={"environment": "prod"},
+            headers=owner_headers,
+            expect_status=403,
+        )
+        credential = http_json(
+            f"{base_url}/api/v1/services/admin-service/push-credentials",
+            method="POST",
+            body={"environment": "prod"},
+            headers=admin_headers,
+            expect_status=201,
+        )
+        revoked = http_json(
+            f"{base_url}/api/v1/services/admin-service/push-credentials/{credential['credential']['id']}/revoke",
+            method="POST",
+            body={"environment": "prod", "actor": "spoofed"},
+            headers=admin_headers,
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert created["service"]["service_id"] == "admin-service"
+    assert "admin role" in credential_forbidden["error"]
+    assert credential["credential"]["service_id"] == "admin-service"
+    assert revoked["credential"]["revoked_at"] is not None
+
+
+def test_header_auth_admin_required_for_alert_channel_changes(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    owner_headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+    admin_headers = {"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"}
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/settings/alert-channels",
+            method="POST",
+            body={"name": "ops", "target_url": "https://alerts.example.test/hooks/ops"},
+            headers=owner_headers,
+            expect_status=403,
+        )
+        created = http_json(
+            f"{base_url}/api/v1/settings/alert-channels",
+            method="POST",
+            body={"name": "ops", "target_url": "https://alerts.example.test/hooks/ops", "actor": "spoofed"},
+            headers=admin_headers,
+            expect_status=201,
+        )
+        updated = http_json(
+            f"{base_url}/api/v1/settings/alert-channels/{created['channel']['id']}",
+            method="PATCH",
+            body={"enabled": False, "actor": "spoofed", "reason": "header auth update"},
+            headers=admin_headers,
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert created["channel"]["name"] == "ops"
+    assert updated["channel"]["enabled"] is False
+    audit = app.search_audit_logs({"target_type": ["alert_channel"], "target_id": [created["channel"]["id"]]})
+    assert audit["pagination"]["total"] == 2
+    assert {item["actor"] for item in audit["audit_logs"]} == {"admin@example.test"}
+
+
 def test_expire_accepted_risks_reopens_due_impacts_and_audits(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

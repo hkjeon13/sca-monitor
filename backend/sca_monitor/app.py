@@ -100,28 +100,46 @@ class ScaMonitorApp:
             if path == "/api/v1/services" and method == "GET":
                 return self.json_response(request, {"services": self.list_services()})
             if path == "/api/v1/services" and method == "POST":
-                return self.json_response(request, self.create_service(self.read_json(request)), HTTPStatus.CREATED)
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "service registration requires admin role")
+                return self.json_response(request, self.create_service(self.apply_authenticated_actor(body, auth_context)), HTTPStatus.CREATED)
             if path == "/api/v1/settings/alert-channels" and method == "GET":
                 return self.json_response(request, {"channels": self.list_alert_channels()})
             if path == "/api/v1/settings/alert-channels" and method == "POST":
-                return self.json_response(request, self.create_alert_channel(self.read_json(request)), HTTPStatus.CREATED)
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "alert channel changes require admin role")
+                return self.json_response(request, self.create_alert_channel(self.apply_authenticated_actor(body, auth_context)), HTTPStatus.CREATED)
             if path.startswith("/api/v1/settings/alert-channels/") and method == "PATCH":
                 channel_id = path.split("/")[-1]
-                return self.json_response(request, self.update_alert_channel(channel_id, self.read_json(request)))
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "alert channel changes require admin role")
+                return self.json_response(request, self.update_alert_channel(channel_id, self.apply_authenticated_actor(body, auth_context)))
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "GET":
                 service_id = path.split("/")[-2]
                 return self.json_response(request, {"credentials": self.list_push_credentials(service_id, parse_qs(parsed.query))})
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "POST":
                 service_id = path.split("/")[-2]
-                return self.json_response(request, self.create_push_credential(service_id, self.read_json(request)), HTTPStatus.CREATED)
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "push credential changes require admin role")
+                return self.json_response(request, self.create_push_credential(service_id, self.apply_authenticated_actor(body, auth_context)), HTTPStatus.CREATED)
             if path.startswith("/api/v1/services/") and "/push-credentials/" in path and path.endswith("/revoke") and method == "POST":
                 parts = path.split("/")
                 service_id = parts[-4]
                 credential_id = parts[-2]
-                return self.json_response(request, self.revoke_push_credential(service_id, credential_id, self.read_json(request)))
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "push credential changes require admin role")
+                return self.json_response(request, self.revoke_push_credential(service_id, credential_id, self.apply_authenticated_actor(body, auth_context)))
             if path.startswith("/api/v1/services/") and path.endswith("/endpoint/test") and method == "POST":
                 service_id = path.split("/")[-3]
-                return self.json_response(request, self.test_service_endpoint(service_id, self.read_json(request)))
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "endpoint test requires admin role")
+                return self.json_response(request, self.test_service_endpoint(service_id, self.apply_authenticated_actor(body, auth_context)))
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
@@ -235,6 +253,11 @@ class ScaMonitorApp:
         updated = dict(body)
         updated["actor"] = auth_context["principal"]
         return updated
+
+    def authorize_admin(self, auth_context: dict, message: str = "admin role is required") -> None:
+        if not auth_context.get("enabled"):
+            return
+        self.require_role(auth_context, {"admin"}, message)
 
     def authorize_impact_status(self, impact_id: str, body: dict, auth_context: dict) -> None:
         if not auth_context.get("enabled"):
