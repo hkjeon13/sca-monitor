@@ -1262,6 +1262,31 @@ def test_postgres_integration_smoke_can_skip_migrate_and_write(monkeypatch):
     assert calls == {"migrate": 0, "write_check": False}
 
 
+def test_postgres_container_readiness_waits_for_pg_isready(monkeypatch):
+    import scripts.postgres_integration_smoke as pg_smoke
+
+    calls = []
+
+    class Result:
+        def __init__(self, returncode):
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = ""
+
+    def fake_run_command(args, *, check=True):
+        calls.append(args)
+        return Result(1 if len(calls) == 1 else 0)
+
+    monkeypatch.setattr(pg_smoke, "run_command", fake_run_command)
+    monkeypatch.setattr(pg_smoke.time, "sleep", lambda _: None)
+
+    assert pg_smoke.wait_for_postgres_container("pg", "user", "db", 5) is True
+    assert calls == [
+        ["docker", "exec", "pg", "pg_isready", "-U", "user", "-d", "db"],
+        ["docker", "exec", "pg", "pg_isready", "-U", "user", "-d", "db"],
+    ]
+
+
 def test_postgres_production_preflight_checks_split_roles(monkeypatch):
     import scripts.postgres_integration_smoke as pg_smoke
 

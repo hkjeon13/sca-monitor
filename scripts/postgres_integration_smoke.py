@@ -44,6 +44,24 @@ def run_command(args: list[str], *, check: bool = True) -> subprocess.CompletedP
     return subprocess.run(args, check=check, capture_output=True, text=True)
 
 
+def wait_for_postgres_container(container_name: str, user: str, database: str, timeout_seconds: int) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        result = run_command(
+            ["docker", "exec", container_name, "pg_isready", "-U", user, "-d", database],
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def docker_logs(container_name: str) -> str:
+    result = run_command(["docker", "logs", "--tail", "80", container_name], check=False)
+    return (result.stdout + result.stderr).strip()
+
+
 def docker_database_url(port: int, user: str, password: str, database: str) -> str:
     return f"postgresql://{user}:{password}@127.0.0.1:{port}/{database}"
 
@@ -74,6 +92,10 @@ def start_postgres_container(args: argparse.Namespace) -> tuple[str, str]:
     )
     if not wait_for_tcp("127.0.0.1", port, args.timeout_seconds):
         raise RuntimeError(f"PostgreSQL container did not accept TCP connections within {args.timeout_seconds}s")
+    if not wait_for_postgres_container(container_name, args.user, args.database, args.timeout_seconds):
+        logs = docker_logs(container_name)
+        detail = f": {logs}" if logs else ""
+        raise RuntimeError(f"PostgreSQL container did not become ready within {args.timeout_seconds}s{detail}")
     return container_name, docker_database_url(port, args.user, args.password, args.database)
 
 
