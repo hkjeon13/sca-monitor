@@ -403,18 +403,39 @@ def load_nvd_modified_cve_ids(
     api_key: str | None = None,
     timeout_seconds: int = 60,
     json_path: Path | None = None,
+    results_per_page: int = 2000,
 ) -> list[str]:
     if not last_mod_start or not last_mod_end:
         raise ValueError("last_mod_start and last_mod_end are required")
     if json_path is not None:
         return nvd_cve_ids_from_payload(json.loads(json_path.read_text(encoding="utf-8")))
-    query = {"lastModStartDate": last_mod_start, "lastModEndDate": last_mod_end}
+    if results_per_page <= 0:
+        raise ValueError("results_per_page must be greater than 0")
     headers = {"Accept": "application/json", "User-Agent": "sca-monitor/0.1"}
     if api_key:
         headers["apiKey"] = api_key
-    request = Request(f"{api_url}?{urlencode(query)}", headers=headers)
-    with urlopen(request, timeout=timeout_seconds) as response:
-        return nvd_cve_ids_from_payload(json.loads(response.read().decode("utf-8")))
+    cve_ids: list[str] = []
+    seen: set[str] = set()
+    start_index = 0
+    while True:
+        query = {
+            "lastModStartDate": last_mod_start,
+            "lastModEndDate": last_mod_end,
+            "startIndex": start_index,
+            "resultsPerPage": results_per_page,
+        }
+        request = Request(f"{api_url}?{urlencode(query)}", headers=headers)
+        with urlopen(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        for cve_id in nvd_cve_ids_from_payload(payload):
+            if cve_id not in seen:
+                seen.add(cve_id)
+                cve_ids.append(cve_id)
+        page_size = int(payload.get("resultsPerPage") or 0)
+        total_results = int(payload.get("totalResults") or 0)
+        start_index = int(payload.get("startIndex") or start_index) + page_size
+        if page_size <= 0 or start_index >= total_results:
+            return cve_ids
 
 
 def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:

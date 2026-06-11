@@ -78,7 +78,7 @@ python3 scripts/ghsa_sync.py --limit 100 --lock-ttl-seconds 3600
 python3 scripts/ghsa_sync.py --type malware --limit 100 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py CVE-2026-0001 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100 --lock-ttl-seconds 3600
-python3 scripts/nvd_cve_sync.py --use-cursor --lookback-hours 24 --limit 100 --lock-ttl-seconds 3600
+python3 scripts/nvd_cve_sync.py --use-cursor --lookback-hours 24 --modified-results-per-page 2000 --limit 100 --lock-ttl-seconds 3600
 python3 scripts/merge_canonical_advisories.py --dry-run --limit 100
 python3 scripts/backfill_canonical_impact_keys.py --dry-run --limit 100
 ```

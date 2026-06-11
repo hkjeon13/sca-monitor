@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--use-cursor", action="store_true", help="Use advisory_sync_state.cursor as lastModStartDate when --last-mod-start is omitted.")
     parser.add_argument("--lookback-hours", type=float, default=24.0, help="Fallback modified-window lookback when --use-cursor has no timestamp cursor.")
     parser.add_argument("--modified-json-path", type=Path, default=None, help="Read a local NVD modified-window response JSON instead of discovering candidates remotely")
+    parser.add_argument("--modified-results-per-page", type=int, default=2000, help="NVD modified-window page size for remote candidate discovery.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum CVE ids to process from arguments/list")
     parser.add_argument(
         "--delay-seconds",
@@ -65,6 +66,7 @@ def main() -> None:
                 api_url=args.api_url,
                 api_key=args.api_key,
                 json_path=args.modified_json_path,
+                results_per_page=args.modified_results_per_page,
             )
         )
     if args.json_path:

@@ -7,6 +7,7 @@ import zipfile
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -3968,6 +3969,57 @@ def test_nvd_modified_window_extracts_deduped_cve_ids(tmp_path):
     ) == ["CVE-2026-0001", "CVE-2026-0002"]
 
 
+def test_nvd_modified_window_fetches_all_pages(monkeypatch):
+    requests = []
+    pages = {
+        0: {
+            "resultsPerPage": 1,
+            "startIndex": 0,
+            "totalResults": 2,
+            "vulnerabilities": [nvd_cve_fixture("CVE-2026-0001")["vulnerabilities"][0]],
+        },
+        1: {
+            "resultsPerPage": 1,
+            "startIndex": 1,
+            "totalResults": 2,
+            "vulnerabilities": [nvd_cve_fixture("CVE-2026-0002")["vulnerabilities"][0]],
+        },
+    }
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        parsed = urlparse(request.full_url)
+        query = parse_qs(parsed.query)
+        start_index = int(query.get("startIndex", ["0"])[0])
+        requests.append({"timeout": timeout, "query": query})
+        return FakeResponse(pages[start_index])
+
+    monkeypatch.setattr("backend.sca_monitor.advisory_sync.urlopen", fake_urlopen)
+
+    cve_ids = load_nvd_modified_cve_ids(
+        last_mod_start="2026-01-01T00:00:00.000",
+        last_mod_end="2026-01-02T00:00:00.000",
+        api_url="https://nvd.example.test/rest/json/cves/2.0",
+        timeout_seconds=7,
+    )
+
+    assert cve_ids == ["CVE-2026-0001", "CVE-2026-0002"]
+    assert [request["query"].get("startIndex", ["0"])[0] for request in requests] == ["0", "1"]
+    assert all(request["timeout"] == 7 for request in requests)
+
+
 def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
     app = make_test_app(tmp_path)
     json_path = tmp_path / "nvd-cve.json"
@@ -4227,6 +4279,77 @@ def test_nvd_cve_sync_cli_imports_modified_window_candidates_from_json(tmp_path)
     assert payload["processed"] == 2
     assert payload["imported_rows"] == 2
     assert [item["cve_id"] for item in payload["results"]] == ["CVE-2026-0001", "CVE-2026-0002"]
+
+
+def test_nvd_cve_sync_cli_imports_paginated_modified_window(tmp_path):
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    first = nvd_cve_fixture("CVE-2026-0001")
+    second = nvd_cve_fixture("CVE-2026-0002", product="example-client", severity="HIGH")
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(first), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(json.dumps(second), encoding="utf-8")
+    seen_queries = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            query = parse_qs(urlparse(self.path).query)
+            seen_queries.append(query)
+            start_index = int(query.get("startIndex", ["0"])[0])
+            vulnerabilities = [first["vulnerabilities"][0]] if start_index == 0 else [second["vulnerabilities"][0]]
+            body = json.dumps(
+                {
+                    "resultsPerPage": 1,
+                    "startIndex": start_index,
+                    "totalResults": 2,
+                    "vulnerabilities": vulnerabilities,
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    database_url = f"sqlite:///{tmp_path / 'nvd-paginated-modified-cli.sqlite3'}"
+
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/nvd_cve_sync.py",
+                "--api-url",
+                f"http://{host}:{port}/rest/json/cves/2.0",
+                "--last-mod-start",
+                "2026-06-01T00:00:00.000",
+                "--last-mod-end",
+                "2026-06-02T00:00:00.000",
+                "--modified-results-per-page",
+                "1",
+                "--json-dir",
+                str(json_dir),
+            ],
+            cwd=REPO_ROOT,
+            env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    payload = json.loads(result.stdout)
+    assert payload["processed"] == 2
+    assert [item["cve_id"] for item in payload["results"]] == ["CVE-2026-0001", "CVE-2026-0002"]
+    assert [query["startIndex"][0] for query in seen_queries] == ["0", "1"]
+    assert [query["resultsPerPage"][0] for query in seen_queries] == ["1", "1"]
 
 
 def test_nvd_cve_sync_cli_stores_modified_window_end_cursor(tmp_path):
