@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run live PostgreSQL production preflight against configured split credentials.",
     )
+    parser.add_argument("--output", help="Optional path to write the sanitized JSON report with mode 0600.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -109,6 +110,20 @@ def report(
     }
 
 
+def write_report(path: Path, result: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+    finally:
+        try:
+            os.chmod(path, 0o600)
+        except FileNotFoundError:
+            pass
+
+
 def main() -> int:
     args = parse_args()
     result = report(
@@ -120,6 +135,8 @@ def main() -> int:
         require_runtime_inputs=args.require_runtime_inputs,
         run_live_preflight=args.run_production_preflight,
     )
+    if args.output:
+        write_report(Path(args.output), result)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

@@ -238,6 +238,20 @@ scripts/deploy_remote.sh
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
 `scripts/cutover_readiness_report.py`는 runtime `.env`, protected PostgreSQL env file, backup restore-check, 선택적 production preflight 결과를 하나의 sanitized JSON으로 묶어 운영 전환 증적으로 사용한다.
 이 report는 DB URL 원문, password, backup 원본 경로를 출력하지 않는다.
+원격 배포 자동화에서 migration 직전 report artifact를 남기려면 다음 입력을 사용한다.
+
+```bash
+SCA_MONITOR_CUTOVER_READINESS_REPORT=required \
+SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH=.data/cutover-readiness-report.json \
+SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required \
+SCA_MONITOR_VERIFY_BACKUP_RESTORE=required \
+scripts/deploy_remote.sh
+```
+
+실제 PostgreSQL split credential cutover stage에서는 `SCA_MONITOR_DATABASE_ENV_FILE`과 함께
+`SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES=true`,
+`SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_SPLIT=true`를 설정해 report가 SQLite fallback 상태를 성공 증적으로 오해하지 않게 한다.
+필요하면 `SCA_MONITOR_CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT=true`로 report 생성 중 live PostgreSQL production preflight도 포함한다.
 `MIGRATION_DATABASE_URL`이 설정되면 migration owner URL로 migration smoke를 실행하고, `API_DATABASE_URL`은 `--skip-migrate` runtime smoke, `WORKER_DATABASE_URL`은 `--skip-migrate --read-only` smoke로 분리 검증한다.
 `--production-preflight`는 split credential 운영 전환 직전에 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`을 한 번에 검증한다. migration role은 migration과 transactional write/rollback smoke를 수행하고, API/worker role은 migrate 없이 read-only schema smoke만 수행한다.
 `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required`이면 `deploy_db_gate.sh`는 smoke 실행 전에 `scripts/postgres_cutover_readiness.py --require-postgres`를 stop gate로 실행한다.

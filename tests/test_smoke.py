@@ -1797,6 +1797,37 @@ def test_cutover_readiness_report_combines_inputs_without_leaking_secrets(tmp_pa
     assert str(backup_path) not in result.stdout
     assert "sqlite:///" not in result.stdout
 
+    output_path = tmp_path / "cutover-report.json"
+    output_result = subprocess.run(
+        [
+            "python3",
+            "scripts/cutover_readiness_report.py",
+            "--env-file",
+            str(env_file),
+            "--database-env-file",
+            str(database_env_file),
+            "--backup-path",
+            str(backup_path),
+            "--require-postgres",
+            "--require-split",
+            "--require-runtime-inputs",
+            "--json",
+            "--output",
+            str(output_path),
+        ],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    written_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written_payload == json.loads(output_result.stdout)
+    assert output_path.stat().st_mode & 0o777 == 0o600
+    assert "postgresql://migration:secret" not in output_path.read_text(encoding="utf-8")
+    assert str(backup_path) not in output_path.read_text(encoding="utf-8")
+
 
 def test_prepare_database_env_file_creates_protected_placeholder_without_overwrite(tmp_path):
     target = tmp_path / ".secrets" / "postgres.env"
@@ -2441,6 +2472,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
+    assert "SCA_MONITOR_CUTOVER_READINESS_REPORT" in script
+    assert "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH" in script
     assert "--database-env-file" in script
     assert "scripts/prepare_database_env_file.py --database-env-file" in script
     assert "database env file prepared; edit it before enabling PostgreSQL cutover" in script
@@ -2454,6 +2487,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/backup_database.py --json" in script
     assert "scripts/verify_backup_restore.py --backup-path" in script
     assert "scripts/postgres_integration_smoke.py --production-preflight --json" in script
+    assert "scripts/cutover_readiness_report.py" in script
+    assert "--output" in script
     assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2466,6 +2501,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/verify_backup_restore.py --backup-path") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/postgres_integration_smoke.py --production-preflight --json") < script.index("python3 scripts/migrate.py")
+    assert script.index("scripts/cutover_readiness_report.py") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
 
@@ -2494,6 +2530,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE=required" in database_doc
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
+    assert "SCA_MONITOR_CUTOVER_READINESS_REPORT=required" in database_doc
+    assert "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc

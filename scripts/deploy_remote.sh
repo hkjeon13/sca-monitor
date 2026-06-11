@@ -25,6 +25,11 @@ EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
 BACKUP_BEFORE_MIGRATION="${SCA_MONITOR_BACKUP_BEFORE_MIGRATION:-auto}"
 VERIFY_BACKUP_RESTORE="${SCA_MONITOR_VERIFY_BACKUP_RESTORE:-auto}"
 POSTGRES_PRODUCTION_PREFLIGHT="${SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT:-disabled}"
+CUTOVER_READINESS_REPORT="${SCA_MONITOR_CUTOVER_READINESS_REPORT:-disabled}"
+CUTOVER_READINESS_REPORT_PATH="${SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH:-.data/cutover-readiness-report.json}"
+CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES="${SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES:-false}"
+CUTOVER_READINESS_REPORT_REQUIRE_SPLIT="${SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_SPLIT:-false}"
+CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT="${SCA_MONITOR_CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT:-false}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -120,6 +125,11 @@ ssh "$REMOTE" "set -euo pipefail
   BACKUP_BEFORE_MIGRATION='$BACKUP_BEFORE_MIGRATION'
   VERIFY_BACKUP_RESTORE='$VERIFY_BACKUP_RESTORE'
   POSTGRES_PRODUCTION_PREFLIGHT='$POSTGRES_PRODUCTION_PREFLIGHT'
+  CUTOVER_READINESS_REPORT='$CUTOVER_READINESS_REPORT'
+  CUTOVER_READINESS_REPORT_PATH='$CUTOVER_READINESS_REPORT_PATH'
+  CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES='$CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES'
+  CUTOVER_READINESS_REPORT_REQUIRE_SPLIT='$CUTOVER_READINESS_REPORT_REQUIRE_SPLIT'
+  CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT='$CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -213,6 +223,7 @@ ssh "$REMOTE" "set -euo pipefail
   stop_systemd_workers_for_migration
   trap restart_systemd_workers_after_migration EXIT
   backup_result_file=''
+  cutover_report_backup_path=''
   case \"\$BACKUP_BEFORE_MIGRATION\" in
     disabled|skip|false|0|'')
       echo 'pre-migration database backup skipped'
@@ -254,6 +265,7 @@ PY
         rm -f \"\$backup_result_file\"
         backup_result_file=''
         if [ -n \"\$backup_path\" ]; then
+          cutover_report_backup_path=\"\$backup_path\"
           python3 scripts/verify_backup_restore.py --backup-path \"\$backup_path\" --json
         elif [ \"\$VERIFY_BACKUP_RESTORE\" = 'required' ]; then
           echo 'backup restore verification required but no backup path was produced' >&2
@@ -268,6 +280,55 @@ PY
       exit 2
       ;;
   esac
+  run_cutover_readiness_report() {
+    cutover_report_args=(--env-file .env --output \"\$CUTOVER_READINESS_REPORT_PATH\" --json)
+    if [ -n \"\$DATABASE_ENV_FILE\" ]; then
+      cutover_report_args+=(--database-env-file \"\$DATABASE_ENV_FILE\")
+    fi
+    if [ -n \"\$cutover_report_backup_path\" ]; then
+      cutover_report_args+=(--backup-path \"\$cutover_report_backup_path\")
+    fi
+    case \"\$REQUIRE_RUNTIME_INPUTS\" in
+      true|1|yes|on)
+        cutover_report_args+=(--require-runtime-inputs)
+        ;;
+    esac
+    case \"\$CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES\" in
+      true|1|yes|on)
+        cutover_report_args+=(--require-postgres)
+        ;;
+      false|0|no|off|'')
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES: \$CUTOVER_READINESS_REPORT_REQUIRE_POSTGRES\" >&2
+        exit 2
+        ;;
+    esac
+    case \"\$CUTOVER_READINESS_REPORT_REQUIRE_SPLIT\" in
+      true|1|yes|on)
+        cutover_report_args+=(--require-split)
+        ;;
+      false|0|no|off|'')
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_CUTOVER_READINESS_REPORT_REQUIRE_SPLIT: \$CUTOVER_READINESS_REPORT_REQUIRE_SPLIT\" >&2
+        exit 2
+        ;;
+    esac
+    case \"\$CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT\" in
+      true|1|yes|on)
+        cutover_report_args+=(--run-production-preflight)
+        ;;
+      false|0|no|off|'')
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT: \$CUTOVER_READINESS_REPORT_PRODUCTION_PREFLIGHT\" >&2
+        exit 2
+        ;;
+    esac
+    python3 scripts/cutover_readiness_report.py \"\${cutover_report_args[@]}\"
+    echo \"cutover readiness report written: \$CUTOVER_READINESS_REPORT_PATH\"
+  }
   case \"\$POSTGRES_PRODUCTION_PREFLIGHT\" in
     disabled|skip|false|0|'')
       echo 'postgres production preflight skipped'
@@ -284,6 +345,25 @@ PY
       ;;
     *)
       echo \"invalid SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT: \$POSTGRES_PRODUCTION_PREFLIGHT\" >&2
+      exit 2
+      ;;
+  esac
+  case \"\$CUTOVER_READINESS_REPORT\" in
+    disabled|skip|false|0|'')
+      echo 'cutover readiness report skipped'
+      ;;
+    auto)
+      if [ -n \"\$DATABASE_ENV_FILE\" ] || [ -n \"\$cutover_report_backup_path\" ]; then
+        run_cutover_readiness_report
+      else
+        echo 'cutover readiness report skipped: no database env file or backup path configured'
+      fi
+      ;;
+    required)
+      run_cutover_readiness_report
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_CUTOVER_READINESS_REPORT: \$CUTOVER_READINESS_REPORT\" >&2
       exit 2
       ;;
   esac
