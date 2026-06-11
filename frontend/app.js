@@ -121,9 +121,16 @@ function alertReadinessMetric(readiness) {
   return `<div class="metric ${status === "ready" ? "" : "warning"}"><strong>${escapeHtml(status)}</strong><span>${escapeHtml(channel)}</span></div>`;
 }
 
+function advisorySyncReadinessMetric(readiness) {
+  const status = readiness?.status || "unknown";
+  const count = `${readiness?.initialized_count ?? 0}/${readiness?.required_count ?? 0}`;
+  return `<div class="metric ${status === "ready" ? "" : "warning"}"><strong>${escapeHtml(status)}</strong><span>Advisory Sync ${escapeHtml(count)}</span></div>`;
+}
+
 async function loadOverview() {
   const overview = await api.get("/api/v1/overview");
   const alertReadiness = overview.alert_readiness || {};
+  const advisorySyncReadiness = overview.advisory_sync_readiness || {};
   document.querySelector("#metrics").innerHTML = [
     metric("Services", overview.service_count),
     metric("Open Impacts", overview.open_impacts),
@@ -133,6 +140,7 @@ async function loadOverview() {
     metric("Alert Pending", alertReadiness.pending_count || 0),
     metric("Dead Letters", alertReadiness.dead_letter_count || 0),
     alertReadinessMetric(alertReadiness),
+    advisorySyncReadinessMetric(advisorySyncReadiness),
     metric("Endpoint Unhealthy", overview.endpoint_unhealthy),
   ].join("");
 }

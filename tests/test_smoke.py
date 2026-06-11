@@ -1667,6 +1667,10 @@ def test_metrics_exposes_operational_indicators(tmp_path):
 
     metrics = app.metrics()
 
+    assert "sca_monitor_advisory_sync_ready 0" in metrics
+    assert 'sca_monitor_advisory_sync_initialized{source="OSV"} 1' in metrics
+    assert 'sca_monitor_advisory_sync_initialized{source="CISA_KEV"} 0' in metrics
+    assert 'sca_monitor_advisory_sync_initialized{source="OpenSSF"} 0' in metrics
     assert 'sca_monitor_advisory_sync_lag_seconds{source="OSV"}' in metrics
     assert 'sca_monitor_endpoint_poll_success_rate{worker="metric-worker"} 1.000000' in metrics
     assert "sca_monitor_endpoint_poll_success_rate 1.000000" in metrics
@@ -1702,6 +1706,54 @@ def test_overview_alert_readiness_ready_with_real_default_channel(tmp_path):
     assert overview["alert_readiness"]["default_channel_configured"] is True
     assert overview["alert_readiness"]["default_channel_placeholder"] is False
     assert overview["alert_readiness"]["pending_count"] == 0
+
+
+def test_overview_exposes_advisory_sync_readiness_initializing(tmp_path):
+    app = make_test_app(tmp_path)
+
+    overview = app.overview()
+
+    assert overview["advisory_sync"]["OSV"] == "seeded-demo"
+    assert overview["advisory_sync_readiness"]["status"] == "initializing"
+    assert overview["advisory_sync_readiness"]["required_count"] == 3
+    assert overview["advisory_sync_readiness"]["initialized_count"] == 0
+    sources = {item["source"]: item for item in overview["advisory_sync_readiness"]["sources"]}
+    assert sources["OSV"]["status"] == "pending"
+    assert sources["OSV"]["initialized"] is False
+    assert sources["CISA_KEV"]["status"] == "pending"
+    assert sources["OpenSSF"]["status"] == "pending"
+
+
+def test_overview_advisory_sync_readiness_ready_when_initial_sources_succeed(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+
+    overview = app.overview()
+    metrics = app.metrics()
+
+    assert overview["advisory_sync_readiness"]["status"] == "ready"
+    assert overview["advisory_sync_readiness"]["initialized_count"] == 3
+    assert all(item["initialized"] for item in overview["advisory_sync_readiness"]["sources"])
+    assert "sca_monitor_advisory_sync_ready 1" in metrics
+    assert 'sca_monitor_advisory_sync_initialized{source="OpenSSF"} 1' in metrics
+
+
+def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "error", "catalog", "rate limited", imported_count=0)
+
+    overview = app.overview()
+
+    assert overview["advisory_sync_readiness"]["status"] == "degraded"
+    sources = {item["source"]: item for item in overview["advisory_sync_readiness"]["sources"]}
+    assert sources["OSV"]["initialized"] is True
+    assert sources["CISA_KEV"]["initialized"] is False
+    assert sources["CISA_KEV"]["last_error_message"] == "rate limited"
 
 
 def test_impacts_expose_sla_deadline_and_overdue_metrics(tmp_path):

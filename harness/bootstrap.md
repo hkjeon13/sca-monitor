@@ -39,6 +39,7 @@ initial sync가 완료되기 전에는 매칭 결과가 불완전하다.
 정책:
 
 - initial sync 완료 전 dashboard에는 `advisory data initializing` 상태를 표시한다.
+- `GET /api/v1/overview`의 `advisory_sync_readiness.status`가 `ready`가 될 때까지 bootstrap 초기화 상태로 간주한다.
 - initial sync 완료 전에는 "영향 없음" 결론을 확정하지 않는다.
 - Critical/High alert 발송은 source별 initial sync 완료 후 활성화한다.
 - 수동으로 smoke test용 synthetic advisory fixture를 사용할 수 있다.

@@ -22,6 +22,7 @@ from .versioning import version_is_affected
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
+INITIAL_ADVISORY_SYNC_SOURCES = ("OSV", "CISA_KEV", "OpenSSF")
 DEFAULT_SLA_HOURS = {
     "critical": 24,
     "high": 72,
@@ -422,6 +423,7 @@ class ScaMonitorApp:
             ).fetchone()["c"]
             unhealthy = conn.execute("SELECT COUNT(*) AS c FROM endpoint_health WHERE collection_status != 'ok'").fetchone()["c"]
             advisory_sync = self.advisory_sync_overview(conn)
+            advisory_sync_readiness = self.advisory_sync_readiness_overview(conn)
             sla_overdue = self.sla_overdue_count(conn)
             alert_readiness = self.alert_readiness_overview(conn)
         return {
@@ -433,6 +435,7 @@ class ScaMonitorApp:
             "sla_overdue_impacts": sla_overdue,
             "alert_readiness": alert_readiness,
             "advisory_sync": advisory_sync,
+            "advisory_sync_readiness": advisory_sync_readiness,
             "system": {"environment": self.settings.app_env},
         }
 
@@ -457,6 +460,57 @@ class ScaMonitorApp:
         for row in rows:
             sync[row["source"]] = row["status"]
         return sync
+
+    def advisory_sync_readiness_overview(self, conn) -> dict:
+        now = datetime.now(timezone.utc)
+        rows_by_source = {}
+        try:
+            rows = conn.execute(
+                """
+                SELECT source, status, last_success_at, last_error_at, last_error_message, imported_count, updated_at
+                FROM advisory_sync_state
+                """
+            ).fetchall()
+        except Exception:
+            rows = []
+        for row in rows:
+            rows_by_source[row["source"]] = row
+
+        sources = []
+        for source in INITIAL_ADVISORY_SYNC_SOURCES:
+            row = rows_by_source.get(source)
+            status = row["status"] if row else "pending"
+            last_success_at = row["last_success_at"] if row else None
+            initialized = status == "ok" and bool(last_success_at)
+            lag_seconds = seconds_since(last_success_at, now)
+            sources.append(
+                {
+                    "source": source,
+                    "status": status,
+                    "initialized": initialized,
+                    "last_success_at": last_success_at,
+                    "last_error_at": row["last_error_at"] if row else None,
+                    "last_error_message": row["last_error_message"] if row else None,
+                    "imported_count": int(row["imported_count"] or 0) if row else 0,
+                    "lag_seconds": lag_seconds,
+                    "updated_at": row["updated_at"] if row else None,
+                }
+            )
+
+        initialized_count = sum(1 for item in sources if item["initialized"])
+        has_error = any(item["status"] in {"error", "partial"} for item in sources)
+        if initialized_count == len(sources):
+            readiness_status = "ready"
+        elif has_error:
+            readiness_status = "degraded"
+        else:
+            readiness_status = "initializing"
+        return {
+            "status": readiness_status,
+            "required_count": len(sources),
+            "initialized_count": initialized_count,
+            "sources": sources,
+        }
 
     def alert_readiness_overview(self, conn) -> dict:
         from .alert_preflight import default_channel_summary
@@ -2342,6 +2396,7 @@ class ScaMonitorApp:
             f"sca_monitor_endpoint_unhealthy {overview['endpoint_unhealthy']}",
             f"sca_monitor_sla_overdue_impacts {overview['sla_overdue_impacts']}",
             f"sca_monitor_alert_readiness_ready {1 if overview['alert_readiness']['status'] == 'ready' else 0}",
+            f"sca_monitor_advisory_sync_ready {1 if overview['advisory_sync_readiness']['status'] == 'ready' else 0}",
         ]
         lines.extend(self.operational_metric_lines())
         lines.append("")
@@ -2352,7 +2407,7 @@ class ScaMonitorApp:
         lines = []
         with self.db.connect() as conn:
             advisory_rows = conn.execute(
-                "SELECT source, last_success_at FROM advisory_sync_state ORDER BY source"
+                "SELECT source, status, last_success_at FROM advisory_sync_state ORDER BY source"
             ).fetchall()
             poll_rows = conn.execute(
                 "SELECT worker_name, checked_count, succeeded_count, failed_count FROM endpoint_poll_state ORDER BY worker_name"
@@ -2368,6 +2423,11 @@ class ScaMonitorApp:
                 "SELECT COUNT(*) AS count FROM endpoint_health WHERE freshness_status = 'stale'"
             ).fetchone()["count"]
 
+        advisory_sources = {row["source"]: row for row in advisory_rows}
+        for source in INITIAL_ADVISORY_SYNC_SOURCES:
+            row = advisory_sources.get(source)
+            initialized = 1 if row and row["status"] == "ok" and row["last_success_at"] else 0
+            lines.append(f'sca_monitor_advisory_sync_initialized{{source="{metric_label(source)}"}} {initialized}')
         for row in advisory_rows:
             lag = seconds_since(row["last_success_at"], now)
             if lag is not None:
