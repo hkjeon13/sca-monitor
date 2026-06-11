@@ -100,7 +100,7 @@ SENTRY_DSN or equivalent observability endpoint
 | Impact Action Panel | 필수 |
 | Integration Guide | 필수 |
 | Alert Channel Settings | 선택 |
-| Advisory Detail | 선택 |
+| Advisory Detail | 필수 |
 
 ## 6. Smoke Test
 

@@ -190,6 +190,7 @@ references
 
 - `POST /api/v1/advisories/osv/import`는 `advisory_id`를 받아 `GET https://api.osv.dev/v1/vulns/{id}`로 단건 상세를 수집한다.
 - `GET /api/v1/advisories`는 저장된 advisory를 조회한다.
+- `GET /api/v1/advisories/{advisory_id}`는 저장된 advisory 상세, affected range/version, raw source payload, 관련 impact 요약을 조회한다.
 - `scripts/osv_sync.py`는 OSV ecosystem dump ZIP을 읽어 advisory를 일괄 import한다.
 - `advisory_sync_state`는 OSV 단건 import 성공/실패 상태를 기록한다.
 - OSV dump sync worker는 `advisory_sync_state`의 `lock_owner`, `lock_expires_at`을 이용해 source별 중복 실행을 차단한다.
@@ -1477,6 +1478,7 @@ GET /api/v1/audit-logs
 - Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시
 - Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록. `accepted_risk` 전환 시 reason과 expires_at을 필수로 받고 `accepted_risks`에 승인자/사유/만료일을 저장한다. `scripts/expire_accepted_risks.py`는 만료된 accepted risk를 `open`으로 되돌리고 impact history와 audit log를 기록한다
 - Audit Log: `audit_logs` table과 `GET /api/v1/audit-logs` 기반 impact status 변경, alert channel 설정 변경, alert event requeue 이력을 actor/action/target/reason/before/after로 조회한다. Web Console Settings에서 action/target/search/limit 필터로 최근 audit log를 확인할 수 있으며, webhook URL 같은 민감 target 값은 masked 값만 저장/노출한다
+- Advisory Detail: `GET /api/v1/advisories/{advisory_id}`와 Web Console Advisories 화면에서 advisory source, severity, affected version/range, alias, KEV/malicious 여부, 관련 impact 요약을 확인한다
 - Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
 
 남은 구현:
@@ -1484,7 +1486,6 @@ GET /api/v1/audit-logs
 - role-aware UI와 API 인가 연동
 - accepted risk role-aware 승인 정책과 운영 scheduler 등록
 - 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
-- advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
 - Slack app 방식, alert channel hard delete
 

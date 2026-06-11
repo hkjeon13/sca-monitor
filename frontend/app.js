@@ -27,6 +27,7 @@ const impactStatuses = [
 
 let selectedImpactId = null;
 let selectedServiceId = null;
+let selectedAdvisoryId = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -169,6 +170,86 @@ async function loadImpacts() {
   renderImpactPagination(data.pagination);
 }
 
+async function loadAdvisories() {
+  const data = await api.get("/api/v1/advisories");
+  const target = document.querySelector("#advisory-list");
+  if (!data.advisories.length) {
+    target.innerHTML = `<p>No advisories imported.</p>`;
+    selectedAdvisoryId = null;
+    renderAdvisoryDetailEmpty("No advisory selected.");
+    return;
+  }
+  if (!selectedAdvisoryId || !data.advisories.some((advisory) => advisory.advisory_id === selectedAdvisoryId)) {
+    selectedAdvisoryId = data.advisories[0].advisory_id;
+  }
+  target.innerHTML = data.advisories.map((advisory) => `
+    <button class="impact ${escapeHtml(advisory.severity)} ${advisory.advisory_id === selectedAdvisoryId ? "selected" : ""}" data-advisory-id="${escapeHtml(advisory.advisory_id)}">
+      <div class="impact-header">
+        <div>
+          <strong>${escapeHtml(advisory.advisory_id)} · ${escapeHtml(advisory.package_name || "-")}</strong>
+          <p>${escapeHtml(advisory.summary || "-")}</p>
+        </div>
+        <span class="badge">${escapeHtml(advisory.source)} / ${escapeHtml(advisory.severity || "-")}</span>
+      </div>
+      <p>${escapeHtml(advisory.ecosystem || "-")} · fix ${escapeHtml(advisory.fixed_version || "remove/replace")} · modified ${escapeHtml(advisory.modified_at || "-")}</p>
+    </button>
+  `).join("");
+  target.querySelectorAll("[data-advisory-id]").forEach((item) => {
+    item.addEventListener("click", () => selectAdvisory(item.dataset.advisoryId));
+  });
+  await loadAdvisoryDetail(selectedAdvisoryId);
+}
+
+async function selectAdvisory(advisoryId) {
+  selectedAdvisoryId = advisoryId;
+  document.querySelectorAll("[data-advisory-id]").forEach((item) => {
+    item.classList.toggle("selected", item.dataset.advisoryId === advisoryId);
+  });
+  await loadAdvisoryDetail(advisoryId);
+}
+
+function renderAdvisoryDetailEmpty(message) {
+  document.querySelector("#advisory-detail").innerHTML = `<p>${escapeHtml(message)}</p>`;
+}
+
+async function loadAdvisoryDetail(advisoryId) {
+  if (!advisoryId) {
+    renderAdvisoryDetailEmpty("No advisory selected.");
+    return;
+  }
+  const data = await api.get(`/api/v1/advisories/${encodeURIComponent(advisoryId)}`);
+  const advisory = data.advisory;
+  const aliases = Array.isArray(advisory.raw_payload?.aliases) ? advisory.raw_payload.aliases.join(", ") : "-";
+  const impacts = data.impacts.length
+    ? data.impacts.map((impact) => `
+      <li>
+        <strong>${escapeHtml(impact.service_id)} / ${escapeHtml(impact.package_name)}@${escapeHtml(impact.resolved_version)}</strong>
+        <span>${escapeHtml(impact.risk_level)} · ${escapeHtml(impact.status)} · ${escapeHtml(impact.environment)} · ${escapeHtml(impact.owner_team || "-")}</span>
+      </li>
+    `).join("")
+    : `<li><span>No matching impacts recorded.</span></li>`;
+  document.querySelector("#advisory-detail").innerHTML = `
+    <div class="detail-grid">
+      ${detailRow("Advisory", `${advisory.source}:${advisory.advisory_id}`)}
+      ${detailRow("Severity", advisory.severity)}
+      ${detailRow("Package", `${advisory.ecosystem || "-"} / ${advisory.package_name || "-"}`)}
+      ${detailRow("Fixed Version", advisory.fixed_version || "remove/replace")}
+      ${detailRow("Known Exploited", advisory.is_known_exploited ? "yes" : "no")}
+      ${detailRow("Malicious Package", advisory.is_malicious_package ? "yes" : "no")}
+      ${detailRow("Published", advisory.published_at)}
+      ${detailRow("Modified", advisory.modified_at)}
+      ${detailRow("Aliases", aliases)}
+      ${detailRow("Affected Versions", JSON.stringify(advisory.affected_versions || []))}
+      ${detailRow("Affected Ranges", JSON.stringify(advisory.affected_ranges || []))}
+    </div>
+    <p class="detail-summary">${escapeHtml(advisory.summary || "-")}</p>
+    <div class="history">
+      <h3>Matched Impacts</h3>
+      <ul>${impacts}</ul>
+    </div>
+  `;
+}
+
 async function selectImpact(impactId) {
   selectedImpactId = impactId;
   document.querySelectorAll("[data-impact-id]").forEach((item) => {
@@ -295,7 +376,7 @@ function renderImpactPagination(pagination) {
 }
 
 async function refreshAll() {
-  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels(), loadAlertEvents(), loadAuditLogs()]);
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAdvisories(), loadAlertChannels(), loadAlertEvents(), loadAuditLogs()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);

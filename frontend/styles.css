@@ -234,7 +234,8 @@ th {
   gap: 8px;
 }
 
-.impact-workspace {
+.impact-workspace,
+.advisory-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
   gap: 14px;
@@ -432,6 +433,7 @@ pre {
   .metrics,
   .split,
   .impact-workspace,
+  .advisory-workspace,
   .detail-grid,
   .status-form,
   .filter-bar,

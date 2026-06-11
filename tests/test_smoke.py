@@ -612,6 +612,38 @@ def test_service_detail_includes_snapshot_dependencies_and_impacts(tmp_path):
     assert detail["impacts"][0]["risk_level"] == "high"
 
 
+def test_advisory_detail_includes_raw_payload_and_related_impacts(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "advisory-detail-service",
+            "service_name": "Advisory Detail Service",
+            "environment": "prod",
+            "owner_team": "security",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+
+    detail = app.get_advisory("OSV-TEST-0001")
+
+    assert detail["advisory"]["advisory_id"] == "OSV-TEST-0001"
+    assert sorted(detail["advisory"]["affected_versions"]) == ["1.0.0", "1.0.1"]
+    assert detail["advisory"]["affected_ranges"] == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
+    assert detail["advisory"]["raw_payload"]["aliases"] == ["CVE-2026-0001"]
+    assert detail["advisory"]["is_known_exploited"] is False
+    assert len(detail["impacts"]) == 1
+    assert detail["impacts"][0]["service_id"] == "advisory-detail-service"
+    assert detail["impacts"][0]["owner_team"] == "security"
+
+
+def test_advisory_detail_rejects_unknown_advisory(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with pytest.raises(ValueError, match="advisory not found"):
+        app.get_advisory("missing-advisory")
+
+
 def test_unchanged_advisory_import_does_not_rematch(tmp_path):
     app = make_test_app(tmp_path)
     first = app.import_osv_payload(osv_fixture())

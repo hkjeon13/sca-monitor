@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -119,6 +119,9 @@ class ScaMonitorApp:
                 return self.json_response(request, self.get_service_detail(service_id))
             if path == "/api/v1/advisories" and method == "GET":
                 return self.json_response(request, {"advisories": self.list_advisories(parse_qs(parsed.query))})
+            if path.startswith("/api/v1/advisories/") and method == "GET":
+                advisory_id = unquote(path.split("/")[-1])
+                return self.json_response(request, self.get_advisory(advisory_id))
             if path == "/api/v1/advisories/osv/import" and method == "POST":
                 return self.json_response(request, self.import_osv_advisory(self.read_json(request)), HTTPStatus.CREATED)
             if path == "/api/v1/snapshots" and method == "POST":
@@ -613,6 +616,44 @@ class ScaMonitorApp:
             advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
             advisories.append(advisory)
         return advisories
+
+    def get_advisory(self, advisory_id: str) -> dict:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM advisories
+                WHERE advisory_id = ? OR id = ?
+                """,
+                (advisory_id, advisory_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("advisory not found")
+            impact_rows = conn.execute(
+                """
+                SELECT i.id, i.package_name, i.resolved_version, i.fixed_version, i.environment,
+                       i.risk_level, i.status, i.first_detected_at, i.last_seen_at,
+                       s.service_id, s.service_name, s.owner_team
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                WHERE i.advisory_pk = ?
+                ORDER BY
+                    CASE i.risk_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+                    i.updated_at DESC
+                LIMIT 50
+                """,
+                (row["id"],),
+            ).fetchall()
+        advisory = row_to_dict(row)
+        advisory["affected_versions"] = safe_json_loads(advisory.get("affected_versions"), [])
+        advisory["affected_ranges"] = safe_json_loads(advisory.get("affected_ranges"), [])
+        advisory["raw_payload"] = safe_json_loads(advisory.get("raw_payload"), {})
+        advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
+        advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
+        return {
+            "advisory": advisory,
+            "impacts": [row_to_dict(impact) for impact in impact_rows],
+        }
 
     def import_osv_advisory(self, body: dict) -> dict:
         advisory_id = required(body, "advisory_id")
@@ -1880,6 +1921,15 @@ def advisory_import_from_row(row: dict) -> AdvisoryImport:
         modified_at=row.get("modified_at"),
         raw_payload=json.loads(row["raw_payload"] or "{}"),
     )
+
+
+def safe_json_loads(value, default):
+    try:
+        if value is None or value == "":
+            return default
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def advisory_alias_values(row: dict | None) -> set[str]:
