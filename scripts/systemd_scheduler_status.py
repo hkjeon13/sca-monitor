@@ -92,6 +92,14 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=1h", "Unit={prefix}-openssf-malicious-sync.service"],
         "kind": "timer",
     },
+    "canonical-advisory-merge.service": {
+        "required": ["scripts/merge_canonical_advisories.py", "--actor canonical-merge-scheduler"],
+        "kind": "oneshot",
+    },
+    "canonical-advisory-merge.timer": {
+        "required": ["OnUnitActiveSec=1h", "Unit={prefix}-canonical-advisory-merge.service"],
+        "kind": "timer",
+    },
 }
 
 

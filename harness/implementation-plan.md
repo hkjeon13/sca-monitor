@@ -108,7 +108,7 @@ Phase 0 착수 전 선행 조건:
 - `advisory_aliases` migration과 advisory import 시 CVE/GHSA/OSV/MAL alias 저장 및 API 노출 추가
 - alias가 겹치는 같은 package advisory의 impact identity와 alert suppression key를 canonical advisory key 기준으로 계산
 - `scripts/backfill_canonical_impact_keys.py` 기반 기존 impact/suppression key canonical backfill dry-run/apply job과 conflict impact merge 추가
-- `scripts/merge_canonical_advisories.py` 기반 alias-related advisory row canonical merge dry-run/apply job 추가
+- `scripts/merge_canonical_advisories.py` 기반 alias-related advisory row canonical merge dry-run/apply job과 systemd timer 추가
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
 - `scripts/dispatch_alerts.py` webhook alert outbox dispatcher CLI 추가
@@ -150,7 +150,7 @@ Phase 0 착수 전 선행 조건:
 - endpoint polling worker
 - snapshot normalization
 - advisory feed-sync worker
-- advisory canonicalization scheduler와 대량 merge queue
+- advisory canonicalization 대량 merge queue
 - impact matcher
 - risk scoring
 - alert outbox dispatcher
@@ -182,7 +182,7 @@ Phase 0 착수 전 선행 조건:
 - 완료: impact filtering은 API와 Web Console에서 status/risk/service/team/environment/package/advisory/KEV/malicious/search와 pagination/sorting을 제공하며, 필터 결과에 대한 bulk status action을 지원한다
 - 완료: push API hardening은 service/environment credential binding, payload size limit, dependency count limit, snapshot_id/content_hash 기반 멱등 replay, conflict 감지, `last_confirmed_at` 갱신, service credential 또는 service/environment 기준 분당 rate limit을 제공한다
 - 부분 완료: role-aware API 인가는 `SCA_MONITOR_AUTH_MODE=header` impact workflow와 admin-only service registration, endpoint test, push credential, alert channel 설정 범위에서 동작한다. Web Console은 `GET /api/v1/session` capability 기반으로 역할별 action을 비활성화한다. OIDC/JWT 검증과 인증 프록시 연동은 미구현
-- 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성과 `scripts/systemd_scheduler_status.py` read-only 검증까지 구현됨. SLA escalation, Daily Digest, OSV, OpenSSF malicious package, CISA KEV, GHSA sync timer 정의 포함. 실제 운영 enable/start는 배포 환경별 승인 후 실행
+- 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성과 `scripts/systemd_scheduler_status.py` read-only 검증까지 구현됨. SLA escalation, Daily Digest, OSV, OpenSSF malicious package, CISA KEV, GHSA sync, canonical advisory merge timer 정의 포함. 실제 운영 enable/start는 배포 환경별 승인 후 실행
 
 검증:
 

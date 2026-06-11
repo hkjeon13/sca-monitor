@@ -345,6 +345,29 @@ Unit=${PREFIX}-openssf-malicious-sync.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-canonical-advisory-merge.service" <<EOF
+[Unit]
+Description=SCA Monitor canonical advisory merge job
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/merge_canonical_advisories.py --limit 500 --actor canonical-merge-scheduler
+EOF
+
+write_unit "${PREFIX}-canonical-advisory-merge.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor canonical advisory merge after advisory sync
+
+[Timer]
+OnBootSec=25min
+OnUnitActiveSec=1h
+Unit=${PREFIX}-canonical-advisory-merge.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "dry-run: systemctl was not called"
   exit 0
@@ -406,7 +429,8 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
-    "${PREFIX}-openssf-malicious-sync.timer"
+    "${PREFIX}-openssf-malicious-sync.timer" \
+    "${PREFIX}-canonical-advisory-merge.timer"
   "${SYSTEMCTL[@]}" restart \
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service" \
@@ -417,7 +441,8 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
-    "${PREFIX}-openssf-malicious-sync.timer"
+    "${PREFIX}-openssf-malicious-sync.timer" \
+    "${PREFIX}-canonical-advisory-merge.timer"
 else
   echo "unit files installed. Run with --enable to enable and start units."
 fi

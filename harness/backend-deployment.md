@@ -207,6 +207,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-ghsa-sync.timer` | GitHub Security Advisory sync | 1시간 주기 oneshot |
 | `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
 | `sca-monitor-openssf-malicious-sync.timer` | OpenSSF malicious package sync | 1시간 주기 oneshot |
+| `sca-monitor-canonical-advisory-merge.timer` | alias 기반 canonical advisory merge 및 impact key backfill | 1시간 주기 oneshot |
 
 모든 unit은 repository의 `.env`를 `EnvironmentFile`로 읽는다.
 `SCA_MONITOR_DATABASE_URL`, `SCA_MONITOR_FRONTEND_DIR`, alert webhook 설정은 `.env`에서 유지한다.

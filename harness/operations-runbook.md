@@ -108,6 +108,16 @@ bootstrap/canary에서는 전체 dump scan 시간을 제한하기 위해 `--scan
 `--scan-limit`에 도달하면 sync 상태는 `partial`이므로 initial sync 완료로 간주하지 않는다.
 매칭된 impact는 risk scoring에서 Critical로 승격된다.
 
+Canonical advisory merge 수동 확인/실행 예시:
+
+```bash
+python3 scripts/merge_canonical_advisories.py --dry-run --limit 100
+python3 scripts/merge_canonical_advisories.py --limit 100 --actor operator
+```
+
+dry-run에서 alias-related advisory row 후보를 먼저 확인한다.
+apply 시 canonical advisory row로 alias, metadata, impact FK를 이관하고 기본적으로 impact key backfill도 이어서 실행한다.
+
 CISA KEV 수동 재시도 예시:
 
 ```bash

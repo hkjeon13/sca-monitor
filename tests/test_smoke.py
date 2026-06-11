@@ -207,6 +207,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-osv-npm-sync.timer",
         "sca-monitor-openssf-malicious-sync.service",
         "sca-monitor-openssf-malicious-sync.timer",
+        "sca-monitor-canonical-advisory-merge.service",
+        "sca-monitor-canonical-advisory-merge.timer",
     }
     assert {path.name for path in unit_dir.iterdir()} == expected_units
     poller = (unit_dir / "sca-monitor-endpoint-poller.service").read_text(encoding="utf-8")
@@ -227,6 +229,10 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "OnCalendar=*-*-* 09:00:00" in digest_timer
     openssf = (unit_dir / "sca-monitor-openssf-malicious-sync.service").read_text(encoding="utf-8")
     assert "scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only" in openssf
+    canonical_merge = (unit_dir / "sca-monitor-canonical-advisory-merge.service").read_text(encoding="utf-8")
+    assert "scripts/merge_canonical_advisories.py --limit 500 --actor canonical-merge-scheduler" in canonical_merge
+    canonical_merge_timer = (unit_dir / "sca-monitor-canonical-advisory-merge.timer").read_text(encoding="utf-8")
+    assert "Unit=sca-monitor-canonical-advisory-merge.service" in canonical_merge_timer
     dispatcher_dry_run = (unit_dir / "sca-monitor-alert-dispatcher-dry-run.service").read_text(encoding="utf-8")
     assert "scripts/dispatch_alerts.py --limit 50 --iterations 0" in dispatcher_dry_run
     assert "--lock-owner systemd-alert-dispatcher-dry-run --dry-run" in dispatcher_dry_run
@@ -262,12 +268,13 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 18, "present": 18, "valid": 18, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 20, "present": 20, "valid": 20, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-daily-digest.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-ghsa-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
+    assert payload["units"]["sca-monitor-canonical-advisory-merge.timer"]["valid"] is True
 
 
 def test_http_smoke_checks_read_only_endpoints():
@@ -334,7 +341,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 18
+    assert payload["summary"]["missing"] == 20
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -356,7 +363,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 18, "present": 18, "valid": 18, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 20, "present": 20, "valid": 20, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -400,7 +407,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 18
+    assert payload["summary"]["valid"] == 20
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -469,9 +476,12 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 18
+    assert payload["summary"]["valid"] == 20
     assert api_status == {"enabled": "enabled", "active": "active"}
-    assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "--user list-unit-files" in log_text
+    assert "sca-monitor-canonical-advisory-merge.timer" in enabled_now_lines(log_text)
+    assert "sca-monitor-canonical-advisory-merge.timer" in restart_lines(log_text)
 
 
 def test_deploy_systemd_gate_enable_api_mode_only_enables_api_service(tmp_path):
