@@ -16,7 +16,7 @@ from .db import Database, canonical_package_name, row_to_dict, utcnow
 class ScaMonitorApp:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.db = Database(settings.database_path)
+        self.db = Database(settings.database_url)
         self.db.migrate()
 
     def handler(self):
@@ -62,7 +62,9 @@ class ScaMonitorApp:
             if path == "/health":
                 return self.json_response(request, {"status": "ok", "app": "sca-monitor"})
             if path == "/ready":
-                return self.json_response(request, {"status": "ready", "database": "ok"})
+                readiness = self.db.readiness()
+                status = HTTPStatus.OK if readiness["database"] == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
+                return self.json_response(request, {"status": "ready" if status == HTTPStatus.OK else "not_ready", **readiness}, status)
             if path == "/metrics":
                 return self.text_response(request, self.metrics(), "text/plain; charset=utf-8")
             if path == "/api/v1/overview" and method == "GET":

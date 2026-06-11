@@ -15,6 +15,7 @@ ssh "$REMOTE" "set -euo pipefail
   set -a
   . ./.env
   set +a
+  python3 scripts/migrate.py
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)
     if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then

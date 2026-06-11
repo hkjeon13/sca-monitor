@@ -7,6 +7,14 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import unquote, urlparse
+
+from .migrations import (
+    MINIMUM_SUPPORTED_MIGRATION_VERSION,
+    REQUIRED_MIGRATION_VERSION,
+    migration_files,
+    migration_version,
+)
 
 
 def utcnow() -> str:
@@ -14,12 +22,43 @@ def utcnow() -> str:
 
 
 class Database:
-    def __init__(self, path: Path):
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, database_url_or_path: str | Path):
+        self.database_url = self._normalize_database_url(database_url_or_path)
+        parsed = urlparse(self.database_url)
+        self.backend = "sqlite" if parsed.scheme == "sqlite" else parsed.scheme
+        if self.backend == "sqlite":
+            self.path = self._sqlite_path(parsed)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        elif self.backend in ("postgres", "postgresql"):
+            self.backend = "postgres"
+            self.path = None
+        else:
+            raise ValueError(f"unsupported database backend: {self.backend}")
+
+    @staticmethod
+    def _normalize_database_url(database_url_or_path: str | Path) -> str:
+        if isinstance(database_url_or_path, Path):
+            return f"sqlite:///{database_url_or_path.resolve()}"
+        value = str(database_url_or_path)
+        if "://" not in value:
+            return f"sqlite:///{Path(value).resolve()}"
+        return value
+
+    @staticmethod
+    def _sqlite_path(parsed) -> Path:
+        if parsed.netloc:
+            path = Path(f"//{parsed.netloc}{unquote(parsed.path)}")
+        else:
+            path = Path(unquote(parsed.path))
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path.resolve()
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
+        if self.backend != "sqlite":
+            raise RuntimeError("PostgreSQL query adapter is not enabled yet; use SQLite fallback until the adapter is implemented")
+        assert self.path is not None
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         try:
@@ -30,138 +69,99 @@ class Database:
             conn.close()
 
     def migrate(self) -> None:
+        if self.backend == "postgres":
+            self._migrate_postgres()
+            return
         with self.connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS services (
-                    id TEXT PRIMARY KEY,
-                    service_id TEXT NOT NULL,
-                    service_name TEXT NOT NULL,
-                    environment TEXT NOT NULL,
-                    owner_team TEXT NOT NULL,
-                    status_endpoint_url TEXT,
-                    collection_mode TEXT NOT NULL DEFAULT 'push',
-                    internet_facing INTEGER NOT NULL DEFAULT 0,
-                    business_criticality TEXT NOT NULL DEFAULT 'medium',
-                    alert_channel TEXT,
-                    latest_snapshot_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(service_id, environment)
-                );
-
-                CREATE TABLE IF NOT EXISTS endpoint_health (
-                    service_pk TEXT PRIMARY KEY REFERENCES services(id) ON DELETE CASCADE,
-                    collection_status TEXT NOT NULL DEFAULT 'ok',
-                    freshness_status TEXT NOT NULL DEFAULT 'fresh',
-                    last_successful_poll_at TEXT,
-                    last_error_code TEXT,
-                    last_error_message TEXT,
-                    snapshot_age_seconds INTEGER NOT NULL DEFAULT 0,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS dependency_snapshots (
-                    id TEXT PRIMARY KEY,
-                    snapshot_id TEXT NOT NULL,
-                    service_pk TEXT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
-                    schema_version TEXT NOT NULL,
-                    environment TEXT NOT NULL,
-                    generated_at TEXT NOT NULL,
-                    collected_at TEXT NOT NULL,
-                    source_type TEXT NOT NULL,
-                    freshness_status TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    is_latest INTEGER NOT NULL DEFAULT 1,
-                    artifact_type TEXT,
-                    artifact_name TEXT,
-                    artifact_digest TEXT,
-                    raw_payload TEXT NOT NULL,
-                    UNIQUE(service_pk, snapshot_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS dependencies (
-                    id TEXT PRIMARY KEY,
-                    snapshot_pk TEXT NOT NULL REFERENCES dependency_snapshots(id) ON DELETE CASCADE,
-                    ecosystem TEXT NOT NULL,
-                    package_name TEXT NOT NULL,
-                    canonical_package_name TEXT NOT NULL,
-                    resolved_version TEXT NOT NULL,
-                    package_url TEXT,
-                    dependency_scope TEXT NOT NULL DEFAULT 'production',
-                    direct_dependency INTEGER NOT NULL DEFAULT 0,
-                    dependency_path TEXT,
-                    source TEXT,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS advisories (
-                    id TEXT PRIMARY KEY,
-                    advisory_id TEXT NOT NULL UNIQUE,
-                    source TEXT NOT NULL,
-                    summary TEXT NOT NULL,
-                    severity TEXT NOT NULL,
-                    ecosystem TEXT NOT NULL,
-                    package_name TEXT NOT NULL,
-                    canonical_package_name TEXT NOT NULL,
-                    affected_versions TEXT NOT NULL,
-                    fixed_version TEXT,
-                    is_known_exploited INTEGER NOT NULL DEFAULT 0,
-                    is_malicious_package INTEGER NOT NULL DEFAULT 0,
-                    published_at TEXT,
-                    modified_at TEXT,
-                    raw_payload TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS impacts (
-                    id TEXT PRIMARY KEY,
-                    service_pk TEXT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
-                    advisory_pk TEXT NOT NULL REFERENCES advisories(id) ON DELETE CASCADE,
-                    dependency_pk TEXT REFERENCES dependencies(id) ON DELETE SET NULL,
-                    snapshot_pk TEXT REFERENCES dependency_snapshots(id) ON DELETE SET NULL,
-                    package_name TEXT NOT NULL,
-                    canonical_package_name TEXT NOT NULL,
-                    resolved_version TEXT NOT NULL,
-                    fixed_version TEXT,
-                    environment TEXT NOT NULL,
-                    risk_level TEXT NOT NULL,
-                    risk_reason TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'open',
-                    first_detected_at TEXT NOT NULL,
-                    last_seen_at TEXT NOT NULL,
-                    resolved_at TEXT,
-                    freshness_status TEXT NOT NULL,
-                    artifact_digest TEXT,
-                    impact_identity TEXT NOT NULL UNIQUE,
-                    alert_suppression_key TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS impact_history (
-                    id TEXT PRIMARY KEY,
-                    impact_pk TEXT NOT NULL REFERENCES impacts(id) ON DELETE CASCADE,
-                    from_status TEXT,
-                    to_status TEXT NOT NULL,
-                    actor TEXT NOT NULL,
-                    reason TEXT,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS alert_events (
-                    id TEXT PRIMARY KEY,
-                    impact_pk TEXT REFERENCES impacts(id) ON DELETE SET NULL,
-                    alert_suppression_key TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    channel_type TEXT NOT NULL DEFAULT 'web',
-                    channel_target TEXT,
-                    payload TEXT NOT NULL,
-                    sent_at TEXT,
-                    created_at TEXT NOT NULL
-                );
-                """
-            )
+            current = self.current_migration_version(conn)
+            for path in migration_files("sqlite"):
+                version = migration_version(path)
+                if version <= current:
+                    continue
+                conn.executescript(path.read_text(encoding="utf-8"))
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (version, path.stem, utcnow()),
+                )
             self._seed_advisories(conn)
+
+    def _migrate_postgres(self) -> None:
+        try:
+            import psycopg  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError("psycopg is required to run PostgreSQL migrations") from exc
+
+        with psycopg.connect(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                cur.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
+                current = cur.fetchone()[0]
+                for path in migration_files("postgres"):
+                    version = migration_version(path)
+                    if version <= current:
+                        continue
+                    cur.execute(path.read_text(encoding="utf-8"))
+                    cur.execute(
+                        """
+                        INSERT INTO schema_migrations (version, name)
+                        VALUES (%s, %s)
+                        ON CONFLICT (version) DO NOTHING
+                        """,
+                        (version, path.stem),
+                    )
+            conn.commit()
+
+    def current_migration_version(self, conn: sqlite3.Connection | None = None) -> int:
+        if self.backend == "postgres":
+            return self._current_postgres_migration_version()
+
+        def read(connection: sqlite3.Connection) -> int:
+            try:
+                row = connection.execute("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").fetchone()
+            except sqlite3.OperationalError:
+                return 0
+            return int(row["version"] if isinstance(row, sqlite3.Row) else row[0])
+
+        if conn is not None:
+            return read(conn)
+        with self.connect() as connection:
+            return read(connection)
+
+    def _current_postgres_migration_version(self) -> int:
+        try:
+            import psycopg  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError("psycopg is required to read PostgreSQL migration status") from exc
+
+        with psycopg.connect(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
+                return int(cur.fetchone()[0])
+
+    def readiness(self) -> dict[str, Any]:
+        current = self.current_migration_version()
+        compatible = current >= MINIMUM_SUPPORTED_MIGRATION_VERSION
+        return {
+            "database": "ok" if compatible else "migration_too_old",
+            "database_backend": self.backend,
+            "migration": {
+                "current": current,
+                "required": REQUIRED_MIGRATION_VERSION,
+                "minimum_supported": MINIMUM_SUPPORTED_MIGRATION_VERSION,
+                "compatible": compatible,
+            },
+        }
 
     def _seed_advisories(self, conn: sqlite3.Connection) -> None:
         seeds = [

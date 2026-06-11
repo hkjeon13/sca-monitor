@@ -38,12 +38,28 @@ GET /metrics
 
 `/ready`는 다음을 확인한다.
 
-- PostgreSQL 연결
+- DB 연결
 - 현재 코드가 요구하는 최소 migration version 이상인지 여부
 - required config 존재 여부
 
 `/ready`는 "DB가 최신 migration version과 정확히 동일한지"를 검사하지 않는다.
 rolling deployment와 image-only rollback 중 구버전 인스턴스가 새 schema 위에서 계속 동작해야 하기 때문이다.
+
+현재 MVP에서는 `/ready`가 다음 정보를 노출한다.
+
+```json
+{
+  "status": "ready",
+  "database": "ok",
+  "database_backend": "sqlite",
+  "migration": {
+    "current": 1,
+    "required": 1,
+    "minimum_supported": 1,
+    "compatible": true
+  }
+}
+```
 
 Worker:
 

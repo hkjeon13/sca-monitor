@@ -12,9 +12,30 @@ Public exposure: forbidden
 Access: API/worker private network only
 ```
 
+현재 MVP 배포는 PostgreSQL 전환 전 단계로 SQLite fallback을 사용한다.
+애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 `API_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 SQLite URL을 구성한다.
+
+```text
+Temporary fallback: sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3
+Target production: postgresql://...
+```
+
+PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, credential, network access, migration dry-run이 먼저 완료되어야 한다.
+
 ## 2. Migration
 
-Migration tool은 아직 REQUIRED이다.
+Migration 구조는 repository의 `migrations/` 디렉터리를 기준으로 시작한다.
+
+```text
+migrations/sqlite/001_initial.sql
+migrations/postgres/001_initial.sql
+scripts/migrate.py
+```
+
+현재 구현은 SQLite migration 실행과 version 기록을 지원한다.
+PostgreSQL migration SQL baseline은 작성되어 있으나, 운영 적용 전 `psycopg` dependency, PostgreSQL 연결 검증, API query adapter 전환이 추가로 필요하다.
+
+장기 Migration tool은 아직 REQUIRED이다.
 
 후보:
 
@@ -24,6 +45,7 @@ Migration tool은 아직 REQUIRED이다.
 - Liquibase
 
 배포 pipeline은 backend/worker 시작 전에 migration을 실행한다.
+현재 임시 배포 스크립트도 서버 시작 전에 `python3 scripts/migrate.py`를 실행한다.
 
 ## 3. Migration Rules
 

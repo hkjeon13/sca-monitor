@@ -19,10 +19,20 @@ APP_ENV
 LOG_LEVEL
 FRONTEND_PUBLIC_URL
 API_BASE_URL
+SCA_MONITOR_DATABASE_URL
 API_DATABASE_URL
 WORKER_DATABASE_URL
 ENCRYPTION_KEY_REF
 ```
+
+현재 MVP는 `SCA_MONITOR_DATABASE_URL`을 우선 사용하고, 값이 없으면 `API_DATABASE_URL`을 사용한다.
+PostgreSQL 전환 전 임시값은 SQLite URL이다.
+
+```text
+SCA_MONITOR_DATABASE_URL=sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3
+```
+
+`SCA_MONITOR_DB`는 이전 MVP 호환용 path 설정으로만 유지한다.
 
 ### API Server
 

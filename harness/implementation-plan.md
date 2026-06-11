@@ -78,6 +78,22 @@ Phase 0 착수 전 선행 조건:
 - impact identity unique test
 - content hash dedup test
 
+현재 진행 상태:
+
+- `migrations/sqlite/001_initial.sql` baseline 추가
+- `migrations/postgres/001_initial.sql` baseline 추가
+- `scripts/migrate.py` 추가
+- `/ready` migration 상태 노출 추가
+- SQLite fallback 유지
+
+남은 작업:
+
+- PostgreSQL driver dependency 선택 및 설치
+- repository/query adapter 분리
+- 실제 PostgreSQL integration test
+- API/worker DB 계정 분리
+- production migration tool 확정
+
 ### Phase 2. API Server
 
 구현 대상:

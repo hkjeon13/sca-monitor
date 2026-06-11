@@ -21,6 +21,25 @@
 | Web Console 내부 URL | `http://127.0.0.1:18780/` |
 | 원격 env 파일 | `/data/psyche/Projects/sca-monitor/.env` |
 | 원격 로그 파일 | `/data/psyche/Projects/sca-monitor/logs/sca-monitor.log` |
+| 현재 DB fallback | `sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3` |
+| 목표 DB | PostgreSQL, 세부 접속 정보 REQUIRED |
+
+## Current Database State
+
+현재 배포는 PostgreSQL이 아니라 SQLite fallback으로 동작한다.
+자동화는 `.env`에 `SCA_MONITOR_DATABASE_URL`이 없으면 `deploy/sca-monitor.env.example` 기준 값을 추가하거나, 기존 `.data/sca-monitor.sqlite3`를 유지해야 한다.
+
+PostgreSQL 전환 시 REQUIRED 입력값:
+
+| 항목 | 상태 |
+|---|---|
+| PostgreSQL host/port | REQUIRED |
+| database name | REQUIRED |
+| API DB user/password | REQUIRED |
+| worker DB user/password | REQUIRED |
+| SSL mode | REQUIRED |
+| backup/PITR 정책 | REQUIRED |
+| migration dry-run 환경 | REQUIRED |
 
 ## Manual Follow-up Required
 
@@ -31,4 +50,3 @@ https://monitoring.fin-ally.net -> http://127.0.0.1:18780
 ```
 
 reverse proxy에서 `/api`와 `/` 모두 같은 upstream으로 전달한다.
-
