@@ -1878,6 +1878,15 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert "sca_monitor_alert_readiness_ready 0" in metrics
     assert "sca_monitor_stale_services 0" in metrics
     assert "sca_monitor_sla_overdue_impacts 0" in metrics
+    assert "sca_monitor_database_ready 1" in metrics
+    assert 'sca_monitor_database_backend_info{backend="sqlite"} 1' in metrics
+    assert "sca_monitor_migration_current_version 13" in metrics
+    assert "sca_monitor_migration_required_version 13" in metrics
+    assert "sca_monitor_migration_compatible 1" in metrics
+    assert "sca_monitor_postgres_configured 0" in metrics
+    assert 'sca_monitor_postgres_cutover_status{mode="sqlite_fallback",status="sqlite_fallback"} 1' in metrics
+    assert "sca_monitor_postgres_cutover_required_ready 0" in metrics
+    assert "sca_monitor_postgres_cutover_blockers 1" in metrics
 
 
 def test_overview_exposes_alert_readiness_summary(tmp_path):

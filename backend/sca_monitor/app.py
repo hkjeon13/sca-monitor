@@ -2402,6 +2402,11 @@ class ScaMonitorApp:
 
     def metrics(self) -> str:
         overview = self.overview()
+        database_readiness = self.database_readiness_summary()
+        migration = database_readiness.get("migration", {})
+        cutover = database_readiness.get("cutover", {})
+        required_cutover = database_readiness.get("cutover_required", {})
+        required_blockers = sum(1 for check in required_cutover.get("checks", []) if check.get("status") == "blocker")
         lines = [
             f"sca_monitor_services {overview['service_count']}",
             f"sca_monitor_open_impacts {overview['open_impacts']}",
@@ -2411,6 +2416,15 @@ class ScaMonitorApp:
             f"sca_monitor_sla_overdue_impacts {overview['sla_overdue_impacts']}",
             f"sca_monitor_alert_readiness_ready {1 if overview['alert_readiness']['status'] == 'ready' else 0}",
             f"sca_monitor_advisory_sync_ready {1 if overview['advisory_sync_readiness']['status'] == 'ready' else 0}",
+            f"sca_monitor_database_ready {1 if database_readiness['status'] == 'ready' else 0}",
+            f"sca_monitor_database_backend_info{{backend=\"{metric_label(database_readiness['database_backend'])}\"}} 1",
+            f"sca_monitor_migration_current_version {int(migration.get('current') or 0)}",
+            f"sca_monitor_migration_required_version {int(migration.get('required') or 0)}",
+            f"sca_monitor_migration_compatible {1 if migration.get('compatible') else 0}",
+            f"sca_monitor_postgres_configured {1 if cutover.get('postgres_configured') else 0}",
+            f"sca_monitor_postgres_cutover_status{{mode=\"{metric_label(cutover.get('mode', 'unknown'))}\",status=\"{metric_label(cutover.get('status', 'unknown'))}\"}} 1",
+            f"sca_monitor_postgres_cutover_required_ready {1 if required_cutover.get('status') == 'ready' else 0}",
+            f"sca_monitor_postgres_cutover_blockers {required_blockers}",
         ]
         lines.extend(self.operational_metric_lines())
         lines.append("")
