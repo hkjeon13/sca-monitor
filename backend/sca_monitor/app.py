@@ -1398,6 +1398,84 @@ class ScaMonitorApp:
             (revoked_at, impact_id),
         )
 
+    def expire_accepted_risks(self, *, now: str | None = None, limit: int = 100, dry_run: bool = False, actor: str = "system") -> dict:
+        checked_at = now or utcnow()
+        limit = bounded_int(limit, default=100, minimum=1, maximum=1000)
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ar.id AS accepted_risk_id, ar.impact_pk, ar.approved_by, ar.reason,
+                       ar.expires_at, i.status, i.risk_level, i.package_name, i.resolved_version
+                FROM accepted_risks ar
+                JOIN impacts i ON i.id = ar.impact_pk
+                WHERE ar.revoked_at IS NULL
+                  AND i.status = 'accepted_risk'
+                ORDER BY ar.expires_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            expired_rows = [row for row in rows if timestamp_is_due(row["expires_at"], checked_at)]
+            if dry_run:
+                return {
+                    "checked_at": checked_at,
+                    "matched": len(rows),
+                    "expired": len(expired_rows),
+                    "dry_run": True,
+                    "impact_ids": [row["impact_pk"] for row in expired_rows],
+                }
+            expired = []
+            for row in expired_rows:
+                impact_id = row["impact_pk"]
+                before = {
+                    "id": impact_id,
+                    "status": row["status"],
+                    "risk_level": row["risk_level"],
+                    "package_name": row["package_name"],
+                    "resolved_version": row["resolved_version"],
+                    "accepted_risk_id": row["accepted_risk_id"],
+                    "expires_at": row["expires_at"],
+                }
+                conn.execute(
+                    """
+                    UPDATE impacts
+                    SET status = 'open', updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (checked_at, impact_id),
+                )
+                self.revoke_active_accepted_risk(conn, impact_id, checked_at)
+                conn.execute(
+                    """
+                    INSERT INTO impact_history (id, impact_pk, from_status, to_status, actor, reason, created_at)
+                    VALUES (?, ?, 'accepted_risk', 'open', ?, ?, ?)
+                    """,
+                    (str(uuid.uuid4()), impact_id, actor, "accepted risk expired", checked_at),
+                )
+                updated = conn.execute(
+                    "SELECT id, status, risk_level, package_name, resolved_version FROM impacts WHERE id = ?",
+                    (impact_id,),
+                ).fetchone()
+                self.write_audit_log(
+                    conn,
+                    actor=actor,
+                    action="accepted_risk.expire",
+                    target_type="impact",
+                    target_id=impact_id,
+                    reason="accepted risk expired",
+                    before=before,
+                    after=row_to_dict(updated),
+                    occurred_at=checked_at,
+                )
+                expired.append({"impact_id": impact_id, "accepted_risk_id": row["accepted_risk_id"], "expires_at": row["expires_at"]})
+        return {
+            "checked_at": checked_at,
+            "matched": len(rows),
+            "expired": len(expired),
+            "dry_run": False,
+            "impacts": expired,
+        }
+
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")
         reason = body.get("reason", "requeue dead-letter alert")
@@ -1757,6 +1835,27 @@ def seconds_since(value: str | None, now: datetime) -> int | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return max(0, int((now - parsed).total_seconds()))
+
+
+def timestamp_is_due(value: str | None, now_value: str) -> bool:
+    if not value:
+        return False
+    try:
+        target = parse_iso_datetime(value)
+        now = parse_iso_datetime(now_value)
+    except ValueError:
+        return str(value) <= str(now_value)
+    return target <= now
+
+
+def parse_iso_datetime(value: str) -> datetime:
+    text = str(value)
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def metric_label(value: str) -> str:

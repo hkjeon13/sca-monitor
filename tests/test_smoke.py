@@ -694,6 +694,56 @@ def test_accepted_risk_records_approval_and_revokes_on_status_change(tmp_path):
     assert row["revoked_at"] is not None
 
 
+def test_expire_accepted_risks_reopens_due_impacts_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+    app.update_impact_status(
+        impact_id,
+        {
+            "status": "accepted_risk",
+            "actor": "security-approver",
+            "reason": "temporary exception",
+            "expires_at": "2026-01-01T00:00:00Z",
+        },
+    )
+
+    dry_run = app.expire_accepted_risks(now="2026-01-02T00:00:00Z", dry_run=True)
+    result = app.expire_accepted_risks(now="2026-01-02T00:00:00Z", actor="risk-scheduler")
+
+    assert dry_run["expired"] == 1
+    assert result["expired"] == 1
+    assert app.get_impact(impact_id)["impact"]["status"] == "open"
+    assert app.get_impact(impact_id)["accepted_risk"] is None
+    audit = app.search_audit_logs({"action": ["accepted_risk.expire"], "target_id": [impact_id]})
+    assert audit["pagination"]["total"] == 1
+    assert audit["audit_logs"][0]["actor"] == "risk-scheduler"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT revoked_at FROM accepted_risks WHERE impact_pk = ?", (impact_id,)).fetchone()
+    assert row["revoked_at"] == "2026-01-02T00:00:00Z"
+
+
+def test_expire_accepted_risks_ignores_future_expiry(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+    app.update_impact_status(
+        impact_id,
+        {
+            "status": "accepted_risk",
+            "actor": "security-approver",
+            "reason": "temporary exception",
+            "expires_at": "2026-02-01T00:00:00Z",
+        },
+    )
+
+    result = app.expire_accepted_risks(now="2026-01-02T00:00:00Z")
+
+    assert result["expired"] == 0
+    assert app.get_impact(impact_id)["impact"]["status"] == "accepted_risk"
+    assert app.get_impact(impact_id)["accepted_risk"]["expires_at"] == "2026-02-01T00:00:00Z"
+
+
 def test_closed_workflow_statuses_are_excluded_from_open_counts(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

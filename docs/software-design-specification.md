@@ -1475,14 +1475,14 @@ GET /api/v1/audit-logs
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
 - Impact Detail: `GET /api/v1/impacts/{impact_id}` 기반 service, package, advisory, affected range, fixed version, freshness, detection timestamp, alert key, 상태 변경 이력 표시
-- Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록. `accepted_risk` 전환 시 reason과 expires_at을 필수로 받고 `accepted_risks`에 승인자/사유/만료일을 저장한다
+- Impact Action Panel: `PATCH /api/v1/impacts/{impact_id}/status` 기반 `open`, `acknowledged`, `in_progress`, `fixed`, `accepted_risk`, `false_positive`, `not_affected` 상태 변경 및 reason 기록. `accepted_risk` 전환 시 reason과 expires_at을 필수로 받고 `accepted_risks`에 승인자/사유/만료일을 저장한다. `scripts/expire_accepted_risks.py`는 만료된 accepted risk를 `open`으로 되돌리고 impact history와 audit log를 기록한다
 - Audit Log: `audit_logs` table과 `GET /api/v1/audit-logs` 기반 impact status 변경, alert channel 설정 변경, alert event requeue 이력을 actor/action/target/reason/before/after로 조회한다. Web Console Settings에서 action/target/search/limit 필터로 최근 audit log를 확인할 수 있으며, webhook URL 같은 민감 target 값은 masked 값만 저장/노출한다
 - Open impact count: MVP에서는 `open`, `acknowledged`, `in_progress` 상태를 active work로 집계하고 `fixed`, `accepted_risk`, `false_positive`, `not_affected`, `resolved_by_advisory_update`는 open count에서 제외
 
 남은 구현:
 
 - role-aware UI와 API 인가 연동
-- accepted risk role-aware 승인 정책과 만료 scheduler
+- accepted risk role-aware 승인 정책과 운영 scheduler 등록
 - 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
@@ -1579,7 +1579,7 @@ PATCH /api/v1/impacts/{impact_id}/status
 `accepted_risk` 처리는 `security-approver` 역할만 수행할 수 있으며, `service-owner`는 자기 서비스 impact의 acknowledge와 in-progress 전환만 수행할 수 있다.
 
 현재 MVP는 인증/인가 계층이 없으므로 request body의 `actor`를 인증 principal 대체값으로 `approved_by`에 저장한다.
-role-aware 검증과 만료 scheduler는 후속 구현 범위이다.
+role-aware 검증과 운영 scheduler 등록은 후속 구현 범위이다.
 
 ## 16. Version Matching and Package Normalization
 
