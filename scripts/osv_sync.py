@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--zip-path", type=Path, default=None, help="Read a local OSV dump ZIP instead of downloading")
     parser.add_argument("--source", default="OSV", help="Stored advisory source. Use OpenSSF with --malicious-only for MAL-* records.")
     parser.add_argument("--malicious-only", action="store_true", help="Import only MAL-* records from the dump")
+    parser.add_argument("--scan-limit", type=int, default=None, help="Maximum JSON records to inspect before stopping with partial status")
     parser.add_argument("--lock-owner", default=None, help="Explicit sync lock owner id")
     parser.add_argument("--lock-ttl-seconds", type=int, default=3600, help="Sync lock time-to-live in seconds")
     args = parser.parse_args()
@@ -38,6 +39,7 @@ def main() -> None:
         lock_ttl_seconds=args.lock_ttl_seconds,
         source=args.source,
         malicious_only=args.malicious_only,
+        scan_limit=args.scan_limit,
     )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
 

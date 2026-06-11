@@ -104,6 +104,8 @@ python3 scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --
 ```
 
 이 경로는 OSV-format `MAL-*` record만 수집해 `source=OpenSSF`, `is_malicious_package=true`로 저장한다.
+bootstrap/canary에서는 전체 dump scan 시간을 제한하기 위해 `--scan-limit 1000`처럼 검사 record 수를 제한할 수 있다.
+`--scan-limit`에 도달하면 sync 상태는 `partial`이므로 initial sync 완료로 간주하지 않는다.
 매칭된 impact는 risk scoring에서 Critical로 승격된다.
 
 CISA KEV 수동 재시도 예시:

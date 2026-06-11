@@ -197,8 +197,8 @@ references
 - advisory import는 저장 값 변경 여부를 감지하고, 변경된 advisory package를 포함하는 latest snapshot을 재매칭한다.
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
 - 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
-- OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
-- OSV `MAL-*` record는 `source=OpenSSF`, `is_malicious_package=true`로 저장할 수 있으며, `scripts/osv_sync.py --source OpenSSF --malicious-only`는 OSV-format dump에서 malicious package record만 분리 수집한다.
+- OSV dump sync는 `--limit`, `--scan-limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다. `--limit`는 import 대상 advisory 수를 제한하고, `--scan-limit`는 bootstrap/canary 실행에서 전체 JSON record 검사량을 제한한다.
+- OSV `MAL-*` record는 `source=OpenSSF`, `is_malicious_package=true`로 저장할 수 있으며, `scripts/osv_sync.py --source OpenSSF --malicious-only`는 OSV-format dump에서 malicious package record만 분리 수집한다. OpenSSF canary는 큰 ecosystem dump를 오래 훑지 않도록 `--scan-limit`를 함께 사용할 수 있으며, scan limit에 도달하면 sync 상태는 `partial`로 기록된다.
 - `scripts/cisa_kev_sync.py`는 CISA KEV JSON catalog를 읽어 `source=CISA_KEV`, `is_known_exploited=true`, `severity=critical` advisory로 저장하고 `advisory_sync_state`에 sync 상태를 기록한다. KEV `cveID`가 기존 OSV/GHSA raw `aliases`에 있으면 해당 package advisory도 known-exploited critical로 보강하고 latest snapshot을 재매칭한다.
 - endpoint polling worker는 등록된 `status_endpoint_url`을 순회해 snapshot을 수집하고, `endpoint_poll_state` DB lease로 중복 실행을 차단한다.
 - endpoint polling CLI는 `--iterations`, `--interval-seconds`, `--worker-name`, `--lock-owner`, `--lock-ttl-seconds` 옵션을 지원한다.

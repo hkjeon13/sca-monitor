@@ -2759,7 +2759,9 @@ def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
 
     result = sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, limit=1)
 
+    assert result.scanned == 1
     assert result.processed == 1
+    assert result.scan_limit_reached is False
     assert result.imported_rows == 1
     assert result.failed == 0
     advisories = app.list_advisories({"source": ["OSV"]})
@@ -2778,14 +2780,42 @@ def test_sync_openssf_malicious_records_from_osv_zip(tmp_path):
     result = sync_osv_ecosystem_dump(app, "npm", zip_path=zip_path, source="OpenSSF", malicious_only=True)
 
     assert result.source == "OpenSSF"
+    assert result.scanned == 2
     assert result.processed == 1
     assert result.skipped == 1
+    assert result.scan_limit_reached is False
     assert result.imported_rows == 1
     assert result.failed == 0
     advisories = app.list_advisories({"source": ["OpenSSF"]})
     imported = next(advisory for advisory in advisories if advisory["advisory_id"] == "MAL-2026-0001")
     assert imported["is_malicious_package"] is True
     assert app.overview()["advisory_sync"]["OpenSSF"] == "ok"
+
+
+def test_osv_sync_scan_limit_stops_large_malicious_only_scan(tmp_path):
+    app = make_test_app(tmp_path)
+    zip_path = tmp_path / "openssf-scan-limit.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("AAA-OSV-TEST-0001.json", json.dumps(osv_fixture()))
+        archive.writestr("MAL-2026-0001.json", json.dumps(malicious_osv_fixture()))
+
+    result = sync_osv_ecosystem_dump(
+        app,
+        "npm",
+        zip_path=zip_path,
+        source="OpenSSF",
+        malicious_only=True,
+        scan_limit=1,
+    )
+
+    assert result.scanned == 1
+    assert result.processed == 0
+    assert result.skipped == 1
+    assert result.imported_rows == 0
+    assert result.scan_limit_reached is True
+    overview = app.overview()
+    assert overview["advisory_sync"]["OpenSSF"] == "partial"
+    assert overview["advisory_sync_readiness"]["status"] == "degraded"
 
 
 def test_openssf_malicious_advisory_matches_as_critical_impact(tmp_path):

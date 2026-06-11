@@ -22,11 +22,13 @@ CISA_KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exp
 class OsvSyncResult:
     source: str
     ecosystem: str
+    scanned: int
     processed: int
     skipped: int
     imported_rows: int
     failed: int
     dump_url: str
+    scan_limit_reached: bool
 
 
 @dataclass(frozen=True)
@@ -59,31 +61,39 @@ def sync_osv_ecosystem_dump(
     lock_ttl_seconds: int = 3600,
     source: str = "OSV",
     malicious_only: bool = False,
+    scan_limit: int | None = None,
 ) -> OsvSyncResult:
     url = dump_url or osv_dump_url(ecosystem)
     sync_source = normalize_sync_source(source)
+    scanned = 0
     processed = 0
     skipped = 0
     imported_rows = 0
     failed = 0
+    scan_limit_reached = False
     owner = lock_owner or default_lock_owner(f"{sync_source.lower()}-{ecosystem}")
 
     try:
         with app.advisory_sync_lock(sync_source, owner, ttl_seconds=lock_ttl_seconds):
             for payload in iter_osv_dump_payloads(url=url, zip_path=zip_path):
+                if limit is not None and processed >= limit:
+                    break
+                if scan_limit is not None and scanned >= scan_limit:
+                    scan_limit_reached = True
+                    break
+                scanned += 1
                 advisory_id = str(payload.get("id") or "")
                 if malicious_only and not advisory_id.startswith("MAL-"):
                     skipped += 1
                     continue
-                if limit is not None and processed >= limit:
-                    break
                 processed += 1
                 try:
                     imported_rows += app.import_osv_payload(payload, source_override=sync_source)["imported"]
                 except Exception:
                     failed += 1
-            status = "ok" if failed == 0 else "partial"
-            app.record_advisory_sync(sync_source, status, f"{ecosystem}:dump", None, imported_count=0)
+            status = "ok" if failed == 0 and not scan_limit_reached else "partial"
+            error_message = "scan_limit reached before dump exhausted" if scan_limit_reached else None
+            app.record_advisory_sync(sync_source, status, f"{ecosystem}:dump", error_message, imported_count=imported_rows)
     except Exception as exc:
         app.record_advisory_sync(sync_source, "error", f"{ecosystem}:dump", str(exc), imported_count=0)
         raise
@@ -91,11 +101,13 @@ def sync_osv_ecosystem_dump(
     return OsvSyncResult(
         source=sync_source,
         ecosystem=ecosystem,
+        scanned=scanned,
         processed=processed,
         skipped=skipped,
         imported_rows=imported_rows,
         failed=failed,
         dump_url=url,
+        scan_limit_reached=scan_limit_reached,
     )
 
 
