@@ -14,6 +14,7 @@ GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
 ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
 ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
+BOOTSTRAP_READINESS="${SCA_MONITOR_BOOTSTRAP_READINESS:-disabled}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -58,6 +59,7 @@ ssh "$REMOTE" "set -euo pipefail
   REQUIRE_RUNTIME_INPUTS='$REQUIRE_RUNTIME_INPUTS'
   ADVISORY_SOURCE_PREFLIGHT='$ADVISORY_SOURCE_PREFLIGHT'
   ADVISORY_SOURCE_PREFLIGHT_TIMEOUT='$ADVISORY_SOURCE_PREFLIGHT_TIMEOUT'
+  BOOTSTRAP_READINESS='$BOOTSTRAP_READINESS'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -152,6 +154,21 @@ ssh "$REMOTE" "set -euo pipefail
   trap restart_systemd_workers_after_migration EXIT
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
+  case \"\$BOOTSTRAP_READINESS\" in
+    disabled|skip|false|0|'')
+      echo 'bootstrap readiness gate skipped'
+      ;;
+    advisory|advisory-only|skip-alert-activation)
+      python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation
+      ;;
+    required|full)
+      python3 scripts/bootstrap_readiness_check.py --json
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_BOOTSTRAP_READINESS: \$BOOTSTRAP_READINESS\" >&2
+      exit 2
+      ;;
+  esac
   restart_systemd_workers_after_migration
   trap - EXIT
   start_legacy_api() {
