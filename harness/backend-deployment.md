@@ -225,6 +225,7 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 `enable-api`와 `enable` 모드에서는 기존 `.data/sca-monitor.pid` 기반 legacy API process를 먼저 정리하고 systemd `sca-monitor-api.service`가 API runtime을 담당한다.
 `off`, `validate`, `install` 모드에서는 기존 nohup API runtime을 유지한다.
 `enable-api`와 `enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
+systemd deploy gate가 실패하면 원격 배포 스크립트는 legacy nohup API runtime을 다시 시작하고 실패를 반환한다.
 원격 배포는 기본적으로 원격 `.env`의 `SCA_MONITOR_SYSTEMD_*` 값을 사용한다.
 CI/CD 또는 수동 자동화에서 `SCA_MONITOR_SYSTEMD_MODE`, `SCA_MONITOR_SYSTEMD_SCOPE`, `SCA_MONITOR_SYSTEMD_PREFIX`, `SCA_MONITOR_SYSTEMD_PYTHON`을 로컬 환경변수로 명시하면 해당 값이 원격 `.env` 값을 override한다.
 

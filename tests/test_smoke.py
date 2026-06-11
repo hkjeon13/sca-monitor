@@ -501,6 +501,8 @@ def test_remote_deploy_uses_db_gate():
     assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\\"' in script
+    assert "start_legacy_api() {" in script
+    assert "systemd deploy gate failed; restarting legacy API runtime" in script
     assert 'if [ \\"\\$SYSTEMD_MODE\\" = ' in script
     assert '"\\$SYSTEMD_MODE\\" = ' in script and "enable-api" in script
     assert "rm -f .data/sca-monitor.pid" in script

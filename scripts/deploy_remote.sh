@@ -38,6 +38,10 @@ ssh "$REMOTE" "set -euo pipefail
   SYSTEMD_MODE=\"\${SCA_MONITOR_SYSTEMD_MODE:-validate}\"
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
+  start_legacy_api() {
+    nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
+    echo \$! > .data/sca-monitor.pid
+  }
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)
     if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then
@@ -45,17 +49,20 @@ ssh "$REMOTE" "set -euo pipefail
       sleep 1
     fi
   fi
-  SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE\" \
+  if ! SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE\" \
     SCA_MONITOR_SYSTEMD_SCOPE=\"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\" \
     SCA_MONITOR_SYSTEMD_PREFIX=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\" \
     SCA_MONITOR_SYSTEMD_PYTHON=\"\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\" \
     SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' \
-    bash scripts/deploy_systemd_gate.sh
+    bash scripts/deploy_systemd_gate.sh; then
+    echo \"systemd deploy gate failed; restarting legacy API runtime\" >&2
+    start_legacy_api
+    exit 1
+  fi
   if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ]; then
     rm -f .data/sca-monitor.pid
   else
-    nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
-    echo \$! > .data/sca-monitor.pid
+    start_legacy_api
   fi
   for attempt in \$(seq 1 20); do
     if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
