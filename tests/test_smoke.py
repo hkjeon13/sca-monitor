@@ -1140,6 +1140,49 @@ def test_deployment_input_readiness_env_overrides_env_file(tmp_path):
     assert systemd_check["detail"] == "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run"
 
 
+def test_configure_runtime_inputs_updates_public_url_and_generates_smoke_token(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SMOKE_TEST_TOKEN=change-me",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/configure_runtime_inputs.py",
+            "--env-file",
+            str(env_file),
+            "--public-url",
+            "https://monitoring.fin-ally.net",
+            "--generate-smoke-token",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    env_text = env_file.read_text(encoding="utf-8")
+    token_line = next(line for line in env_text.splitlines() if line.startswith("SMOKE_TEST_TOKEN="))
+    token = token_line.split("=", 1)[1]
+    assert payload["status"] == "ok"
+    assert payload["updated"] == ["SCA_MONITOR_PUBLIC_URL", "SMOKE_TEST_TOKEN"]
+    assert "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net" in env_text
+    assert token != "change-me"
+    assert len(token) >= 32
+    assert token not in result.stdout
+
+
 def test_postgres_preflight_summary_reports_blockers_and_split_ready():
     sqlite_cutover = assess_cutover({})
     sqlite_required = assess_cutover({}, require_postgres=True)
@@ -1520,9 +1563,12 @@ def test_ci_smoke_runs_core_gates():
 def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
 
+    assert "scripts/configure_runtime_inputs.py" in script
+    assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
+    assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
 
 

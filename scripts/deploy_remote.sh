@@ -9,6 +9,8 @@ SYSTEMD_SCOPE_OVERRIDE="${SCA_MONITOR_SYSTEMD_SCOPE:-}"
 SYSTEMD_PREFIX_OVERRIDE="${SCA_MONITOR_SYSTEMD_PREFIX:-}"
 SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
+PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
+GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -17,6 +19,27 @@ ssh "$REMOTE" "set -euo pipefail
   mkdir -p .data logs
   if [ ! -f .env ]; then cp deploy/sca-monitor.env.example .env; fi
   sed -i 's/^SCA_MONITOR_PORT=.*/SCA_MONITOR_PORT=$PORT/' .env
+  PUBLIC_URL_OVERRIDE='$PUBLIC_URL_OVERRIDE'
+  GENERATE_SMOKE_TOKEN='$GENERATE_SMOKE_TOKEN'
+  runtime_input_args=''
+  if [ -n \"\$PUBLIC_URL_OVERRIDE\" ]; then
+    runtime_input_args=\"\$runtime_input_args --public-url \$PUBLIC_URL_OVERRIDE\"
+  fi
+  case \"\$GENERATE_SMOKE_TOKEN\" in
+    true|1|yes|on)
+      runtime_input_args=\"\$runtime_input_args --generate-smoke-token\"
+      ;;
+    false|0|no|off|'')
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_GENERATE_SMOKE_TOKEN: \$GENERATE_SMOKE_TOKEN\" >&2
+      exit 2
+      ;;
+  esac
+  if [ -n \"\$runtime_input_args\" ]; then
+    # shellcheck disable=SC2086
+    python3 scripts/configure_runtime_inputs.py --env-file .env \$runtime_input_args --json
+  fi
   set -a
   . ./.env
   set +a

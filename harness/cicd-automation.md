@@ -126,6 +126,14 @@ GET /api/v1/impacts
 `SCA_MONITOR_DEPLOYMENT_ENV_FILE=.env`처럼 명시한다.
 운영 승격 단계에서 public URL과 smoke token placeholder까지 stop gate로 강제하려면
 `SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true`를 함께 설정한다.
+원격 `.env`에 runtime input을 반영해야 하는 배포에서는 다음처럼 public URL을 주입하고, placeholder smoke token은 원격에서 생성한다.
+
+```bash
+SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net \
+SCA_MONITOR_GENERATE_SMOKE_TOKEN=true \
+SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true \
+scripts/deploy_remote.sh
+```
 
 `SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
