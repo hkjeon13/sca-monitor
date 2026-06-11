@@ -2464,6 +2464,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
     assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in script
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN" in script
+    assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
@@ -2480,6 +2481,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
     assert "scripts/database_env_dry_run_gate.py --database-env-file" in script
+    assert "database env preflight completed; deployment stopped before runtime changes" in script
     assert "scripts/advisory_source_preflight.py --check" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
@@ -2499,6 +2501,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("scripts/validate_database_env_file.py") < script.index("scripts/configure_runtime_inputs.py")
     assert script.index("scripts/prepare_database_env_file.py --database-env-file") < script.index("set -a")
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
+    assert script.index("SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
@@ -2530,6 +2533,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "DB URL 원문이나 password를 포함하지" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
+    assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY=true" in database_doc
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE=required" in database_doc
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc

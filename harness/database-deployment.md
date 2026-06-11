@@ -229,6 +229,17 @@ scripts/deploy_remote.sh
 
 `synthetic`은 실제 secret 없이 split credential 병합/준비도 흐름만 검증한다.
 `provided` 또는 `required`는 `SCA_MONITOR_DATABASE_ENV_FILE`이 지정된 경우에만 실행되며, 실제 secret 파일을 `.env`에 병합하기 전에 같은 파일을 dry-run gate로 먼저 검증한다.
+원격 파일을 `.env`에 병합하거나 runtime을 재시작하지 않고 protected PostgreSQL env file만 검증하려면 preflight-only 모드를 사용한다.
+
+```bash
+SCA_MONITOR_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY=true \
+SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH=.data/cutover-readiness-report.json \
+scripts/deploy_remote.sh
+```
+
+이 모드는 `validate_database_env_file.py`, `database_env_dry_run_gate.py`, `cutover_readiness_report.py`를 실행한 뒤 종료한다.
+placeholder가 남아 있거나 split PostgreSQL 준비도가 부족하면 blocked 결과를 출력하고 배포를 중단한다.
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.

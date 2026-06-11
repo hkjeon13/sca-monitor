@@ -15,6 +15,7 @@ DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
 PREPARE_DATABASE_ENV_FILE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FILE:-}"
 PREPARE_DATABASE_ENV_FORCE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE:-false}"
 DATABASE_ENV_DRY_RUN="${SCA_MONITOR_DATABASE_ENV_DRY_RUN:-disabled}"
+DATABASE_ENV_PREFLIGHT_ONLY="${SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY:-false}"
 ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
 ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
 BOOTSTRAP_READINESS="${SCA_MONITOR_BOOTSTRAP_READINESS:-disabled}"
@@ -44,6 +45,8 @@ ssh "$REMOTE" "set -euo pipefail
   PREPARE_DATABASE_ENV_FILE='$PREPARE_DATABASE_ENV_FILE'
   PREPARE_DATABASE_ENV_FORCE='$PREPARE_DATABASE_ENV_FORCE'
   DATABASE_ENV_DRY_RUN='$DATABASE_ENV_DRY_RUN'
+  DATABASE_ENV_PREFLIGHT_ONLY='$DATABASE_ENV_PREFLIGHT_ONLY'
+  CUTOVER_READINESS_REPORT_PATH='$CUTOVER_READINESS_REPORT_PATH'
   if [ -n \"\$PREPARE_DATABASE_ENV_FILE\" ]; then
     case \"\$PREPARE_DATABASE_ENV_FILE\" in
       true|1|yes|on)
@@ -90,8 +93,41 @@ ssh "$REMOTE" "set -euo pipefail
   fi
   if [ -n \"\$DATABASE_ENV_FILE\" ]; then
     python3 scripts/validate_database_env_file.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
+    case \"\$DATABASE_ENV_PREFLIGHT_ONLY\" in
+      true|1|yes|on)
+        python3 scripts/database_env_dry_run_gate.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
+        python3 scripts/cutover_readiness_report.py \
+          --env-file .env \
+          --database-env-file \"\$DATABASE_ENV_FILE\" \
+          --require-postgres \
+          --require-split \
+          --require-runtime-inputs \
+          --output \"\$CUTOVER_READINESS_REPORT_PATH\" \
+          --json
+        echo 'database env preflight completed; deployment stopped before runtime changes'
+        exit 0
+        ;;
+      false|0|no|off|'')
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY: \$DATABASE_ENV_PREFLIGHT_ONLY\" >&2
+        exit 2
+        ;;
+    esac
     runtime_input_args=\"\$runtime_input_args --database-env-file \$DATABASE_ENV_FILE\"
   fi
+  case \"\$DATABASE_ENV_PREFLIGHT_ONLY\" in
+    true|1|yes|on)
+      echo 'SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY requires SCA_MONITOR_DATABASE_ENV_FILE' >&2
+      exit 2
+      ;;
+    false|0|no|off|'')
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY: \$DATABASE_ENV_PREFLIGHT_ONLY\" >&2
+      exit 2
+      ;;
+  esac
   case \"\$GENERATE_SMOKE_TOKEN\" in
     true|1|yes|on)
       runtime_input_args=\"\$runtime_input_args --generate-smoke-token\"
