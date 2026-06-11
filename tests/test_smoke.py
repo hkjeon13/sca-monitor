@@ -1306,8 +1306,11 @@ def test_ci_smoke_runs_core_gates():
     assert "bash scripts/deploy_db_gate.sh" in script
     assert "bash scripts/deploy_systemd_gate.sh" in script
     assert "bash scripts/postgres_docker_smoke_gate.sh" in script
-    assert "scripts/http_smoke.py --base-url" in script
+    assert "scripts/http_smoke.py" in script
+    assert "--base-url" in script
     assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
+    assert "SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" in script
+    assert "--expect-postgres-split-required" in script
 
 
 def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):

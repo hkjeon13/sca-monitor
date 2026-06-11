@@ -3,6 +3,7 @@ set -euo pipefail
 
 BASE_URL="${SCA_MONITOR_SMOKE_BASE_URL:-${SCA_MONITOR_PUBLIC_URL:-}}"
 RUN_HTTP_SMOKE="${SCA_MONITOR_CI_HTTP_SMOKE:-auto}"
+EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 
 if [ "$RUN_HTTP_SMOKE" = "required" ] && [ -z "$BASE_URL" ]; then
   echo "http smoke required but SCA_MONITOR_SMOKE_BASE_URL or SCA_MONITOR_PUBLIC_URL is not configured" >&2
@@ -27,11 +28,19 @@ case "$RUN_HTTP_SMOKE" in
       echo "http smoke required but SCA_MONITOR_SMOKE_BASE_URL or SCA_MONITOR_PUBLIC_URL is not configured" >&2
       exit 2
     fi
-    python3 scripts/http_smoke.py --base-url "$BASE_URL" --json
+    http_smoke_args=(--base-url "$BASE_URL")
+    if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
+      http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
+    fi
+    python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     ;;
   auto|"")
     if [ -n "$BASE_URL" ]; then
-      python3 scripts/http_smoke.py --base-url "$BASE_URL" --json
+      http_smoke_args=(--base-url "$BASE_URL")
+      if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
+        http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
+      fi
+      python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     else
       echo "http smoke skipped: base URL not configured"
     fi
