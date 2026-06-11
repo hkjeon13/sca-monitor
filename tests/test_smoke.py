@@ -836,6 +836,57 @@ def test_list_impacts_supports_server_side_filters(tmp_path):
     assert [impact["service_id"] for impact in page["impacts"]] == ["billing-service"]
 
 
+def test_bulk_update_impact_status_updates_filtered_impacts_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    second_payload = osv_fixture()
+    second_payload["id"] = "OSV-TEST-0002"
+    second_payload["summary"] = "Fixture advisory for second-package"
+    second_payload["affected"][0]["package"]["name"] = "second-package"
+    app.import_osv_payload(second_payload)
+    app.push_snapshot(
+        {
+            "service_id": "billing-service",
+            "service_name": "Billing Service",
+            "environment": "stage",
+            "owner_team": "billing-team",
+            "dependencies": [{"ecosystem": "npm", "name": "second-package", "version": "1.0.1"}],
+        }
+    )
+
+    result = app.bulk_update_impact_status(
+        {
+            "target_status": "in_progress",
+            "filters": {"owner_team": "billing-team"},
+            "actor": "triage-bot",
+            "reason": "bulk owner triage",
+        }
+    )
+
+    assert result["matched"] == 1
+    assert result["updated"] == 1
+    assert result["skipped"] == 0
+    assert [impact["status"] for impact in app.list_impacts({"service_id": ["billing-service"]})] == ["in_progress"]
+    assert [impact["status"] for impact in app.list_impacts({"service_id": ["alert-service"]})] == ["open"]
+    audit = app.search_audit_logs({"action": ["impact.status.update"], "q": ["bulk owner triage"]})
+    assert audit["pagination"]["total"] == 1
+    assert audit["audit_logs"][0]["actor"] == "triage-bot"
+
+    skipped = app.bulk_update_impact_status({"target_status": "in_progress", "filters": {"owner_team": "billing-team"}})
+
+    assert skipped["matched"] == 1
+    assert skipped["updated"] == 0
+    assert skipped["skipped"] == 1
+
+
+def test_bulk_update_impact_status_rejects_accepted_risk(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    with pytest.raises(ValueError, match="target_status must be one of"):
+        app.bulk_update_impact_status({"target_status": "accepted_risk", "filters": {"service_id": "alert-service"}})
+
+
 def test_sync_osv_ecosystem_dump_from_zip(tmp_path):
     app = make_test_app(tmp_path)
     zip_path = tmp_path / "osv-fixture.zip"

@@ -336,6 +336,19 @@ function impactFilterQuery() {
   return params.toString();
 }
 
+function impactFilterObjectForBulk() {
+  const form = document.querySelector("#impact-filter-form");
+  const ignored = new Set(["offset", "limit", "sort", "direction"]);
+  const filters = {};
+  for (const [key, value] of new FormData(form).entries()) {
+    const text = String(value).trim();
+    if (text && !ignored.has(key)) {
+      filters[key] = text;
+    }
+  }
+  return filters;
+}
+
 function syncImpactFiltersToUrl(query) {
   const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
   window.history.replaceState(null, "", url);
@@ -393,6 +406,23 @@ document.querySelector("#clear-impact-filters").addEventListener("click", async 
   document.querySelector('#impact-filter-form input[name="offset"]').value = "0";
   selectedImpactId = null;
   await loadImpacts();
+});
+
+document.querySelector("#impact-bulk-action-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const data = await api.send("/api/v1/impacts/status", "POST", {
+    target_status: form.target_status,
+    filters: impactFilterObjectForBulk(),
+    limit: form.limit,
+    actor: "web-console",
+    reason: form.reason || "bulk status update from web console",
+  });
+  document.querySelector("#impact-bulk-result").innerHTML = `
+    <p><strong>${escapeHtml(data.updated)} impacts updated.</strong> ${escapeHtml(data.skipped)} skipped, ${escapeHtml(data.matched)} matched current filters.</p>
+  `;
+  selectedImpactId = null;
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAuditLogs()]);
 });
 
 document.querySelector("#alert-event-filter-form").addEventListener("submit", async (event) => {

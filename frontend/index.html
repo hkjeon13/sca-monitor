@@ -138,6 +138,27 @@
             <button type="submit">Apply</button>
             <button type="button" id="clear-impact-filters" class="secondary">Clear</button>
           </form>
+          <form id="impact-bulk-action-form" class="bulk-action-bar">
+            <label>Bulk Status
+              <select name="target_status">
+                <option value="acknowledged">acknowledged</option>
+                <option value="in_progress">in_progress</option>
+                <option value="fixed">fixed</option>
+                <option value="false_positive">false_positive</option>
+                <option value="not_affected">not_affected</option>
+              </select>
+            </label>
+            <label>Limit
+              <select name="limit">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <label>Reason<input name="reason" placeholder="Bulk triage note" /></label>
+            <button type="submit" class="secondary">Apply to Filtered</button>
+          </form>
+          <div id="impact-bulk-result" class="inline-result"></div>
           <div class="impact-workspace">
             <div>
               <div id="impacts-list" class="impact-list"></div>

@@ -31,6 +31,14 @@ IMPACT_STATUSES = {
     "not_affected",
     "resolved_by_advisory_update",
 }
+BULK_IMPACT_TARGET_STATUSES = {
+    "open",
+    "acknowledged",
+    "in_progress",
+    "fixed",
+    "false_positive",
+    "not_affected",
+}
 
 
 class ScaMonitorApp:
@@ -128,6 +136,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.push_snapshot(self.read_json(request), request.headers.get("Authorization")), HTTPStatus.CREATED)
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
+            if path == "/api/v1/impacts/status" and method == "POST":
+                return self.json_response(request, self.bulk_update_impact_status(self.read_json(request)))
             if path == "/api/v1/alert-events" and method == "GET":
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
@@ -1411,6 +1421,43 @@ class ScaMonitorApp:
                 occurred_at=now,
             )
         return {"impact_id": impact_id, "status": status, "accepted_risk": accepted_risk}
+
+    def bulk_update_impact_status(self, body: dict) -> dict:
+        target_status = required(body, "target_status")
+        if target_status not in BULK_IMPACT_TARGET_STATUSES:
+            raise ValueError(f"target_status must be one of {', '.join(sorted(BULK_IMPACT_TARGET_STATUSES))}")
+        filters = body.get("filters") or {}
+        if not isinstance(filters, dict):
+            raise ValueError("filters must be an object")
+        limit = bounded_int(body.get("limit"), default=100, minimum=1, maximum=200)
+        query = {key: [str(value)] for key, value in filters.items() if value is not None and str(value).strip()}
+        query["limit"] = [str(limit)]
+        query["offset"] = ["0"]
+        page = self.search_impacts(query)
+        updated = []
+        skipped = []
+        for impact in page["impacts"]:
+            if impact["status"] == target_status:
+                skipped.append({"impact_id": impact["id"], "status": impact["status"], "reason": "already_target_status"})
+                continue
+            result = self.update_impact_status(
+                impact["id"],
+                {
+                    "status": target_status,
+                    "actor": body.get("actor", "operator"),
+                    "reason": body.get("reason", "bulk impact status update"),
+                },
+            )
+            updated.append(result)
+        return {
+            "matched": page["pagination"]["total"],
+            "limit": limit,
+            "updated": len(updated),
+            "skipped": len(skipped),
+            "target_status": target_status,
+            "impacts": updated,
+            "skipped_impacts": skipped,
+        }
 
     def record_accepted_risk(self, conn, impact_id: str, approved_by: str, reason: str, expires_at: str, created_at: str) -> dict:
         self.revoke_active_accepted_risk(conn, impact_id, created_at)
