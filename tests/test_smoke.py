@@ -89,6 +89,56 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "OnUnitActiveSec=15min" in expiry_timer
 
 
+def test_systemd_scheduler_status_reports_generated_units(tmp_path):
+    unit_dir = tmp_path / "systemd"
+    subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/systemd_scheduler_status.py", "--unit-dir", str(unit_dir), "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["summary"] == {"expected": 9, "present": 9, "valid": 9, "missing": 0, "invalid": 0}
+    assert payload["units"]["sca-monitor-api.service"]["valid"] is True
+    assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
+
+
+def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
+    result = subprocess.run(
+        ["python3", "scripts/systemd_scheduler_status.py", "--unit-dir", str(tmp_path), "--json"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "not_ready"
+    assert payload["summary"]["missing"] == 9
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {

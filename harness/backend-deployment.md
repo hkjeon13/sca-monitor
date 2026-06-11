@@ -167,6 +167,7 @@ VM 기반 MVP 배포에서는 다음 스크립트로 API와 worker scheduler uni
 
 ```bash
 scripts/install_systemd_units.sh --user --dry-run
+scripts/systemd_scheduler_status.py --user --json
 scripts/install_systemd_units.sh --user --enable
 ```
 
@@ -194,10 +195,14 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 상태 확인:
 
 ```bash
+python3 scripts/systemd_scheduler_status.py --user --systemctl --json
 systemctl --user status sca-monitor-api.service
 systemctl --user list-timers 'sca-monitor-*'
 journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 ```
+
+`scripts/systemd_scheduler_status.py`는 unit 파일 존재 여부, 필수 `ExecStart`/timer fragment, optional systemctl enabled/active 상태를 read-only로 조회한다.
+운영 자동화는 `scripts/install_systemd_units.sh --dry-run --unit-dir <staging-dir>` 후 `scripts/systemd_scheduler_status.py --unit-dir <staging-dir> --json`을 먼저 통과시킨 뒤, 별도 승인된 환경에서만 `--enable`을 실행한다.
 
 운영에서 system unit으로 설치하려면 `--system`을 사용한다.
 이 경우 root 권한과 `/etc/systemd/system` 쓰기 권한이 필요하다.
