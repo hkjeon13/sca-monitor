@@ -16,7 +16,7 @@ ssh "$REMOTE" "set -euo pipefail
   . ./.env
   set +a
   python3 scripts/migrate.py
-  python3 scripts/db_smoke.py
+  bash scripts/deploy_db_gate.sh
   python3 scripts/systemd_scheduler_status.py --json || true
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)

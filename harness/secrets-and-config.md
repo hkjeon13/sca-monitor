@@ -47,6 +47,7 @@ CORS_ALLOWED_ORIGINS
 SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES
 SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES
 SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE
+SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE
 ```
 
 `CORS_ALLOWED_ORIGINS`는 frontend와 API가 split domain일 때만 필수이다.
@@ -71,6 +72,15 @@ SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE=30
 ```
 
 운영 환경에서 service dependency 규모가 더 크거나 CI/CD fan-out이 큰 경우 먼저 stage에서 push smoke와 rate-limit 동작을 통과시킨 뒤 상향한다.
+
+PostgreSQL integration smoke gate:
+
+```text
+SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=auto
+```
+
+`auto`는 PostgreSQL DB URL일 때만 integration smoke를 실행한다.
+`required`는 DB URL 종류와 관계없이 실행을 강제하며, `disabled`는 임시 비활성화에만 사용한다.
 
 ### Worker
 

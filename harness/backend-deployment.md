@@ -89,10 +89,13 @@ DB smoke command:
 ```bash
 python3 scripts/db_smoke.py
 python3 scripts/db_smoke.py --json
+bash scripts/deploy_db_gate.sh
 ```
 
 현재 SQLite fallback과 PostgreSQL runtime adapter에서는 `services`, `advisory_sync_state`, `alert_events` read와 `audit_logs` transactional write/rollback을 검증한다.
 PostgreSQL URL에서는 `psycopg` 설치, DB network, credential, migration 상태, API workflow별 integration smoke를 통과해야 운영 DB 전환을 진행한다.
+`scripts/deploy_db_gate.sh`는 `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=auto` 기본값에서 `postgres://` 또는 `postgresql://` DB URL일 때 `scripts/postgres_integration_smoke.py --database-url`을 배포 stop gate로 실행한다.
+운영 전환 검증을 강제하려면 `required`, 임시로 끄려면 `disabled`를 사용한다.
 
 ## 4. Deployment Stop Rules
 

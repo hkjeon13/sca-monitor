@@ -185,6 +185,70 @@ def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
         assert conn.execute("SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'db.smoke.write'").fetchone()["c"] == 0
 
 
+def test_deploy_db_gate_runs_sqlite_smoke(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": database_url,
+    }
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_db_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "db smoke ok: backend=sqlite" in result.stdout
+
+
+def test_deploy_db_gate_rejects_invalid_postgres_smoke_mode(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": database_url,
+        "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE": "sometimes",
+    }
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_db_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "invalid SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE" in result.stderr
+
+
+def test_remote_deploy_uses_db_gate():
+    script = (REPO_ROOT / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
+
+    assert "bash scripts/deploy_db_gate.sh" in script
+
+
 def test_postgres_sql_translates_placeholders_outside_string_literals():
     sql = "SELECT * FROM services WHERE service_id = ? AND note = '?' AND environment = ?"
 
