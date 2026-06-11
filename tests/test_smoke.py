@@ -1119,6 +1119,43 @@ def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
         assert conn.execute("SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'db.smoke.write'").fetchone()["c"] == 0
 
 
+def test_backup_database_cli_copies_sqlite_without_leaking_paths(tmp_path):
+    database_path = tmp_path / "sca-monitor.sqlite3"
+    database_url = f"sqlite:///{database_path}"
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": database_url,
+    }
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/backup_database.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    backup_path = Path(payload["backup_path"])
+    assert payload["status"] == "ok"
+    assert payload["database_backend"] == "sqlite"
+    assert payload["database_url_source"] == "SCA_MONITOR_DATABASE_URL"
+    assert payload["backup_path"].startswith(str(tmp_path / "backups"))
+    assert backup_path.exists()
+    assert backup_path.stat().st_size == database_path.stat().st_size
+    assert "sqlite:///" not in result.stdout
+
+
 def test_deploy_db_gate_runs_sqlite_smoke(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -2082,6 +2119,7 @@ def test_ci_smoke_runs_core_gates():
     assert "scripts/deployment_input_readiness.py" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py" in script
+    assert "scripts/backup_database.py" in script
     assert "scripts/advisory_source_preflight.py" in script
     assert "SCA_MONITOR_DEPLOYMENT_ENV_FILE" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2112,6 +2150,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
+    assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
@@ -2120,6 +2159,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
     assert "scripts/http_smoke.py" in script
+    assert "scripts/backup_database.py --json" in script
     assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2128,6 +2168,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("scripts/configure_runtime_inputs.py") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
+    assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
 
@@ -2149,6 +2190,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "DB URL 원문이나 password를 포함하지" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
+    assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc

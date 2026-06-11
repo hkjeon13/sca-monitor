@@ -20,6 +20,7 @@ POST_DEPLOY_HTTP_SMOKE="${SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE:-auto}"
 EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
+BACKUP_BEFORE_MIGRATION="${SCA_MONITOR_BACKUP_BEFORE_MIGRATION:-auto}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -89,6 +90,7 @@ ssh "$REMOTE" "set -euo pipefail
   EXPECT_POSTGRES_SPLIT_REQUIRED='$EXPECT_POSTGRES_SPLIT_REQUIRED'
   EXPECT_ADVISORY_SYNC_READY='$EXPECT_ADVISORY_SYNC_READY'
   EXPECT_DATABASE_BACKEND='$EXPECT_DATABASE_BACKEND'
+  BACKUP_BEFORE_MIGRATION='$BACKUP_BEFORE_MIGRATION'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -181,6 +183,21 @@ ssh "$REMOTE" "set -euo pipefail
   }
   stop_systemd_workers_for_migration
   trap restart_systemd_workers_after_migration EXIT
+  case \"\$BACKUP_BEFORE_MIGRATION\" in
+    disabled|skip|false|0|'')
+      echo 'pre-migration database backup skipped'
+      ;;
+    auto)
+      python3 scripts/backup_database.py --json
+      ;;
+    required)
+      python3 scripts/backup_database.py --required --json
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_BACKUP_BEFORE_MIGRATION: \$BACKUP_BEFORE_MIGRATION\" >&2
+      exit 2
+      ;;
+  esac
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
   case \"\$BOOTSTRAP_READINESS\" in

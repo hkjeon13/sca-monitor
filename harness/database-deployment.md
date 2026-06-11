@@ -95,6 +95,20 @@ contract migration은 자동 배포에서 실행하지 않고 별도 승인 gate
 | retention | 예: 30일 |
 | 복구 테스트 | stage에서 월 1회 등 |
 
+현재 SQLite fallback VM 배포에서는 migration 전에 read-only 파일 백업을 생성한다.
+기본 경로는 `SCA_MONITOR_DATA_DIR/backups`이며, 원격 배포 자동화에서 이 gate를 강제하려면 다음처럼 실행한다.
+
+```bash
+python3 scripts/backup_database.py --json
+python3 scripts/backup_database.py --required --json
+
+SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required scripts/deploy_remote.sh
+```
+
+`auto` 모드는 SQLite DB 파일이 이미 있으면 백업하고, 초기 bootstrap처럼 파일이 아직 없으면 skip한다.
+`required` 모드는 SQLite DB 파일이 없거나 PostgreSQL처럼 애플리케이션 외부 백업이 필요한 backend이면 배포를 중단한다.
+PostgreSQL 전환 후에는 managed backup/PITR 정책과 복구 테스트 결과를 별도 운영 증적으로 확인한다.
+
 ## 5. Retention
 
 SDS 기준:
