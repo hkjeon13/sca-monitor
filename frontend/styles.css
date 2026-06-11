@@ -410,6 +410,40 @@ th {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.postgres-preflight-summary {
+  border: 1px solid #b9d8ca;
+  border-radius: 8px;
+  background: #f1fbf5;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.postgres-preflight-summary strong,
+.postgres-preflight-summary span {
+  display: block;
+}
+
+.postgres-preflight-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.postgres-preflight-summary p {
+  margin-top: 6px;
+}
+
+.postgres-preflight-summary.danger {
+  border-color: #f3b4ae;
+  background: #fff7f6;
+}
+
+.postgres-preflight-summary.warning {
+  border-color: #f4d39f;
+  background: #fffaf0;
+}
+
 .readiness-checks li {
   display: grid;
   grid-template-columns: auto minmax(120px, 0.5fr) minmax(0, 1fr);

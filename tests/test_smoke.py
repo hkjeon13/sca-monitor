@@ -1446,6 +1446,10 @@ def test_web_console_renders_database_readiness_panel():
     assert "Split Required" in script
     assert "Preflight Checks" in script
     assert "Next Action" in script
+    assert "renderPostgresPreflightSummary" in script
+    assert "postgres-preflight-summary" in script
+    assert "Cutover blocked" in script
+    assert "Cutover ready" in script
 
 
 def enabled_now_lines(text: str) -> str:

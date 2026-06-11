@@ -180,6 +180,7 @@ function renderDatabaseReadiness(readiness) {
       <h3>Database Readiness</h3>
       ${renderReadinessBadge(readiness.status)}
     </div>
+    ${renderPostgresPreflightSummary(preflight)}
     <div class="detail-grid readiness-grid">
       ${detailRow("Backend", readiness.database_backend)}
       ${detailRow("URL Source", readiness.database_url_source || "unknown")}
@@ -197,6 +198,28 @@ function renderDatabaseReadiness(readiness) {
     <div class="history readiness-checks">
       <h3>PostgreSQL Cutover Checks</h3>
       <ul>${checks || "<li><span>No checks reported.</span></li>"}</ul>
+    </div>
+  `;
+}
+
+function renderPostgresPreflightSummary(preflight) {
+  const blockers = Number(preflight.blockers || 0);
+  const warnings = Number(preflight.warnings || 0);
+  const ok = Number(preflight.ok || 0);
+  let status = "ok";
+  let title = "Cutover ready";
+  if (blockers > 0) {
+    status = "danger";
+    title = "Cutover blocked";
+  } else if (warnings > 0) {
+    status = "warning";
+    title = "Cutover needs attention";
+  }
+  return `
+    <div class="postgres-preflight-summary ${status}">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(`${blockers} blockers / ${warnings} warnings / ${ok} ok`)}</span>
+      <p>${escapeHtml(preflight.next_action || "No next action reported.")}</p>
     </div>
   `;
 }
