@@ -24,9 +24,15 @@ ssh "$REMOTE" "set -euo pipefail
   fi
   nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
   echo \$! > .data/sca-monitor.pid
-  sleep 2
-  curl -fsS http://127.0.0.1:$PORT/health >/dev/null
-  curl -fsS http://127.0.0.1:$PORT/ready >/dev/null
+  for attempt in \$(seq 1 20); do
+    if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
+       curl -fsS http://127.0.0.1:$PORT/ready >/dev/null 2>&1; then
+      exit 0
+    fi
+    sleep 1
+  done
+  tail -80 logs/sca-monitor.log || true
+  exit 1
 "
 
 echo "remote deployed: http://$REMOTE:$PORT"
