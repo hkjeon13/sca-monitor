@@ -44,6 +44,8 @@ GET /metrics
 | sca_monitor_postgres_cutover_status | 현재 cutover mode/status label |
 | sca_monitor_postgres_cutover_required_ready | require-postgres cutover ready 여부 |
 | sca_monitor_postgres_cutover_blockers | require-postgres cutover blocking check 수 |
+| sca_monitor_postgres_split_required | split credential cutover 강제 여부 |
+| sca_monitor_postgres_split_ready | split credential cutover 준비 완료 여부 |
 | worker_lease_acquire_failures | worker lease 획득 실패 수 |
 
 현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_ready`, `sca_monitor_advisory_sync_initialized`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`, DB readiness/migration/PostgreSQL cutover metric을 노출한다.

@@ -2999,6 +2999,7 @@ class ScaMonitorApp:
         migration = database_readiness.get("migration", {})
         cutover = database_readiness.get("cutover", {})
         required_cutover = database_readiness.get("cutover_required", {})
+        postgres_preflight = database_readiness.get("postgres_preflight", {})
         required_blockers = sum(1 for check in required_cutover.get("checks", []) if check.get("status") == "blocker")
         lines = [
             f"sca_monitor_services {overview['service_count']}",
@@ -3018,6 +3019,8 @@ class ScaMonitorApp:
             f"sca_monitor_postgres_cutover_status{{mode=\"{metric_label(cutover.get('mode', 'unknown'))}\",status=\"{metric_label(cutover.get('status', 'unknown'))}\"}} 1",
             f"sca_monitor_postgres_cutover_required_ready {1 if required_cutover.get('status') == 'ready' else 0}",
             f"sca_monitor_postgres_cutover_blockers {required_blockers}",
+            f"sca_monitor_postgres_split_required {1 if required_cutover.get('require_split') else 0}",
+            f"sca_monitor_postgres_split_ready {1 if postgres_preflight.get('split_ready') else 0}",
         ]
         lines.extend(self.operational_metric_lines())
         lines.append("")

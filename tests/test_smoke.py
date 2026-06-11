@@ -2356,6 +2356,8 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert 'sca_monitor_postgres_cutover_status{mode="sqlite_fallback",status="sqlite_fallback"} 1' in metrics
     assert "sca_monitor_postgres_cutover_required_ready 0" in metrics
     assert "sca_monitor_postgres_cutover_blockers 1" in metrics
+    assert "sca_monitor_postgres_split_required 0" in metrics
+    assert "sca_monitor_postgres_split_ready 0" in metrics
 
 
 def test_overview_exposes_alert_readiness_summary(tmp_path):
