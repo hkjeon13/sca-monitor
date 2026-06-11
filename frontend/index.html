@@ -91,6 +91,25 @@
                 <option value="low">low</option>
               </select>
             </label>
+            <label>Service<input name="service_id" placeholder="payment-api" /></label>
+            <label>Team<input name="owner_team" placeholder="platform-security" /></label>
+            <label>Environment
+              <select name="environment">
+                <option value="">Any</option>
+                <option value="prod">prod</option>
+                <option value="stage">stage</option>
+                <option value="dev">dev</option>
+              </select>
+            </label>
+            <label>Package<input name="package_name" placeholder="lodash" /></label>
+            <label>Advisory<input name="advisory_id" placeholder="CVE, GHSA, OSV" /></label>
+            <label>KEV
+              <select name="known_exploited">
+                <option value="">Any</option>
+                <option value="true">known exploited</option>
+                <option value="false">not KEV</option>
+              </select>
+            </label>
             <label>Sort
               <select name="sort">
                 <option value="risk">risk</option>

@@ -155,7 +155,7 @@ async function loadImpacts() {
         </div>
         <span class="badge">${escapeHtml(impact.risk_level)}</span>
       </div>
-      <p>Advisory: ${escapeHtml(impact.advisory_id)} · Status: ${escapeHtml(impact.status)} · Fix: ${escapeHtml(impact.fixed_version || "remove/replace")}</p>
+      <p>Advisory: ${escapeHtml(impact.advisory_id)} · Status: ${escapeHtml(impact.status)} · ${escapeHtml(impact.is_known_exploited ? "KEV" : "not KEV")} · ${escapeHtml(impact.is_malicious_package ? "malicious" : "not malicious")} · Fix: ${escapeHtml(impact.fixed_version || "remove/replace")}</p>
     </button>
   `).join("");
   target.querySelectorAll("[data-impact-id]").forEach((item) => {

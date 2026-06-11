@@ -197,7 +197,7 @@ th {
 }
 
 .filter-bar {
-  grid-template-columns: 130px 120px 150px 130px 120px minmax(220px, 1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   align-items: end;
   gap: 10px;
   margin-bottom: 14px;

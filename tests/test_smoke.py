@@ -818,6 +818,7 @@ def test_list_impacts_supports_server_side_filters(tmp_path):
     assert [impact["service_id"] for impact in app.list_impacts({"environment": ["stage"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"package_name": ["Second-Package"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"advisory_id": ["OSV-TEST-0002"]})] == ["billing-service"]
+    assert [impact["service_id"] for impact in app.list_impacts({"known_exploited": ["false"], "service_id": ["billing-service"]})] == ["billing-service"]
     assert [impact["service_id"] for impact in app.list_impacts({"q": ["billing"]})] == ["billing-service"]
 
     page = app.search_impacts({"limit": ["1"], "offset": ["1"], "sort": ["service"], "direction": ["asc"]})
@@ -912,6 +913,8 @@ def test_cisa_kev_sync_enriches_matching_osv_alias_and_rematches_impacts(tmp_pat
     assert advisory["is_known_exploited"] == 1
     assert advisory["severity"] == "critical"
     assert app.search_impacts({"service_id": ["kev-service"]})["impacts"][0]["risk_level"] == "critical"
+    assert app.search_impacts({"known_exploited": ["true"]})["impacts"][0]["service_id"] == "kev-service"
+    assert app.search_impacts({"known_exploited": ["false"], "service_id": ["kev-service"]})["impacts"] == []
     assert app.overview()["critical_impacts"] == 1
 
 

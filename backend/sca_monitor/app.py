@@ -1185,6 +1185,9 @@ class ScaMonitorApp:
         if advisory_id := query.get("advisory_id", [None])[0]:
             where.append("a.advisory_id = ?")
             params.append(advisory_id)
+        if known_exploited := query.get("known_exploited", [None])[0]:
+            where.append("a.is_known_exploited = ?")
+            params.append(1 if str(known_exploited).lower() in {"1", "true", "yes"} else 0)
         if search := query.get("q", [None])[0]:
             like = f"%{search.lower()}%"
             where.append(
@@ -1231,7 +1234,8 @@ class ScaMonitorApp:
             ).fetchone()["c"]
             rows = conn.execute(
                 f"""
-                SELECT i.*, s.service_id, s.service_name, a.advisory_id, a.summary
+                SELECT i.*, s.service_id, s.service_name, a.advisory_id, a.summary,
+                       a.is_known_exploited, a.is_malicious_package
                 FROM impacts i
                 JOIN services s ON s.id = i.service_pk
                 JOIN advisories a ON a.id = i.advisory_pk
