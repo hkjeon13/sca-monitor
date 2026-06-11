@@ -107,6 +107,7 @@ python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split
 
 `--require-postgres`는 PostgreSQL URL이 없거나 smoke가 비활성화된 경우 exit code `2`로 차단한다.
 `--require-split`은 `SCA_MONITOR_DATABASE_URL` 공용 credential 대신 `MIGRATION_DATABASE_URL`/`API_DATABASE_URL`/`WORKER_DATABASE_URL` 분리 credential을 요구한다.
+배포 gate에서 같은 조건을 강제하려면 `SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true`를 설정한다.
 분리 credential 운영에서는 `SCA_MONITOR_AUTO_MIGRATE=false` 또는 API/worker 컴포넌트별 auto-migrate false 설정이 필요하다.
 
 ### Worker

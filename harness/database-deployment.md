@@ -144,6 +144,7 @@ bash scripts/deploy_db_gate.sh
 `MIGRATION_DATABASE_URL`이 설정되면 migration owner URL로 migration smoke를 실행하고, `API_DATABASE_URL`은 `--skip-migrate` runtime smoke, `WORKER_DATABASE_URL`은 `--skip-migrate --read-only` smoke로 분리 검증한다.
 `--production-preflight`는 split credential 운영 전환 직전에 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`을 한 번에 검증한다. migration role은 migration과 transactional write/rollback smoke를 수행하고, API/worker role은 migrate 없이 read-only schema smoke만 수행한다.
 `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required`이면 `deploy_db_gate.sh`는 smoke 실행 전에 `scripts/postgres_cutover_readiness.py --require-postgres`를 stop gate로 실행한다.
+`SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true`를 함께 설정하면 `deploy_db_gate.sh`가 `--require-split`도 적용하여 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL` 분리 credential 구성이 아니면 배포를 중단한다.
 runtime auto-migrate를 끈 환경에서는 이 migration/gate 단계가 API/worker 시작 전 필수 stop gate이다.
 
 PostgreSQL split credential cutover ready 조건:
@@ -151,6 +152,7 @@ PostgreSQL split credential cutover ready 조건:
 - `SCA_MONITOR_DATABASE_URL`은 비워 둔다.
 - `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`은 모두 `postgresql://` 또는 `postgres://` URL이어야 한다.
 - `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE`는 `auto` 또는 `required`이어야 한다. 운영 전환 gate에서는 `required`를 권장한다.
+- 운영 split credential 전환 gate에서는 `SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true`를 설정한다.
 - `SCA_MONITOR_AUTO_MIGRATE=false` 또는 `SCA_MONITOR_API_AUTO_MIGRATE=false`와 `SCA_MONITOR_WORKER_AUTO_MIGRATE=false`를 설정해 runtime DDL을 비활성화한다.
 
 SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:

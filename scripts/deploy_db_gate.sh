@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE="${SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE:-auto}"
+REQUIRE_SPLIT="${SCA_MONITOR_POSTGRES_REQUIRE_SPLIT:-false}"
 DATABASE_URL="${SCA_MONITOR_DATABASE_URL:-${API_DATABASE_URL:-}}"
 MIGRATION_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}"
 WORKER_URL="${WORKER_DATABASE_URL:-}"
@@ -15,8 +16,27 @@ case "$MODE" in
     ;;
 esac
 
+case "$REQUIRE_SPLIT" in
+  true|1|yes|on|false|0|no|off|"")
+    ;;
+  *)
+    echo "invalid SCA_MONITOR_POSTGRES_REQUIRE_SPLIT: $REQUIRE_SPLIT" >&2
+    exit 2
+    ;;
+esac
+
+readiness_args=()
 if [ "$MODE" = "required" ]; then
-  python3 scripts/postgres_cutover_readiness.py --require-postgres
+  readiness_args+=(--require-postgres)
+fi
+case "$REQUIRE_SPLIT" in
+  true|1|yes|on)
+    readiness_args+=(--require-split)
+    ;;
+esac
+
+if [ "${#readiness_args[@]}" -gt 0 ]; then
+  python3 scripts/postgres_cutover_readiness.py "${readiness_args[@]}"
 else
   python3 scripts/postgres_cutover_readiness.py
 fi

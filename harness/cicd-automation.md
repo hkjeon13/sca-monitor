@@ -106,6 +106,7 @@ python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/db_smoke.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
 python3 scripts/postgres_integration_smoke.py --production-preflight --json
+SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true bash scripts/deploy_db_gate.sh
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
 SCA_MONITOR_POSTGRES_DOCKER_SMOKE=required bash scripts/postgres_docker_smoke_gate.sh
 SCA_MONITOR_SYSTEMD_MODE=validate bash scripts/deploy_systemd_gate.sh
@@ -180,6 +181,7 @@ python3 scripts/bootstrap_readiness_check.py --json
 
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
+PostgreSQL split credential 전환 pipeline은 `SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true`를 설정해 shared `SCA_MONITOR_DATABASE_URL` 또는 SQLite fallback이 실수로 승격되지 않도록 한다.
 
 ## 6. Rollback Automation
 

@@ -1008,12 +1008,55 @@ def test_remote_deploy_uses_db_gate():
 def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
     script = (REPO_ROOT / "scripts" / "deploy_db_gate.sh").read_text(encoding="utf-8")
 
-    assert "scripts/postgres_cutover_readiness.py --require-postgres" in script
+    assert "scripts/postgres_cutover_readiness.py" in script
+    assert "readiness_args+=(--require-postgres)" in script
+    assert "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT" in script
+    assert "readiness_args+=(--require-split)" in script
     assert 'MIGRATION_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}"' in script
     assert 'run_postgres_smoke "$MIGRATION_URL" migration' in script
     assert 'run_postgres_smoke "${API_DATABASE_URL:-}" api "--skip-migrate"' in script
     assert 'run_postgres_smoke "$WORKER_URL" worker "--skip-migrate --read-only"' in script
     assert "postgres integration smoke required for $label but database URL is not configured" in script
+
+
+def test_deploy_db_gate_requires_split_when_configured(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    result = subprocess.run(
+        ["/bin/bash", "scripts/deploy_db_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_DATA_DIR": str(tmp_path),
+            "SCA_MONITOR_DATABASE_URL": database_url,
+            "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE": "required",
+            "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT": "true",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "postgres cutover readiness: blocked" in result.stdout
+    assert "split credential cutover" in result.stdout
+
+
+def test_deploy_db_gate_rejects_invalid_split_mode(tmp_path):
+    result = subprocess.run(
+        ["/bin/bash", "scripts/deploy_db_gate.sh"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "SCA_MONITOR_DATA_DIR": str(tmp_path),
+            "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT": "sometimes",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "invalid SCA_MONITOR_POSTGRES_REQUIRE_SPLIT" in result.stderr
 
 
 def test_postgres_docker_smoke_gate_skips_when_docker_missing(tmp_path):
