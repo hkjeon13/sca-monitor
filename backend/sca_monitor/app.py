@@ -677,7 +677,7 @@ class ScaMonitorApp:
                     body.get("owner_team", "unassigned"),
                     body.get("status_endpoint_url"),
                     body.get("collection_mode", "push"),
-                    int(bool(body.get("internet_facing", False))),
+                    bool(body.get("internet_facing", False)),
                     body.get("business_criticality", "medium"),
                     body.get("alert_channel", "#security-alerts"),
                     auth_type,
@@ -717,13 +717,13 @@ class ScaMonitorApp:
         target_url = required(body, "target_url")
         if not target_url.startswith(("https://", "http://")):
             raise ValueError("target_url must be http or https")
-        enabled = int(parse_bool(body.get("enabled", True)))
-        is_default = int(parse_bool(body.get("is_default", True)))
+        enabled = parse_bool(body.get("enabled", True))
+        is_default = parse_bool(body.get("is_default", True))
         channel_id = str(uuid.uuid4())
         now = utcnow()
         with self.db.connect() as conn:
             if is_default:
-                conn.execute("UPDATE alert_channels SET is_default = 0, updated_at = ?", (now,))
+                conn.execute("UPDATE alert_channels SET is_default = ?, updated_at = ?", (False, now))
             conn.execute(
                 """
                 INSERT INTO alert_channels (
@@ -766,12 +766,12 @@ class ScaMonitorApp:
             target_url = body.get("target_url", current["target_url"])
             if target_url and not str(target_url).startswith(("https://", "http://")):
                 raise ValueError("target_url must be http or https")
-            enabled = int(parse_bool(body.get("enabled", current["enabled"])))
-            is_default = int(parse_bool(body.get("is_default", current["is_default"])))
+            enabled = parse_bool(body.get("enabled", current["enabled"]))
+            is_default = parse_bool(body.get("is_default", current["is_default"]))
             if is_default and enabled:
-                conn.execute("UPDATE alert_channels SET is_default = 0, updated_at = ? WHERE id != ?", (now, channel_id))
+                conn.execute("UPDATE alert_channels SET is_default = ?, updated_at = ? WHERE id != ?", (False, now, channel_id))
             if not enabled:
-                is_default = 0
+                is_default = False
             conn.execute(
                 """
                 UPDATE alert_channels
@@ -846,7 +846,7 @@ class ScaMonitorApp:
                 """
                 SELECT target_url
                 FROM alert_channels
-                WHERE enabled = 1 AND is_default = 1 AND channel_type = 'webhook'
+                WHERE enabled AND is_default AND channel_type = 'webhook'
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """
@@ -1203,8 +1203,8 @@ class ScaMonitorApp:
             "affected_versions": json.dumps(advisory.affected_versions),
             "affected_ranges": json.dumps(advisory.affected_ranges),
             "fixed_version": advisory.fixed_version,
-            "is_known_exploited": int(advisory.is_known_exploited),
-            "is_malicious_package": int(advisory.is_malicious_package),
+            "is_known_exploited": bool(advisory.is_known_exploited),
+            "is_malicious_package": bool(advisory.is_malicious_package),
             "published_at": advisory.published_at,
             "modified_at": advisory.modified_at,
             "raw_payload": json.dumps(advisory.raw_payload, ensure_ascii=False),
@@ -1245,8 +1245,8 @@ class ScaMonitorApp:
                 json.dumps(advisory.affected_versions),
                 json.dumps(advisory.affected_ranges),
                 advisory.fixed_version,
-                int(advisory.is_known_exploited),
-                int(advisory.is_malicious_package),
+                bool(advisory.is_known_exploited),
+                bool(advisory.is_malicious_package),
                 advisory.published_at,
                 advisory.modified_at,
                 json.dumps(advisory.raw_payload, ensure_ascii=False),
@@ -1379,8 +1379,8 @@ class ScaMonitorApp:
                 json.dumps(merged["affected_versions"]),
                 json.dumps(merged["affected_ranges"]),
                 merged["fixed_version"],
-                int(merged["is_known_exploited"]),
-                int(merged["is_malicious_package"]),
+                bool(merged["is_known_exploited"]),
+                bool(merged["is_malicious_package"]),
                 merged["published_at"],
                 merged["modified_at"],
                 json.dumps(merged["raw_payload"], ensure_ascii=False),
@@ -1426,7 +1426,7 @@ class ScaMonitorApp:
             SELECT DISTINCT ds.service_pk, ds.id AS snapshot_pk
             FROM dependency_snapshots ds
             JOIN dependencies d ON d.snapshot_pk = ds.id
-            WHERE ds.is_latest = 1
+            WHERE ds.is_latest
               AND d.ecosystem = ?
               AND d.canonical_package_name = ?
             """,
@@ -1453,11 +1453,11 @@ class ScaMonitorApp:
             conn.execute(
                 """
                 UPDATE advisories
-                SET is_known_exploited = 1,
+                SET is_known_exploited = ?,
                     severity = 'critical'
                 WHERE id = ?
                 """,
-                (row["id"],),
+                (True, row["id"]),
             )
             updated = conn.execute("SELECT * FROM advisories WHERE id = ?", (row["id"],)).fetchone()
             enriched += 1
@@ -1670,14 +1670,14 @@ class ScaMonitorApp:
                     "idempotency_status": "confirmed",
                 }
             else:
-                conn.execute("UPDATE dependency_snapshots SET is_latest = 0 WHERE service_pk = ?", (service["id"],))
+                conn.execute("UPDATE dependency_snapshots SET is_latest = ? WHERE service_pk = ?", (False, service["id"]))
                 conn.execute(
                     """
                     INSERT INTO dependency_snapshots (
                         id, snapshot_id, service_pk, schema_version, environment, generated_at,
                         collected_at, source_type, freshness_status, content_hash, is_latest,
                         artifact_type, artifact_name, artifact_digest, raw_payload, last_confirmed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'push', 'fresh', ?, 1, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'push', 'fresh', ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         snapshot_pk,
@@ -1688,6 +1688,7 @@ class ScaMonitorApp:
                         body.get("generated_at", now),
                         now,
                         content_hash,
+                        True,
                         artifact.get("type"),
                         artifact.get("name"),
                         artifact.get("digest"),
@@ -1717,7 +1718,7 @@ class ScaMonitorApp:
                             required(dep, "version"),
                             dep.get("purl"),
                             dep.get("scope", "production"),
-                            int(bool(dep.get("direct", False))),
+                            bool(dep.get("direct", False)),
                             json.dumps(dep.get("dependency_path", [])),
                             dep.get("source"),
                             now,
@@ -2156,10 +2157,10 @@ class ScaMonitorApp:
             params.append(advisory_id)
         if known_exploited := query.get("known_exploited", [None])[0]:
             where.append("a.is_known_exploited = ?")
-            params.append(1 if str(known_exploited).lower() in {"1", "true", "yes"} else 0)
+            params.append(str(known_exploited).lower() in {"1", "true", "yes"})
         if malicious_package := query.get("malicious_package", [None])[0]:
             where.append("a.is_malicious_package = ?")
-            params.append(1 if str(malicious_package).lower() in {"1", "true", "yes"} else 0)
+            params.append(str(malicious_package).lower() in {"1", "true", "yes"})
         if search := query.get("q", [None])[0]:
             like = f"%{search.lower()}%"
             where.append(

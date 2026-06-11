@@ -1146,6 +1146,12 @@ def test_postgres_sql_translates_placeholders_outside_string_literals():
 
     assert postgres_sql(sql) == "SELECT * FROM services WHERE service_id = %s AND note = '?' AND environment = %s"
     assert postgres_sql("BEGIN IMMEDIATE") == "-- transaction already managed by psycopg adapter"
+    assert "enabled AND is_default" in (REPO_ROOT / "backend" / "sca_monitor" / "alert_preflight.py").read_text(
+        encoding="utf-8"
+    )
+    assert "WHERE enabled = 1 AND is_default = 1" not in (
+        REPO_ROOT / "backend" / "sca_monitor" / "alert_preflight.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_postgres_connection_adapter_executes_translated_sql():

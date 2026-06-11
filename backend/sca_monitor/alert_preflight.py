@@ -25,7 +25,7 @@ def default_channel_summary(app) -> dict[str, Any]:
             """
             SELECT id, name, channel_type, target_url, enabled, is_default, updated_at
             FROM alert_channels
-            WHERE enabled = 1 AND is_default = 1 AND channel_type = 'webhook'
+            WHERE enabled AND is_default AND channel_type = 'webhook'
             ORDER BY updated_at DESC
             LIMIT 1
             """
