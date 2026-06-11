@@ -139,6 +139,26 @@ def test_alert_channel_only_one_default(tmp_path):
     assert app.default_alert_webhook_url() == "https://second.example.test/webhook"
 
 
+def test_alert_channel_update_default_and_disable(tmp_path):
+    app = make_test_app(tmp_path)
+    first = app.create_alert_channel({"name": "first", "target_url": "https://first.example.test/webhook", "is_default": True})["channel"]
+    second = app.create_alert_channel({"name": "second", "target_url": "https://second.example.test/webhook", "is_default": False})["channel"]
+
+    updated = app.update_alert_channel(second["id"], {"is_default": True, "enabled": True})
+
+    assert updated["channel"]["is_default"] is True
+    assert app.default_alert_webhook_url() == "https://second.example.test/webhook"
+    channels = app.list_alert_channels()
+    assert [channel["name"] for channel in channels if channel["is_default"]] == ["second"]
+
+    disabled = app.update_alert_channel(second["id"], {"enabled": False})
+
+    assert disabled["channel"]["enabled"] is False
+    assert disabled["channel"]["is_default"] is False
+    assert app.default_alert_webhook_url() is None
+    assert app.update_alert_channel(first["id"], {"name": "first-renamed"})["channel"]["name"] == "first-renamed"
+
+
 def test_service_endpoint_test_records_healthy_status(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service(
@@ -713,6 +733,16 @@ def test_dispatch_pending_alerts_uses_default_channel(tmp_path):
     with app.db.connect() as conn:
         row = conn.execute("SELECT channel_target FROM alert_events").fetchone()
         assert row["channel_target"] == "https://alerts.example.test/default"
+
+
+def test_dispatch_pending_alerts_ignores_disabled_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    channel = app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default", "is_default": True})["channel"]
+    app.update_alert_channel(channel["id"], {"enabled": False})
+
+    with pytest.raises(ValueError, match="webhook_url required"):
+        dispatch_pending_alerts(app, webhook_url=None, sender=lambda url, payload: None)
 
 
 def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):

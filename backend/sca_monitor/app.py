@@ -97,6 +97,9 @@ class ScaMonitorApp:
                 return self.json_response(request, {"channels": self.list_alert_channels()})
             if path == "/api/v1/settings/alert-channels" and method == "POST":
                 return self.json_response(request, self.create_alert_channel(self.read_json(request)), HTTPStatus.CREATED)
+            if path.startswith("/api/v1/settings/alert-channels/") and method == "PATCH":
+                channel_id = path.split("/")[-1]
+                return self.json_response(request, self.update_alert_channel(channel_id, self.read_json(request)))
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "GET":
                 service_id = path.split("/")[-2]
                 return self.json_response(request, {"credentials": self.list_push_credentials(service_id, parse_qs(parsed.query))})
@@ -305,8 +308,8 @@ class ScaMonitorApp:
         target_url = required(body, "target_url")
         if not target_url.startswith(("https://", "http://")):
             raise ValueError("target_url must be http or https")
-        enabled = int(bool(body.get("enabled", True)))
-        is_default = int(bool(body.get("is_default", True)))
+        enabled = int(parse_bool(body.get("enabled", True)))
+        is_default = int(parse_bool(body.get("is_default", True)))
         channel_id = str(uuid.uuid4())
         now = utcnow()
         with self.db.connect() as conn:
@@ -327,6 +330,36 @@ class ScaMonitorApp:
                 (channel_id, name, channel_type, target_url, enabled, is_default, now, now),
             )
             row = conn.execute("SELECT * FROM alert_channels WHERE name = ?", (name,)).fetchone()
+        return {"channel": sanitize_alert_channel(row_to_dict(row))}
+
+    def update_alert_channel(self, channel_id: str, body: dict) -> dict:
+        now = utcnow()
+        with self.db.connect() as conn:
+            current = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
+            if not current:
+                raise ValueError("alert channel not found")
+            name = body.get("name", current["name"])
+            channel_type = body.get("channel_type", current["channel_type"])
+            if channel_type != "webhook":
+                raise ValueError("only webhook alert channels are supported")
+            target_url = body.get("target_url", current["target_url"])
+            if target_url and not str(target_url).startswith(("https://", "http://")):
+                raise ValueError("target_url must be http or https")
+            enabled = int(parse_bool(body.get("enabled", current["enabled"])))
+            is_default = int(parse_bool(body.get("is_default", current["is_default"])))
+            if is_default and enabled:
+                conn.execute("UPDATE alert_channels SET is_default = 0, updated_at = ? WHERE id != ?", (now, channel_id))
+            if not enabled:
+                is_default = 0
+            conn.execute(
+                """
+                UPDATE alert_channels
+                SET name = ?, channel_type = ?, target_url = ?, enabled = ?, is_default = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (name, channel_type, target_url, enabled, is_default, now, channel_id),
+            )
+            row = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
         return {"channel": sanitize_alert_channel(row_to_dict(row))}
 
     def default_alert_webhook_url(self) -> str | None:
@@ -1257,6 +1290,16 @@ def normalize_optional(value) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in ("", "0", "false", "no", "off")
 
 
 def seconds_since(value: str | None, now: datetime) -> int | None:

@@ -363,10 +363,24 @@ async function loadAlertChannels() {
     <div class="credential-item">
       <div>
         <strong>${escapeHtml(channel.name)}</strong>
-        <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
+        <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.enabled ? "enabled" : "disabled")} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
       </div>
+      <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.is_default || !channel.enabled ? "disabled" : ""}>Make Default</button>
+      <button type="button" class="secondary" data-channel-disable="${escapeHtml(channel.id)}" ${!channel.enabled ? "disabled" : ""}>Disable</button>
     </div>
   `).join("");
+  target.querySelectorAll("[data-channel-default]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelDefault)}`, "PATCH", {is_default: true, enabled: true});
+      await loadAlertChannels();
+    });
+  });
+  target.querySelectorAll("[data-channel-disable]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelDisable)}`, "PATCH", {enabled: false});
+      await loadAlertChannels();
+    });
+  });
 }
 
 loadImpactFiltersFromUrl();

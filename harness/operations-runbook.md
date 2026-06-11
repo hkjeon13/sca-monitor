@@ -115,6 +115,8 @@ ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_
 python3 scripts/dispatch_alerts.py --limit 50 --retry-backoff-seconds 300
 ```
 
+기본 channel이 잘못된 경우 Settings 화면에서 다른 channel을 default로 전환하거나 disable한다.
+
 반복 실행:
 
 ```bash
