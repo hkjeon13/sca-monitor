@@ -109,7 +109,7 @@ DB migration rollback은 자동화 대상이 아니다.
 
 | Worker role | Replica 정책 | 동시성 제어 |
 |---|---|---|
-| Snapshot Poll Scheduler | single-active 권장 | DB lease 또는 advisory lock |
+| Snapshot Poll Scheduler | single-active 권장 | `endpoint_poll_state` DB lease |
 | Snapshot Poll Worker | multi-replica 가능 | job row `FOR UPDATE SKIP LOCKED` |
 | Advisory Sync Worker | source별 single-active | source별 sync lock |
 | Matching Worker | multi-replica 가능 | snapshot/advisory job lock |

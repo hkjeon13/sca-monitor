@@ -5,7 +5,7 @@ import pytest
 
 from backend.sca_monitor.alert_dispatch import dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import sync_osv_ecosystem_dump
-from backend.sca_monitor.endpoint_poll import poll_configured_endpoints
+from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
 from backend.sca_monitor.db import Database, canonical_package_name
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp
@@ -223,6 +223,50 @@ def test_poll_configured_endpoints_counts_failed_endpoint(tmp_path):
     assert result.succeeded == 0
     assert result.failed == 1
     assert app.list_services()[0]["collection_status"] == "invalid_response"
+
+
+def test_endpoint_poll_lock_releases_after_success(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "collection_mode": "poll",
+        }
+    )
+
+    result = poll_configured_endpoints(
+        app,
+        worker_name="smoke-worker",
+        lock_owner="owner-a",
+        fetcher=lambda url, auth_header=None: {
+            "schema_version": "1.0",
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result.succeeded == 1
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT * FROM endpoint_poll_state WHERE worker_name = 'smoke-worker'").fetchone()
+        assert row["status"] == "ok"
+        assert row["lock_owner"] is None
+        assert row["lock_expires_at"] is None
+        assert row["checked_count"] == 1
+        assert row["succeeded_count"] == 1
+        assert row["failed_count"] == 0
+        assert row["last_success_at"] is not None
+
+
+def test_endpoint_poll_refuses_held_lock(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with endpoint_poll_lock(app, "smoke-worker", "owner-a", ttl_seconds=60):
+        with pytest.raises(RuntimeError, match="endpoint poll lock is held"):
+            poll_configured_endpoints(app, worker_name="smoke-worker", lock_owner="owner-b")
 
 
 def test_parse_osv_advisory_fixture():

@@ -68,10 +68,23 @@ python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 ### Endpoint polling failed
 
 1. endpoint_health 확인
-2. auth_failed와 unreachable 구분
-3. 서비스 owner에게 설정 확인 요청
-4. egress IP allowlist 확인
-5. mTLS/HMAC clock skew 확인
+2. `endpoint_poll_state`에서 `status`, `lock_owner`, `lock_expires_at`, 실패 count 확인
+3. auth_failed와 unreachable 구분
+4. 서비스 owner에게 설정 확인 요청
+5. egress IP allowlist 확인
+6. mTLS/HMAC clock skew 확인
+
+수동 1회 polling:
+
+```bash
+python3 scripts/poll_endpoints.py --limit 50 --worker-name default --lock-owner manual-$(hostname)
+```
+
+간단한 반복 실행:
+
+```bash
+python3 scripts/poll_endpoints.py --limit 50 --iterations 0 --interval-seconds 300 --lock-ttl-seconds 240
+```
 
 ### Alert delivery failed
 

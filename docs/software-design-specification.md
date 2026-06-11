@@ -197,7 +197,9 @@ references
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
 - 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
 - OSV dump sync는 `--limit`, `--dump-url`, `--zip-path` 옵션을 지원하는 worker CLI 단계이다.
-- scheduler, alias canonical merge, 재매칭 job queue 분리는 후속 구현 대상이다.
+- endpoint polling worker는 등록된 `status_endpoint_url`을 순회해 snapshot을 수집하고, `endpoint_poll_state` DB lease로 중복 실행을 차단한다.
+- endpoint polling CLI는 `--iterations`, `--interval-seconds`, `--worker-name`, `--lock-owner`, `--lock-ttl-seconds` 옵션을 지원한다.
+- 외부 scheduler 배치, alias canonical merge, 재매칭 job queue 분리는 후속 구현 대상이다.
 
 ### 5.3 CISA KEV 수집 방식
 
@@ -1247,6 +1249,28 @@ impact 생성/변경 트랜잭션 안에서 `pending` row를 생성하고, alert
 
 connector는 rate limit을 준수하고 지수 백오프를 적용한다.
 부분 실패 시 cursor를 전진시키지 않는다.
+
+#### endpoint_poll_state
+
+endpoint polling worker의 single-active lease와 마지막 실행 결과를 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| worker_name | text PK | polling worker lease 이름 |
+| status | text | `pending`, `ok`, `partial`, `error` |
+| lock_owner | text | 현재 lease 소유자 |
+| lock_expires_at | timestamptz | lease 만료 시각 |
+| last_success_at | timestamptz | 마지막 성공 또는 부분 성공 시각 |
+| last_error_at | timestamptz | 마지막 worker-level 오류 시각 |
+| last_error_message | text | 마지막 worker-level 오류 |
+| checked_count | integer | 마지막 실행의 확인 endpoint 수 |
+| succeeded_count | integer | 마지막 실행의 성공 endpoint 수 |
+| failed_count | integer | 마지막 실행의 실패 endpoint 수 |
+| snapshots_created_or_updated | integer | 마지막 실행에서 생성 또는 갱신된 impact 수 |
+| updated_at | timestamptz | 수정 시각 |
+
+동일 `worker_name`에 대해 lease가 살아 있으면 새 polling 실행은 거부된다.
+운영 scheduler는 `lock_ttl_seconds`를 polling 예상 최대 시간보다 크게 설정해야 한다.
 
 #### accepted_risks
 
