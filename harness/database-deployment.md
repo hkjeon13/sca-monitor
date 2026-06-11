@@ -159,6 +159,7 @@ SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:
 
 - `services` read
 - `advisory_sync_state` read
+- `advisory_sync_state` cursor/last_run/records_processed migration
 - `alert_events` read
 - JSON/JSONB 컬럼 read normalization
   - SQLite fallback은 JSON 문자열을 반환한다.

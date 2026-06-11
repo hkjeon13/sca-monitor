@@ -489,6 +489,7 @@ def sync_nvd_cve(
     json_path: Path | None = None,
     lock_owner: str | None = None,
     lock_ttl_seconds: int = 3600,
+    record_state: bool = True,
 ) -> NvdCveSyncResult:
     owner = lock_owner or default_lock_owner("nvd-cve")
     payload = json.loads(json_path.read_text(encoding="utf-8")) if json_path else load_nvd_cve_payload(cve_id=cve_id, api_url=api_url, api_key=api_key)
@@ -505,7 +506,16 @@ def sync_nvd_cve(
                     imported_rows += 1
         status = "ok" if imported_rows else "partial"
         error_message = None if imported_rows else f"NVD CVE not found: {cve_id}"
-        app.record_advisory_sync("NVD", status, cve_id, error_message, imported_count=imported_rows)
+        if record_state:
+            app.record_advisory_sync(
+                "NVD",
+                status,
+                cve_id,
+                error_message,
+                imported_count=imported_rows,
+                cursor=cve_id,
+                records_processed=1,
+            )
     return NvdCveSyncResult(source="NVD", cve_id=cve_id, imported_rows=imported_rows, rematched_impacts=rematched_impacts, api_url=api_url)
 
 
@@ -539,6 +549,7 @@ def sync_nvd_cves(
     if limit is not None:
         unique_cve_ids = unique_cve_ids[:limit]
 
+    last_successful_cve_id: str | None = None
     for index, cve_id in enumerate(unique_cve_ids):
         if limit is not None and processed >= limit:
             break
@@ -554,15 +565,28 @@ def sync_nvd_cves(
                 json_path=json_path if json_path and json_path.exists() else None,
                 lock_owner=default_lock_owner(f"nvd-cve-{cve_id.lower()}"),
                 lock_ttl_seconds=lock_ttl_seconds,
+                record_state=False,
             )
             imported_rows += result.imported_rows
             rematched_impacts += result.rematched_impacts
             results.append(result.__dict__)
+            if result.imported_rows:
+                last_successful_cve_id = cve_id
         except Exception as exc:  # noqa: BLE001 - batch sync should report per-CVE failures.
             failed += 1
             results.append({"source": "NVD", "cve_id": cve_id, "status": "failed", "error": exc.__class__.__name__, "detail": str(exc)})
         if uses_remote_api and delay_seconds > 0 and index < len(unique_cve_ids) - 1:
             sleep_func(delay_seconds)
+    if processed:
+        app.record_advisory_sync(
+            "NVD",
+            "ok" if failed == 0 else "partial",
+            last_successful_cve_id,
+            None if failed == 0 else f"{failed} NVD CVE sync failures",
+            imported_count=imported_rows,
+            cursor=last_successful_cve_id,
+            records_processed=processed,
+        )
     return NvdCveBatchSyncResult(
         source="NVD",
         processed=processed,

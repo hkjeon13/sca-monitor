@@ -556,7 +556,8 @@ class ScaMonitorApp:
         try:
             rows = conn.execute(
                 """
-                SELECT source, status, last_success_at, last_error_at, last_error_message, imported_count, updated_at
+                SELECT source, status, cursor, last_run_at, last_success_at, last_error_at,
+                       last_error_message, imported_count, records_processed, updated_at
                 FROM advisory_sync_state
                 """
             ).fetchall()
@@ -577,10 +578,13 @@ class ScaMonitorApp:
                     "source": source,
                     "status": status,
                     "initialized": initialized,
+                    "cursor": row["cursor"] if row else None,
+                    "last_run_at": row["last_run_at"] if row else None,
                     "last_success_at": last_success_at,
                     "last_error_at": row["last_error_at"] if row else None,
                     "last_error_message": row["last_error_message"] if row else None,
                     "imported_count": int(row["imported_count"] or 0) if row else 0,
+                    "records_processed": int(row["records_processed"] or 0) if row else 0,
                     "lag_seconds": lag_seconds,
                     "updated_at": row["updated_at"] if row else None,
                 }
@@ -1481,33 +1485,43 @@ class ScaMonitorApp:
         error_message: str | None,
         conn=None,
         imported_count: int = 0,
+        cursor: str | None = None,
+        records_processed: int | None = None,
     ) -> None:
         now = utcnow()
+        next_cursor = cursor if status == "ok" else None
+        processed_count = imported_count if records_processed is None else records_processed
 
         def write(connection) -> None:
             connection.execute(
                 """
                 INSERT INTO advisory_sync_state (
-                    source, status, last_success_at, last_error_at, last_error_message,
-                    last_advisory_id, imported_count, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    source, status, cursor, last_run_at, last_success_at, last_error_at,
+                    last_error_message, last_advisory_id, imported_count, records_processed, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source) DO UPDATE SET
                     status=excluded.status,
+                    cursor=COALESCE(excluded.cursor, advisory_sync_state.cursor),
+                    last_run_at=excluded.last_run_at,
                     last_success_at=COALESCE(excluded.last_success_at, advisory_sync_state.last_success_at),
                     last_error_at=COALESCE(excluded.last_error_at, advisory_sync_state.last_error_at),
                     last_error_message=excluded.last_error_message,
                     last_advisory_id=excluded.last_advisory_id,
                     imported_count=advisory_sync_state.imported_count + excluded.imported_count,
+                    records_processed=excluded.records_processed,
                     updated_at=excluded.updated_at
                 """,
                 (
                     source,
                     status,
+                    next_cursor,
+                    now,
                     now if status == "ok" else None,
                     now if status != "ok" else None,
                     error_message,
                     advisory_id,
                     imported_count,
+                    processed_count,
                     now,
                 ),
             )

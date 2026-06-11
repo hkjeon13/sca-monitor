@@ -136,6 +136,7 @@ NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --cve-list-path repo
 ```
 
 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 원격 NVD API batch 요청 간격을 조절한다.
+batch 중 일부 CVE가 실패하면 `advisory_sync_state.cursor`는 이전 성공 cursor를 유지하고 `status=partial`, `records_processed`로 마지막 실행 범위를 남긴다.
 폐쇄망, stage, 재현 테스트에서는 `--json-dir fixtures/nvd`를 함께 사용하면 로컬 `CVE-YYYY-NNNN.json` 파일을 읽고 원격 요청 지연 없이 같은 import 경로를 검증한다.
 
 ### Endpoint polling failed

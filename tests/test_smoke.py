@@ -119,6 +119,8 @@ def test_sqlite_migration_records_version(tmp_path):
         assert "last_confirmed_at" in snapshot_columns
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_push_rate_limits'").fetchone()
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'advisory_aliases'").fetchone()
+        sync_columns = {row["name"] for row in conn.execute("PRAGMA table_info(advisory_sync_state)").fetchall()}
+        assert {"cursor", "last_run_at", "records_processed"}.issubset(sync_columns)
 
 
 def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
@@ -3956,6 +3958,11 @@ def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
     assert advisories[0]["advisory_id"] == "CVE-2026-0001"
     assert advisories[0]["package_name"] == "example/example-server"
     assert app.overview()["advisory_sync"]["NVD"] == "ok"
+    with app.db.connect() as conn:
+        state = conn.execute("SELECT cursor, last_run_at, records_processed FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    assert state["cursor"] == "CVE-2026-0001"
+    assert state["last_run_at"]
+    assert state["records_processed"] == 1
 
 
 def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
@@ -3987,6 +3994,46 @@ def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
     }
     assert app.overview()["advisory_sync"]["NVD"] == "ok"
     assert result.request_delay_seconds == 0
+    with app.db.connect() as conn:
+        state = conn.execute("SELECT cursor, records_processed FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    assert state["cursor"] == "CVE-2026-0002"
+    assert state["records_processed"] == 2
+
+
+def test_sync_nvd_cves_keeps_cursor_on_partial_failure(tmp_path, monkeypatch):
+    app = make_test_app(tmp_path)
+    app.record_advisory_sync("NVD", "ok", "CVE-2026-0000", None, cursor="CVE-2026-0000", records_processed=1)
+
+    def fake_sync_nvd_cve(app_arg, cve_id, **kwargs):
+        if cve_id == "CVE-2026-0002":
+            raise RuntimeError("rate limited")
+
+        class FakeResult:
+            source = "NVD"
+            imported_rows = 1
+            rematched_impacts = 0
+
+            def __init__(self, cve_id, api_url):
+                self.cve_id = cve_id
+                self.api_url = api_url
+
+        return FakeResult(cve_id, kwargs["api_url"])
+
+    monkeypatch.setattr("backend.sca_monitor.advisory_sync.sync_nvd_cve", fake_sync_nvd_cve)
+
+    result = sync_nvd_cves(app, ["CVE-2026-0001", "CVE-2026-0002"], delay_seconds=0)
+
+    assert result.processed == 2
+    assert result.imported_rows == 1
+    assert result.failed == 1
+    with app.db.connect() as conn:
+        state = conn.execute(
+            "SELECT status, cursor, last_advisory_id, records_processed FROM advisory_sync_state WHERE source = 'NVD'"
+        ).fetchone()
+    assert state["status"] == "partial"
+    assert state["cursor"] == "CVE-2026-0000"
+    assert state["last_advisory_id"] == "CVE-2026-0001"
+    assert state["records_processed"] == 2
 
 
 def test_sync_nvd_cves_delays_between_remote_batch_requests(tmp_path, monkeypatch):

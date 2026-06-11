@@ -192,7 +192,7 @@ references
 - `GET /api/v1/advisories`는 저장된 advisory를 조회한다.
 - `GET /api/v1/advisories/{advisory_id}`는 저장된 advisory 상세, affected range/version, raw source payload, 관련 impact 요약을 조회한다.
 - `scripts/osv_sync.py`는 OSV ecosystem dump ZIP을 읽어 advisory를 일괄 import한다.
-- `advisory_sync_state`는 OSV 단건 import 성공/실패 상태를 기록한다.
+- `advisory_sync_state`는 source별 import 성공/실패 상태, cursor, last run, 처리 건수를 기록한다.
 - OSV dump sync worker는 `advisory_sync_state`의 `lock_owner`, `lock_expires_at`을 이용해 source별 중복 실행을 차단한다.
 - advisory import는 저장 값 변경 여부를 감지하고, 변경된 advisory package를 포함하는 latest snapshot을 재매칭한다.
 - matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
@@ -372,8 +372,8 @@ cve.references
 현재 구현:
 
 - `parse_nvd_cve_vulnerability()`는 NVD CVE API 2.0의 `vulnerabilities[].cve` payload에서 CVE ID, English description, CVSS severity, vulnerable CPE match, published/lastModified, CISA exploit marker를 `AdvisoryImport`로 변환한다.
-- `scripts/nvd_cve_sync.py CVE-YYYY-NNNN`은 단건 CVE를 NVD에서 조회하거나 `--json-path` fixture를 읽어 `source=NVD`, `ecosystem=cpe` advisory row로 저장하고 `advisory_sync_state`에 `NVD` 상태를 기록한다.
-- `scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100`은 newline-delimited CVE 목록을 dedupe한 뒤 순차 처리한다. 원격 NVD API batch 호출은 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 요청 간격을 둘 수 있고, 오프라인 검증 또는 staged import는 `--json-dir fixtures/nvd`를 함께 사용하며 파일명은 `CVE-YYYY-NNNN.json` 형식을 따른다.
+- `scripts/nvd_cve_sync.py CVE-YYYY-NNNN`은 단건 CVE를 NVD에서 조회하거나 `--json-path` fixture를 읽어 `source=NVD`, `ecosystem=cpe` advisory row로 저장하고 `advisory_sync_state`에 `NVD` 상태와 cursor를 기록한다.
+- `scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100`은 newline-delimited CVE 목록을 dedupe한 뒤 순차 처리한다. 원격 NVD API batch 호출은 `--delay-seconds` 또는 `NVD_REQUEST_DELAY_SECONDS`로 요청 간격을 둘 수 있고, batch 전체가 성공한 경우에만 cursor를 마지막 성공 CVE로 전진시킨다. 오프라인 검증 또는 staged import는 `--json-dir fixtures/nvd`를 함께 사용하며 파일명은 `CVE-YYYY-NNNN.json` 형식을 따른다.
 - NVD 전체 incremental pagination, CVE alias 기반 기존 OSV/GHSA row enrichment, `/cvehistory/2.0` 변경 이력 수집은 후속 범위이다.
 
 ### 5.6 OpenSSF Malicious Packages 수집 방식
@@ -1276,7 +1276,7 @@ impact 생성/변경 트랜잭션 안에서 `pending` row를 생성하고, alert
 | cursor | text | lastModified watermark 또는 source별 cursor |
 | last_run_at | timestamptz | 마지막 실행 시각 |
 | last_success_at | timestamptz | 마지막 성공 시각 |
-| last_error | text | 마지막 오류 |
+| last_error_message | text | 마지막 오류 |
 | records_processed | integer | 마지막 처리 건수 |
 | updated_at | timestamptz | 수정 시각 |
 
