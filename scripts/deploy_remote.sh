@@ -21,6 +21,7 @@ EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
 BACKUP_BEFORE_MIGRATION="${SCA_MONITOR_BACKUP_BEFORE_MIGRATION:-auto}"
+POSTGRES_PRODUCTION_PREFLIGHT="${SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT:-disabled}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -91,6 +92,7 @@ ssh "$REMOTE" "set -euo pipefail
   EXPECT_ADVISORY_SYNC_READY='$EXPECT_ADVISORY_SYNC_READY'
   EXPECT_DATABASE_BACKEND='$EXPECT_DATABASE_BACKEND'
   BACKUP_BEFORE_MIGRATION='$BACKUP_BEFORE_MIGRATION'
+  POSTGRES_PRODUCTION_PREFLIGHT='$POSTGRES_PRODUCTION_PREFLIGHT'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -195,6 +197,25 @@ ssh "$REMOTE" "set -euo pipefail
       ;;
     *)
       echo \"invalid SCA_MONITOR_BACKUP_BEFORE_MIGRATION: \$BACKUP_BEFORE_MIGRATION\" >&2
+      exit 2
+      ;;
+  esac
+  case \"\$POSTGRES_PRODUCTION_PREFLIGHT\" in
+    disabled|skip|false|0|'')
+      echo 'postgres production preflight skipped'
+      ;;
+    auto)
+      if [ -n \"\${MIGRATION_DATABASE_URL:-}\" ] || [ -n \"\${API_DATABASE_URL:-}\" ] || [ -n \"\${WORKER_DATABASE_URL:-}\" ]; then
+        python3 scripts/postgres_integration_smoke.py --production-preflight --json
+      else
+        echo 'postgres production preflight skipped: split database URLs not configured'
+      fi
+      ;;
+    required)
+      python3 scripts/postgres_integration_smoke.py --production-preflight --json
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT: \$POSTGRES_PRODUCTION_PREFLIGHT\" >&2
       exit 2
       ;;
   esac

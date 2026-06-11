@@ -2200,6 +2200,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
+    assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
@@ -2209,6 +2210,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/bootstrap_readiness_check.py --json" in script
     assert "scripts/http_smoke.py" in script
     assert "scripts/backup_database.py --json" in script
+    assert "scripts/postgres_integration_smoke.py --production-preflight --json" in script
     assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -2218,6 +2220,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
+    assert script.index("scripts/postgres_integration_smoke.py --production-preflight --json") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
 
@@ -2241,6 +2244,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
+    assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc

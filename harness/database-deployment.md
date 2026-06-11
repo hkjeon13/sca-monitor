@@ -167,6 +167,7 @@ $EDITOR /data/psyche/Projects/sca-monitor/.secrets/postgres.env
 python3 scripts/validate_database_env_file.py --database-env-file /data/psyche/Projects/sca-monitor/.secrets/postgres.env --json
 
 SCA_MONITOR_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required \
 SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true \
 scripts/deploy_remote.sh
 ```
@@ -177,6 +178,9 @@ scripts/deploy_remote.sh
 생성 직후 validator 결과는 placeholder 때문에 `blocked`가 정상이며, 운영자가 실제 값을 입력한 뒤 `validate_database_env_file.py`가 `ok`가 되어야 배포 병합을 진행한다.
 `scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정된 `scripts/deploy_remote.sh` 실행은 `.env` 병합 전에 이 validator를 stop gate로 먼저 실행한다.
+`SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required`는 worker stop 및 backup gate 이후, 일반 migration 실행 전에 `scripts/postgres_integration_smoke.py --production-preflight --json`을 실행한다.
+이 gate는 migration credential로 migration/write-rollback smoke를 수행하고 API/worker credential은 read-only smoke로 확인한다.
+실제 PostgreSQL 운영 전환에서는 managed backup/PITR 증적을 먼저 확인하고, SQLite file backup 전용인 `SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required`와 충돌하지 않게 backup mode를 별도 운영 절차에 맞춘다.
 
 실제 secret 파일을 준비하기 전에는 synthetic split credential로 같은 병합/준비도 경로를 dry-run한다.
 이 검증은 DB에 접속하지 않고 `validate_database_env_file.py`, `configure_runtime_inputs.py`, `deployment_input_readiness.py` 흐름이 서로 맞물리는지만 확인하며, 출력에는 DB URL 원문이나 password를 포함하지 않는다.
