@@ -21,10 +21,11 @@
 2. environment variable validation
 3. database connectivity check
 4. migration 실행
-5. API Server 배포
-6. Worker 배포
-7. `/health`, `/ready` 확인
-8. smoke test 실행
+5. DB smoke test 실행
+6. API Server 배포
+7. Worker 배포
+8. `/health`, `/ready` 확인
+9. smoke test 실행
 
 ## 3. Health Check
 
@@ -82,12 +83,23 @@ python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
 - lease 획득 가능 여부
 - metrics exporter 동작 여부
 
+DB smoke command:
+
+```bash
+python3 scripts/db_smoke.py
+python3 scripts/db_smoke.py --json
+```
+
+현재 SQLite fallback에서는 `services`, `advisory_sync_state`, `alert_events` read와 `audit_logs` transactional write/rollback을 검증한다.
+PostgreSQL URL에서는 migration status 조회가 가능하더라도 runtime query adapter가 아직 미구현이면 `query_adapter_not_enabled`로 실패해야 하며, 이 상태에서는 운영 DB 전환을 진행하지 않는다.
+
 ## 4. Deployment Stop Rules
 
 다음 조건이면 배포를 중단한다.
 
 - required env var 누락
 - DB migration 실패
+- DB smoke test 실패
 - API `/ready` 실패
 - frontend가 참조하는 API base URL 불일치
 - smoke test 실패

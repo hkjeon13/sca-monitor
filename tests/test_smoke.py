@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import threading
 import zipfile
@@ -86,6 +87,44 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
     expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
     assert "OnUnitActiveSec=15min" in expiry_timer
+
+
+def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": database_url,
+    }
+    subprocess.run(
+        ["python3", "scripts/migrate.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/db_smoke.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["database_backend"] == "sqlite"
+    assert payload["checks"]["services_readable"] is True
+    assert payload["checks"]["advisory_sync_state_readable"] is True
+    assert payload["checks"]["alert_events_readable"] is True
+    assert payload["checks"]["audit_log_write_rollback"] is True
+    assert payload["checks"]["audit_log_rollback_clean"] is True
+    database = Database(database_url)
+    with database.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'db.smoke.write'").fetchone()["c"] == 0
 
 
 def test_push_credential_issue_and_bound_snapshot_push(tmp_path):

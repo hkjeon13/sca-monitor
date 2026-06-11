@@ -16,6 +16,7 @@ ssh "$REMOTE" "set -euo pipefail
   . ./.env
   set +a
   python3 scripts/migrate.py
+  python3 scripts/db_smoke.py
   if [ -f .data/sca-monitor.pid ]; then
     old_pid=\$(cat .data/sca-monitor.pid)
     if [ -n \"\$old_pid\" ] && kill -0 \"\$old_pid\" 2>/dev/null; then

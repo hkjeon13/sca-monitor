@@ -79,6 +79,7 @@ SMOKE_TEST_PUSH_TOKEN
 ```text
 GET /health
 GET /ready
+python3 scripts/db_smoke.py --json
 GET /api/v1/overview
 GET frontend /
 GET frontend static asset

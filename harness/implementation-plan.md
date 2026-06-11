@@ -89,6 +89,7 @@ Phase 0 착수 전 선행 조건:
 - `migrations/sqlite/004_advisory_sync_lock.sql` 추가
 - `migrations/postgres/004_advisory_sync_lock.sql` 추가
 - `scripts/migrate.py` 추가
+- `scripts/db_smoke.py` 기반 DB read/write rollback smoke gate 추가
 - `/ready` migration 상태 노출 추가
 - SQLite fallback 유지
 - OSV 단건 import API와 advisory 조회 API 추가

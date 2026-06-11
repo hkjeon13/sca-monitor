@@ -33,6 +33,7 @@ scripts/migrate.py
 ```
 
 현재 구현은 SQLite migration 실행과 version 기록을 지원한다.
+`scripts/db_smoke.py`는 배포 후 DB smoke gate로 사용하며 SQLite fallback에서 schema read와 `audit_logs` transactional write/rollback을 검증한다.
 PostgreSQL migration SQL baseline은 작성되어 있으나, 운영 적용 전 `psycopg` dependency, PostgreSQL 연결 검증, API query adapter 전환이 추가로 필요하다.
 
 장기 Migration tool은 아직 REQUIRED이다.
@@ -106,3 +107,19 @@ open impact가 참조하는 snapshot/dependency는 보존하거나 FK를 `ON DEL
 - worker user로 outbox 조회 가능
 - advisory_sync_state upsert 가능
 - audit_logs insert 가능
+
+현재 자동화 명령:
+
+```bash
+python3 scripts/db_smoke.py --json
+```
+
+SQLite fallback에서 검증하는 항목:
+
+- `services` read
+- `advisory_sync_state` read
+- `alert_events` read
+- `audit_logs` write 후 rollback cleanup
+
+PostgreSQL URL을 넣었을 때 `query_adapter_not_enabled`가 나오면 정상적인 stop condition이다.
+이 상태에서는 migration baseline만으로 운영 전환하지 말고 PostgreSQL runtime query adapter와 integration test를 먼저 구현해야 한다.
