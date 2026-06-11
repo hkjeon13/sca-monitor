@@ -129,6 +129,13 @@ SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
 scripts/deploy_remote.sh
 ```
 
+live dispatcher 전환 전 webhook endpoint 자체는 synthetic payload로 별도 검증한다.
+이 단계는 alert outbox row를 claim/send 처리하지 않는다.
+
+```bash
+ALERT_WEBHOOK_URL="$ALERT_WEBHOOK_URL" python3 scripts/alert_webhook_smoke.py --json
+```
+
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
 

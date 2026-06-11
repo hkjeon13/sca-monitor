@@ -2348,6 +2348,59 @@ def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):
         assert row["status"] == "pending"
 
 
+def test_alert_webhook_smoke_posts_synthetic_payload(tmp_path):
+    received = []
+
+    from http.server import BaseHTTPRequestHandler
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8")
+            received.append({"headers": dict(self.headers), "payload": json.loads(body)})
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, fmt, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/alert_webhook_smoke.py",
+                "--webhook-url",
+                f"http://{host}:{port}/hook/secret",
+                "--service-id",
+                "smoke-service",
+                "--environment",
+                "stage",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    output = json.loads(result.stdout)
+    assert output["status"] == "ok"
+    assert output["webhook_url"] == f"http://{host}:{port}/..."
+    assert received[0]["payload"]["smoke"] is True
+    assert received[0]["payload"]["service_id"] == "smoke-service"
+    assert received[0]["payload"]["environment"] == "stage"
+    assert received[0]["headers"]["X-Sca-Smoke"] == "true"
+    assert received[0]["headers"]["Idempotency-Key"] == received[0]["payload"]["smoke_id"]
+
+
 def test_dispatch_pending_alerts_marks_failed(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

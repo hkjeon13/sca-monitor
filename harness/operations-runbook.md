@@ -146,6 +146,14 @@ Alert outbox 확인:
 python3 scripts/dispatch_alerts.py --dry-run --limit 50
 ```
 
+Webhook endpoint smoke:
+
+```bash
+ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/alert_webhook_smoke.py --json
+```
+
+이 검증은 `alert_events`를 claim/send 처리하지 않고 synthetic payload만 전송한다.
+
 Webhook 수동 발송:
 
 ```bash
