@@ -131,6 +131,12 @@ class ScaMonitorApp:
                 auth_context = self.auth_context(request)
                 self.authorize_admin(auth_context, "alert channel changes require admin role")
                 return self.json_response(request, self.update_alert_channel(channel_id, self.apply_authenticated_actor(body, auth_context)))
+            if path.startswith("/api/v1/settings/alert-channels/") and path.endswith("/test") and method == "POST":
+                channel_id = path.split("/")[-2]
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "alert channel test requires admin role")
+                return self.json_response(request, self.test_alert_channel(channel_id, self.apply_authenticated_actor(body, auth_context)))
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "GET":
                 service_id = path.split("/")[-2]
                 return self.json_response(request, {"credentials": self.list_push_credentials(service_id, parse_qs(parsed.query))})
@@ -582,6 +588,52 @@ class ScaMonitorApp:
                 occurred_at=now,
             )
         return {"channel": sanitize_alert_channel(row_to_dict(row))}
+
+    def test_alert_channel(self, channel_id: str, body: dict, sender=None) -> dict:
+        from .alert_dispatch import send_webhook
+
+        now = utcnow()
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
+            if not row:
+                raise ValueError("alert channel not found")
+            before = sanitize_alert_channel(row_to_dict(row))
+            if not row["enabled"]:
+                raise ValueError("alert channel is disabled")
+            if row["channel_type"] != "webhook":
+                raise ValueError("only webhook alert channels are supported")
+            payload = {
+                "smoke": True,
+                "smoke_id": f"alert-channel-test:{channel_id}:{now}",
+                "generated_at": now,
+                "channel_id": channel_id,
+                "channel_name": row["name"],
+                "summary": "SCA Monitor alert channel test",
+                "risk_level": "info",
+                "source": "sca-monitor",
+            }
+            headers = {
+                "Idempotency-Key": payload["smoke_id"],
+                "X-SCA-Alert-Channel-Test": "true",
+                "X-SCA-Smoke": "true",
+            }
+            (sender or send_webhook)(row["target_url"], payload, headers)
+            self.write_audit_log(
+                conn,
+                actor=body.get("actor", "system"),
+                action="alert_channel.test",
+                target_type="alert_channel",
+                target_id=channel_id,
+                reason=body.get("reason", "alert channel smoke test"),
+                before=before,
+                after={**before, "last_tested_at": now, "test_status": "ok"},
+                occurred_at=now,
+            )
+        return {
+            "status": "ok",
+            "tested_at": now,
+            "channel": before,
+        }
 
     def default_alert_webhook_url(self) -> str | None:
         with self.db.connect() as conn:

@@ -1185,6 +1185,99 @@ def test_alert_channel_changes_are_audited_without_secret_target(tmp_path):
     assert page["audit_logs"][0]["before"]["target_url_masked"] == "https://alerts.example.test/..."
 
 
+def test_alert_channel_test_sends_synthetic_payload_and_audits(tmp_path):
+    app = make_test_app(tmp_path)
+    delivered = []
+    channel = app.create_alert_channel(
+        {
+            "name": "smoke-channel",
+            "target_url": "https://alerts.example.test/hooks/sensitive-token",
+            "is_default": True,
+        }
+    )["channel"]
+
+    result = app.test_alert_channel(
+        channel["id"],
+        {"actor": "security-admin", "reason": "pre-live dispatcher test"},
+        sender=lambda url, payload, headers: delivered.append((url, payload, headers)),
+    )
+
+    assert result["status"] == "ok"
+    assert result["channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    assert delivered[0][0] == "https://alerts.example.test/hooks/sensitive-token"
+    assert delivered[0][1]["smoke"] is True
+    assert delivered[0][1]["channel_name"] == "smoke-channel"
+    assert delivered[0][2]["X-SCA-Alert-Channel-Test"] == "true"
+    page = app.search_audit_logs({"target_type": ["alert_channel"], "target_id": [channel["id"]]})
+    assert [item["action"] for item in page["audit_logs"]] == ["alert_channel.test", "alert_channel.upsert"]
+    assert page["audit_logs"][0]["actor"] == "security-admin"
+    assert "sensitive-token" not in json.dumps(page)
+
+
+def test_alert_channel_test_rejects_disabled_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    channel = app.create_alert_channel(
+        {
+            "name": "disabled-channel",
+            "target_url": "https://alerts.example.test/hooks/disabled",
+            "is_default": True,
+        }
+    )["channel"]
+    app.update_alert_channel(channel["id"], {"enabled": False})
+
+    with pytest.raises(ValueError, match="disabled"):
+        app.test_alert_channel(channel["id"], {}, sender=lambda url, payload, headers: None)
+
+
+def test_alert_channel_test_api_posts_to_webhook(tmp_path):
+    received = []
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            received.append(
+                {
+                    "path": self.path,
+                    "payload": json.loads(body.decode("utf-8")),
+                    "headers": dict(self.headers),
+                }
+            )
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    webhook = ThreadingHTTPServer(("127.0.0.1", 0), WebhookHandler)
+    thread = threading.Thread(target=webhook.serve_forever, daemon=True)
+    thread.start()
+    try:
+        app = make_test_app(tmp_path)
+        channel = app.create_alert_channel(
+            {
+                "name": "api-smoke-channel",
+                "target_url": f"http://127.0.0.1:{webhook.server_port}/hooks/secret",
+                "is_default": True,
+            }
+        )["channel"]
+        with run_test_server(app) as base_url:
+            result = http_json(
+                f"{base_url}/api/v1/settings/alert-channels/{channel['id']}/test",
+                method="POST",
+                body={"actor": "web-console", "reason": "api smoke"},
+            )
+    finally:
+        webhook.shutdown()
+        thread.join(timeout=5)
+        webhook.server_close()
+
+    assert result["status"] == "ok"
+    assert result["channel"]["target_url_masked"] == f"http://127.0.0.1:{webhook.server_port}/..."
+    assert received[0]["path"] == "/hooks/secret"
+    assert received[0]["payload"]["smoke"] is True
+    assert received[0]["headers"]["X-Sca-Alert-Channel-Test"] == "true"
+
+
 def test_service_endpoint_test_records_healthy_status(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service(
@@ -1945,6 +2038,50 @@ def test_header_auth_admin_required_for_alert_channel_changes(tmp_path):
     audit = app.search_audit_logs({"target_type": ["alert_channel"], "target_id": [created["channel"]["id"]]})
     assert audit["pagination"]["total"] == 2
     assert {item["actor"] for item in audit["audit_logs"]} == {"admin@example.test"}
+
+
+def test_header_auth_admin_required_for_alert_channel_test(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    owner_headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+    admin_headers = {"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"}
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    webhook = ThreadingHTTPServer(("127.0.0.1", 0), WebhookHandler)
+    thread = threading.Thread(target=webhook.serve_forever, daemon=True)
+    thread.start()
+    try:
+        channel = app.create_alert_channel({"name": "ops", "target_url": f"http://127.0.0.1:{webhook.server_port}/hooks/ops", "is_default": True})["channel"]
+        with run_test_server(app) as base_url:
+            forbidden = http_json(
+                f"{base_url}/api/v1/settings/alert-channels/{channel['id']}/test",
+                method="POST",
+                body={"actor": "spoofed"},
+                headers=owner_headers,
+                expect_status=403,
+            )
+            tested = http_json(
+                f"{base_url}/api/v1/settings/alert-channels/{channel['id']}/test",
+                method="POST",
+                body={"actor": "spoofed"},
+                headers=admin_headers,
+            )
+    finally:
+        webhook.shutdown()
+        thread.join(timeout=5)
+        webhook.server_close()
+
+    assert "admin role" in forbidden["error"]
+    assert tested["status"] == "ok"
+    audit = app.search_audit_logs({"target_type": ["alert_channel"], "target_id": [channel["id"]]})
+    assert audit["audit_logs"][0]["actor"] == "admin@example.test"
 
 
 def test_session_disabled_mode_keeps_web_console_actions_enabled(tmp_path):

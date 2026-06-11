@@ -681,10 +681,21 @@ async function loadAlertChannels() {
         <strong>${escapeHtml(channel.name)}</strong>
         <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.enabled ? "enabled" : "disabled")} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
       </div>
+      <button type="button" class="secondary" data-channel-test="${escapeHtml(channel.id)}" ${!channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Test</button>
       <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.is_default || !channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Make Default</button>
       <button type="button" class="secondary" data-channel-disable="${escapeHtml(channel.id)}" ${!channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Disable</button>
     </div>
   `).join("");
+  target.querySelectorAll("[data-channel-test]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!can("manage_alert_channels")) return;
+      await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelTest)}/test`, "POST", {
+        actor: "web-console",
+        reason: "manual alert channel smoke test",
+      });
+      await Promise.all([loadAlertChannels(), loadAuditLogs()]);
+    });
+  });
   target.querySelectorAll("[data-channel-default]").forEach((button) => {
     button.addEventListener("click", async () => {
       if (!can("manage_alert_channels")) return;
