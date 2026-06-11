@@ -80,6 +80,29 @@ def test_push_credential_rejects_service_environment_spoofing(tmp_path):
         )
 
 
+def test_push_credential_revoke_blocks_token_reuse(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
+    issued = app.create_push_credential("credential-service", {"environment": "prod"})
+    token = issued["token"]
+    credential_id = issued["credential"]["id"]
+
+    revoked = app.revoke_push_credential("credential-service", credential_id, {"environment": "prod"})
+
+    assert revoked["credential"]["revoked_at"] is not None
+    credentials = app.list_push_credentials("credential-service", {"environment": ["prod"]})
+    assert credentials[0]["revoked_at"] == revoked["credential"]["revoked_at"]
+    with pytest.raises(PermissionError, match="revoked"):
+        app.push_snapshot(
+            {
+                "service_id": "credential-service",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+            },
+            f"Bearer {token}",
+        )
+
+
 def test_parse_osv_advisory_fixture():
     advisories = parse_osv_advisories(osv_fixture())
 

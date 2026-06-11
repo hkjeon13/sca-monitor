@@ -351,6 +351,27 @@ input[readonly] {
   gap: 8px;
 }
 
+.credential-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.credential-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.credential-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 pre {
   background: #101820;
   color: #e7edf2;

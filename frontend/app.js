@@ -261,7 +261,44 @@ document.querySelector("#credential-form").addEventListener("submit", async (eve
     <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
     <p>Prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
   `;
+  await loadPushCredentials(form.service_id, form.environment);
 });
+
+document.querySelector("#credential-form input[name='service_id']").addEventListener("change", refreshCredentialListFromForm);
+document.querySelector("#credential-form select[name='environment']").addEventListener("change", refreshCredentialListFromForm);
+
+async function refreshCredentialListFromForm() {
+  const form = Object.fromEntries(new FormData(document.querySelector("#credential-form")).entries());
+  if (!form.service_id) {
+    document.querySelector("#credential-list").innerHTML = "";
+    return;
+  }
+  await loadPushCredentials(form.service_id, form.environment);
+}
+
+async function loadPushCredentials(serviceId, environment) {
+  const data = await api.get(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials?environment=${encodeURIComponent(environment || "prod")}`);
+  const target = document.querySelector("#credential-list");
+  if (!data.credentials.length) {
+    target.innerHTML = `<p>No push credentials issued.</p>`;
+    return;
+  }
+  target.innerHTML = data.credentials.map((credential) => `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(credential.token_prefix)}</strong>
+        <span>${escapeHtml(credential.revoked_at ? "revoked" : "active")} · expires ${escapeHtml(credential.expires_at || "-")}</span>
+      </div>
+      <button type="button" class="secondary" data-credential-id="${escapeHtml(credential.id)}" ${credential.revoked_at ? "disabled" : ""}>Revoke</button>
+    </div>
+  `).join("");
+  target.querySelectorAll("[data-credential-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api.send(`/api/v1/services/${encodeURIComponent(serviceId)}/push-credentials/${encodeURIComponent(button.dataset.credentialId)}/revoke`, "POST", {environment});
+      await loadPushCredentials(serviceId, environment);
+    });
+  });
+}
 
 document.querySelector("#snapshot-form").addEventListener("submit", async (event) => {
   event.preventDefault();

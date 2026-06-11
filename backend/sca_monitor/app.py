@@ -97,6 +97,11 @@ class ScaMonitorApp:
             if path.startswith("/api/v1/services/") and path.endswith("/push-credentials") and method == "POST":
                 service_id = path.split("/")[-2]
                 return self.json_response(request, self.create_push_credential(service_id, self.read_json(request)), HTTPStatus.CREATED)
+            if path.startswith("/api/v1/services/") and "/push-credentials/" in path and path.endswith("/revoke") and method == "POST":
+                parts = path.split("/")
+                service_id = parts[-4]
+                credential_id = parts[-2]
+                return self.json_response(request, self.revoke_push_credential(service_id, credential_id, self.read_json(request)))
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
@@ -332,6 +337,30 @@ class ScaMonitorApp:
                 "curl": f"curl -X POST /api/v1/snapshots -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' --data @snapshot.json",
             },
         }
+
+    def revoke_push_credential(self, service_id: str, credential_id: str, body: dict) -> dict:
+        environment = body.get("environment", "prod")
+        now = utcnow()
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT pc.id, pc.token_prefix, pc.scopes, pc.expires_at, pc.revoked_at, pc.last_used_at, pc.created_at,
+                       s.service_id, s.environment
+                FROM push_credentials pc
+                JOIN services s ON s.id = pc.service_pk
+                WHERE pc.id = ? AND s.service_id = ? AND s.environment = ?
+                """,
+                (credential_id, service_id, environment),
+            ).fetchone()
+            if not row:
+                raise ValueError("push credential not found")
+            revoked_at = row["revoked_at"] or now
+            if not row["revoked_at"]:
+                conn.execute("UPDATE push_credentials SET revoked_at = ? WHERE id = ?", (revoked_at, credential_id))
+        credential = row_to_dict(row)
+        credential["scopes"] = json.loads(credential["scopes"]) if isinstance(credential["scopes"], str) else credential["scopes"]
+        credential["revoked_at"] = revoked_at
+        return {"credential": credential}
 
     def list_advisories(self, query: dict[str, list[str]]) -> list[dict]:
         where = []

@@ -1422,7 +1422,7 @@ POST /api/v1/settings/alert-channels
 - Overview dashboard: `GET /api/v1/overview` 기반 service/open impact/critical/high/endpoint unhealthy count 표시
 - Services: `GET /api/v1/services` 기반 등록 서비스 목록과 open impact count 표시
 - Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록
-- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
+- Push Credential: `POST /api/v1/services/{service_id}/push-credentials` 기반 `snapshot:push` token 발급, token hash 저장, service/environment 바인딩 검증. `POST /api/v1/services/{service_id}/push-credentials/{credential_id}/revoke` 기반 revoke와 Web Console 목록/revoke action을 지원. Web Console에서 token을 1회 표시하고 optional Bearer token snapshot push를 지원
 - Snapshot Demo Push: `POST /api/v1/snapshots` 기반 dependency snapshot push 검증
 - Impact List: `GET /api/v1/impacts` 기반 risk/status/advisory/fixed version 표시
 - Impact Filters: `GET /api/v1/impacts`의 `status`, `risk_level`, `service_id`, `owner_team`, `environment`, `package_name`, `advisory_id`, `q` 서버 사이드 필터와 `limit`, `offset`, `sort`, `direction` pagination/sorting 제공. Web Console은 status/risk/search/sort/page size 필터와 URL query 유지, Prev/Next 이동을 제공
@@ -1434,7 +1434,7 @@ POST /api/v1/settings/alert-channels
 
 - role-aware UI와 API 인가 연동
 - accepted risk 승인자/만료일 workflow
-- service detail, endpoint test, push credential rotation/revocation UI
+- service detail, endpoint test, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
 - settings/alert channel 관리 화면
