@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import tomllib
 import threading
 import zipfile
 from contextlib import contextmanager
@@ -1099,6 +1100,16 @@ def test_github_actions_ci_runs_ci_smoke_with_postgres_docker_gate():
     assert "SCA_MONITOR_CI_HTTP_SMOKE: disabled" in workflow
     assert "python -m pip install -e . pytest" in workflow
     assert "bash scripts/ci_smoke.sh" in workflow
+
+
+def test_pyproject_limits_setuptools_package_discovery():
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    find_config = pyproject["tool"]["setuptools"]["packages"]["find"]
+
+    assert find_config["include"] == ["backend*"]
+    assert "frontend*" in find_config["exclude"]
+    assert "harness*" in find_config["exclude"]
+    assert "migrations*" in find_config["exclude"]
 
 
 def test_web_console_renders_database_readiness_panel():
