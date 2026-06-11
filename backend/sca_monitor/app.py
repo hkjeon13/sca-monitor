@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, json_column, row_to_dict, utcnow
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
-from .postgres_cutover import assess_cutover
+from .postgres_cutover import assess_cutover, summarize_preflight
 from .versioning import version_is_affected
 
 
@@ -464,11 +464,14 @@ class ScaMonitorApp:
     def database_readiness_summary(self) -> dict:
         readiness = self.db.readiness()
         readiness["database_url_source"] = self.settings.database_url_source
+        cutover = assess_cutover(os.environ)
+        required_cutover = assess_cutover(os.environ, require_postgres=True)
         return {
             "status": "ready" if readiness["database"] == "ok" else "not_ready",
             **readiness,
-            "cutover": assess_cutover(os.environ),
-            "cutover_required": assess_cutover(os.environ, require_postgres=True),
+            "cutover": cutover,
+            "cutover_required": required_cutover,
+            "postgres_preflight": summarize_preflight(cutover, required_cutover),
         }
 
     def canonicalization_status(self, query: dict[str, list[str]] | None = None) -> dict:

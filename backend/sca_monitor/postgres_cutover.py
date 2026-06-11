@@ -138,3 +138,37 @@ def assess_cutover(env: dict[str, str], *, require_postgres: bool = False, requi
         "postgres_configured": postgres_configured,
         "checks": [check.as_dict() for check in checks],
     }
+
+
+def summarize_preflight(cutover: dict[str, Any], required_cutover: dict[str, Any]) -> dict[str, Any]:
+    required_checks = required_cutover.get("checks", [])
+    blockers = [check for check in required_checks if check.get("status") == "blocker"]
+    warnings = [check for check in required_checks if check.get("status") == "warning"]
+    ok_checks = [check for check in required_checks if check.get("status") == "ok"]
+    split_ready = (
+        required_cutover.get("mode") == "split"
+        and required_cutover.get("status") == "ready"
+        and all(check.get("status") == "ok" for check in required_checks)
+    )
+    if blockers:
+        next_action = blockers[0].get("detail") or "resolve PostgreSQL cutover blockers"
+    elif warnings:
+        next_action = warnings[0].get("detail") or "review PostgreSQL cutover warnings"
+    elif split_ready:
+        next_action = "ready for split credential PostgreSQL cutover"
+    elif required_cutover.get("status") == "ready":
+        next_action = "ready for PostgreSQL cutover"
+    else:
+        next_action = "continue SQLite fallback until PostgreSQL URLs are configured"
+
+    return {
+        "status": required_cutover.get("status", "unknown"),
+        "current_mode": cutover.get("mode", "unknown"),
+        "required_mode": required_cutover.get("mode", "unknown"),
+        "postgres_configured": bool(cutover.get("postgres_configured") or required_cutover.get("postgres_configured")),
+        "split_ready": split_ready,
+        "blockers": len(blockers),
+        "warnings": len(warnings),
+        "ok": len(ok_checks),
+        "next_action": next_action,
+    }

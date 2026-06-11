@@ -166,6 +166,7 @@ function renderDatabaseReadiness(readiness) {
   const migration = readiness.migration || {};
   const cutover = readiness.cutover || {};
   const required = readiness.cutover_required || {};
+  const preflight = readiness.postgres_preflight || {};
   const checks = (required.checks || []).map((check) => `
     <li>
       ${renderReadinessBadge(check.status)}
@@ -186,6 +187,9 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Current Cutover", cutover.status || "unknown")}
       ${detailRow("PostgreSQL Required", required.status || "unknown")}
       ${detailRow("PostgreSQL Configured", cutover.postgres_configured ? "yes" : "no")}
+      ${detailRow("Split Ready", preflight.split_ready ? "yes" : "no")}
+      ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
+      ${detailRow("Next Action", preflight.next_action || "unknown")}
     </div>
     <div class="history readiness-checks">
       <h3>PostgreSQL Cutover Checks</h3>

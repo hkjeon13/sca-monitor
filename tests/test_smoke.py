@@ -28,6 +28,7 @@ from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp, advisory_import_from_row
 from backend.sca_monitor.config import Settings, load_settings
 from backend.sca_monitor.osv import parse_osv_advisories
+from backend.sca_monitor.postgres_cutover import assess_cutover, summarize_preflight
 from backend.sca_monitor.versioning import version_is_affected
 
 
@@ -842,6 +843,41 @@ def test_postgres_cutover_readiness_accepts_split_postgres_urls(tmp_path):
     assert payload["postgres_configured"] is True
 
 
+def test_postgres_preflight_summary_reports_blockers_and_split_ready():
+    sqlite_cutover = assess_cutover({})
+    sqlite_required = assess_cutover({}, require_postgres=True)
+
+    sqlite_summary = summarize_preflight(sqlite_cutover, sqlite_required)
+
+    assert sqlite_summary["status"] == "blocked"
+    assert sqlite_summary["current_mode"] == "sqlite_fallback"
+    assert sqlite_summary["blockers"] == 1
+    assert sqlite_summary["warnings"] == 0
+    assert sqlite_summary["ok"] == 1
+    assert sqlite_summary["split_ready"] is False
+    assert sqlite_summary["next_action"] == "no PostgreSQL database URL configured"
+
+    split_env = {
+        "MIGRATION_DATABASE_URL": "postgresql://migrator:secret@db/sca",
+        "API_DATABASE_URL": "postgresql://api:secret@db/sca",
+        "WORKER_DATABASE_URL": "postgresql://worker:secret@db/sca",
+        "SCA_MONITOR_AUTO_MIGRATE": "false",
+        "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE": "required",
+    }
+    split_cutover = assess_cutover(split_env)
+    split_required = assess_cutover(split_env, require_postgres=True, require_split=True)
+
+    split_summary = summarize_preflight(split_cutover, split_required)
+
+    assert split_summary["status"] == "ready"
+    assert split_summary["required_mode"] == "split"
+    assert split_summary["postgres_configured"] is True
+    assert split_summary["split_ready"] is True
+    assert split_summary["blockers"] == 0
+    assert split_summary["warnings"] == 0
+    assert split_summary["next_action"] == "ready for split credential PostgreSQL cutover"
+
+
 def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     app = make_test_app(tmp_path)
 
@@ -855,6 +891,8 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert payload["migration"]["compatible"] is True
     assert payload["cutover"]["status"] == "sqlite_fallback"
     assert payload["cutover_required"]["status"] == "blocked"
+    assert payload["postgres_preflight"]["blockers"] == 1
+    assert payload["postgres_preflight"]["next_action"] == "no PostgreSQL database URL configured"
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
@@ -990,6 +1028,9 @@ def test_web_console_renders_database_readiness_panel():
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
     assert "URL Source" in script
+    assert "Split Ready" in script
+    assert "Preflight Checks" in script
+    assert "Next Action" in script
 
 
 def enabled_now_lines(text: str) -> str:
