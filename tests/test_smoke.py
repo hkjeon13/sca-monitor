@@ -751,6 +751,16 @@ def test_remote_deploy_uses_db_gate():
     assert "nohup python3 -m backend.sca_monitor" in script
 
 
+def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
+    script = (REPO_ROOT / "scripts" / "deploy_db_gate.sh").read_text(encoding="utf-8")
+
+    assert 'MIGRATION_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}"' in script
+    assert 'run_postgres_smoke "$MIGRATION_URL" migration' in script
+    assert 'run_postgres_smoke "${API_DATABASE_URL:-}" api "--skip-migrate"' in script
+    assert 'run_postgres_smoke "$WORKER_URL" worker "--skip-migrate --read-only"' in script
+    assert "postgres integration smoke required for $label but database URL is not configured" in script
+
+
 def enabled_now_lines(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if " enable --now " in line)
 
@@ -853,6 +863,31 @@ def test_postgres_integration_smoke_helpers():
     from scripts.postgres_integration_smoke import docker_database_url
 
     assert docker_database_url(55432, "user", "pass", "db") == "postgresql://user:pass@127.0.0.1:55432/db"
+
+
+def test_postgres_integration_smoke_can_skip_migrate_and_write(monkeypatch):
+    import scripts.postgres_integration_smoke as pg_smoke
+
+    calls = {"migrate": 0, "write_check": None}
+
+    class FakeDatabase:
+        def __init__(self, database_url):
+            self.database_url = database_url
+
+        def migrate(self):
+            calls["migrate"] += 1
+
+    def fake_run_smoke(database, *, write_check=True):
+        calls["write_check"] = write_check
+        return {"status": "ok", "database_url": database.database_url}
+
+    monkeypatch.setattr(pg_smoke, "Database", FakeDatabase)
+    monkeypatch.setattr(pg_smoke, "run_smoke", fake_run_smoke)
+
+    result = pg_smoke.run_postgres_smoke("postgresql://runtime/db", migrate=False, write_check=False)
+
+    assert result["status"] == "ok"
+    assert calls == {"migrate": 0, "write_check": False}
 
 
 def test_postgres_integration_api_workflow_smoke_uses_app_flow(tmp_path):

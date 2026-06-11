@@ -20,6 +20,7 @@ LOG_LEVEL
 FRONTEND_PUBLIC_URL
 API_BASE_URL
 SCA_MONITOR_DATABASE_URL
+MIGRATION_DATABASE_URL
 API_DATABASE_URL
 WORKER_DATABASE_URL
 SCA_MONITOR_AUTO_MIGRATE
@@ -35,6 +36,7 @@ PostgreSQL 전환 전 임시값은 SQLite URL이다.
 ```text
 SCA_MONITOR_DATABASE_URL=sqlite:////data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3
 # PostgreSQL 계정 분리 시에는 SCA_MONITOR_DATABASE_URL을 비우고 아래 값을 사용한다.
+MIGRATION_DATABASE_URL=postgresql://sca_migrator:...
 API_DATABASE_URL=postgresql://sca_api:...
 WORKER_DATABASE_URL=postgresql://sca_worker:...
 # 배포 migration gate 이후 runtime DDL 권한을 제거하려면 auto-migrate를 끈다.
@@ -43,7 +45,8 @@ SCA_MONITOR_AUTO_MIGRATE=false
 
 `SCA_MONITOR_DB`는 이전 MVP 호환용 path 설정으로만 유지한다.
 `SCA_MONITOR_AUTO_MIGRATE` 기본값은 `true`이며, `SCA_MONITOR_API_AUTO_MIGRATE`와 `SCA_MONITOR_WORKER_AUTO_MIGRATE`가 있으면 컴포넌트별 설정이 우선한다.
-PostgreSQL 최소권한 운영에서는 `scripts/migrate.py`와 `deploy_db_gate.sh`가 먼저 통과한 뒤 API/worker runtime auto-migrate를 `false`로 둔다.
+PostgreSQL 최소권한 운영에서는 `MIGRATION_DATABASE_URL`에 DDL 권한을 부여하고, `API_DATABASE_URL`/`WORKER_DATABASE_URL`은 runtime 권한으로 제한한다.
+`scripts/migrate.py`와 `deploy_db_gate.sh`가 먼저 통과한 뒤 API/worker runtime auto-migrate를 `false`로 둔다.
 
 ### API Server
 
@@ -93,6 +96,7 @@ SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=auto
 `auto`는 PostgreSQL DB URL일 때만 integration smoke를 실행한다.
 `required`는 DB URL 종류와 관계없이 실행을 강제하며, `disabled`는 임시 비활성화에만 사용한다.
 `WORKER_DATABASE_URL`이 별도로 설정되고 `SCA_MONITOR_DATABASE_URL`이 비어 있으면 `deploy_db_gate.sh`는 API DB smoke 이후 worker DB read-only smoke를 추가 실행한다.
+`MIGRATION_DATABASE_URL`이 있으면 PostgreSQL integration smoke는 migration owner URL로 migration을 실행하고, API/worker URL은 `--skip-migrate` runtime smoke로 검증한다.
 
 ### Worker
 

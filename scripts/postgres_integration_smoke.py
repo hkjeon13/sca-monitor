@@ -80,10 +80,11 @@ def stop_container(container_name: str) -> None:
     run_command(["docker", "rm", "-f", container_name], check=False)
 
 
-def run_postgres_smoke(database_url: str) -> dict[str, Any]:
+def run_postgres_smoke(database_url: str, *, migrate: bool = True, write_check: bool = True) -> dict[str, Any]:
     database = Database(database_url)
-    database.migrate()
-    return run_smoke(database)
+    if migrate:
+        database.migrate()
+    return run_smoke(database, write_check=write_check)
 
 
 def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
@@ -143,6 +144,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=45)
     parser.add_argument("--keep-container", action="store_true")
     parser.add_argument("--with-api-workflow", action="store_true", help="Run a service registration and snapshot push workflow through ScaMonitorApp.")
+    parser.add_argument("--skip-migrate", action="store_true", help="Do not run migrations before DB smoke.")
+    parser.add_argument("--read-only", action="store_true", help="Skip transactional write/rollback check.")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
 
@@ -161,7 +164,7 @@ def main() -> int:
                 print(json.dumps(result, indent=2) if args.json else result["reason"])
                 return 0
             container_name, database_url = start_postgres_container(args)
-        result = run_postgres_smoke(database_url)
+        result = run_postgres_smoke(database_url, migrate=not args.skip_migrate, write_check=not args.read_only)
         if result["status"] == "ok" and args.with_api_workflow:
             result["api_workflow"] = run_api_workflow_smoke(database_url)
         result["database_url_source"] = "docker" if container_name else "provided"

@@ -8,13 +8,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import os
+
 from backend.sca_monitor.config import load_settings
 from backend.sca_monitor.db import Database
 
 
 def main() -> None:
     settings = load_settings()
-    database = Database(settings.database_url)
+    database = Database(os.getenv("MIGRATION_DATABASE_URL") or settings.database_url)
     database.migrate()
     readiness = database.readiness()
     migration = readiness["migration"]
