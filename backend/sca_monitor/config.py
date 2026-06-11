@@ -18,6 +18,7 @@ class Settings:
     smoke_token: str
     database_url_source: str = "default_sqlite"
     auth_mode: str = "disabled"
+    auth_proxy_shared_secret: str = ""
     auto_migrate: bool = True
     max_snapshot_payload_bytes: int = 10 * 1024 * 1024
     max_snapshot_dependencies: int = 10000
@@ -55,6 +56,7 @@ def load_settings(component: str = "api") -> Settings:
         smoke_token=os.getenv("SMOKE_TEST_TOKEN", "dev-smoke-token"),
         database_url_source=database_url_source,
         auth_mode=os.getenv("SCA_MONITOR_AUTH_MODE", "disabled"),
+        auth_proxy_shared_secret=os.getenv("SCA_MONITOR_AUTH_PROXY_SHARED_SECRET", ""),
         auto_migrate=auto_migrate,
         max_snapshot_payload_bytes=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES", str(10 * 1024 * 1024))),
         max_snapshot_dependencies=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES", "10000")),

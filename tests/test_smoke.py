@@ -2971,7 +2971,10 @@ def test_harness_documents_deployment_input_readiness():
     backend_doc = (REPO_ROOT / "harness" / "backend-deployment.md").read_text(encoding="utf-8")
     cicd_doc = (REPO_ROOT / "harness" / "cicd-automation.md").read_text(encoding="utf-8")
     operations_doc = (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
+    requirements_doc = (REPO_ROOT / "harness" / "requirements.md").read_text(encoding="utf-8")
+    secrets_doc = (REPO_ROOT / "harness" / "secrets-and-config.md").read_text(encoding="utf-8")
     values_doc = (REPO_ROOT / "harness" / "values" / "deployment-inputs.md").read_text(encoding="utf-8")
+    env_example = (REPO_ROOT / "deploy" / "sca-monitor.env.example").read_text(encoding="utf-8")
 
     for text in (database_doc, cicd_doc, values_doc):
         assert "scripts/deployment_input_readiness.py" in text
@@ -3010,6 +3013,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "/api/v1/operations/cutover-readiness-report" in operations_doc
     assert "--expect-database-backend sqlite" in operations_doc
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in operations_doc
+    assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in env_example
+    assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in secrets_doc
+    assert "X-SCA-Proxy-Secret" in secrets_doc
+    assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in requirements_doc
 
 
 def test_harness_documents_advisory_source_preflight():
@@ -5866,6 +5873,48 @@ def test_header_auth_session_reports_principal_roles_and_capabilities(tmp_path):
     assert admin_session["capabilities"]["manage_services"] is True
     assert admin_session["capabilities"]["manage_credentials"] is True
     assert admin_session["capabilities"]["manage_alert_channels"] is True
+
+
+def test_header_auth_requires_proxy_shared_secret_when_configured(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header", auth_proxy_shared_secret="proxy-secret")
+    headers = {"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"}
+
+    with run_test_server(app) as base_url:
+        missing_secret = http_json(
+            f"{base_url}/api/v1/session",
+            headers=headers,
+            expect_status=403,
+        )
+        wrong_secret = http_json(
+            f"{base_url}/api/v1/session",
+            headers={**headers, "X-SCA-Proxy-Secret": "wrong"},
+            expect_status=403,
+        )
+        session = http_json(
+            f"{base_url}/api/v1/session",
+            headers={**headers, "X-SCA-Proxy-Secret": "proxy-secret"},
+        )
+        service_forbidden = http_json(
+            f"{base_url}/api/v1/services",
+            method="POST",
+            body={"service_id": "proxy-service", "environment": "prod", "owner_team": "platform"},
+            headers=headers,
+            expect_status=403,
+        )
+        created = http_json(
+            f"{base_url}/api/v1/services",
+            method="POST",
+            body={"service_id": "proxy-service", "environment": "prod", "owner_team": "platform"},
+            headers={**headers, "X-SCA-Proxy-Secret": "proxy-secret"},
+            expect_status=201,
+        )
+
+    assert "invalid auth proxy secret" in missing_secret["error"]
+    assert "invalid auth proxy secret" in wrong_secret["error"]
+    assert session["principal"] == "admin@example.test"
+    assert session["capabilities"]["manage_services"] is True
+    assert "invalid auth proxy secret" in service_forbidden["error"]
+    assert created["service"]["service_id"] == "proxy-service"
 
 
 def test_static_js_and_css_are_revalidated_without_asset_fingerprints(tmp_path):

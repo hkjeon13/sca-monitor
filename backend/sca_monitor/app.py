@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -334,6 +335,9 @@ class ScaMonitorApp:
             return {"enabled": False, "principal": None, "roles": set(), "owner_teams": set()}
         if mode != "header":
             raise PermissionError(f"auth mode is not implemented: {mode}")
+        proxy_secret = normalize_optional(self.settings.auth_proxy_shared_secret)
+        if proxy_secret and not hmac.compare_digest(proxy_secret, request.headers.get("X-SCA-Proxy-Secret", "")):
+            raise PermissionError("invalid auth proxy secret")
         principal = normalize_optional(request.headers.get("X-SCA-Principal"))
         if not principal:
             raise PermissionError("missing authenticated principal")

@@ -39,7 +39,7 @@
 | ID | 항목 | 상태 | 필요 결정 |
 |---|---|---|---|
 | REQ-AUTH-001 | Web Console 로그인 | REQUIRED | OIDC, SSO, basic auth, 사내 인증 프록시 중 선택 |
-| REQ-AUTH-002 | 역할 모델 | PARTIAL | `admin`, `service-owner`, `security-approver`, `viewer`. `SCA_MONITOR_AUTH_MODE=header`에서는 `X-SCA-Principal`, `X-SCA-Roles`, `X-SCA-Owner-Teams`를 인증 프록시가 주입해야 하며, Web Console은 `/api/v1/session` capability로 action을 제어한다 |
+| REQ-AUTH-002 | 역할 모델 | PARTIAL | `admin`, `service-owner`, `security-approver`, `viewer`. `SCA_MONITOR_AUTH_MODE=header`에서는 `X-SCA-Principal`, `X-SCA-Roles`, `X-SCA-Owner-Teams`를 인증 프록시가 주입해야 하며, `SCA_MONITOR_AUTH_PROXY_SHARED_SECRET`이 설정된 경우 `X-SCA-Proxy-Secret` 일치도 요구한다. Web Console은 `/api/v1/session` capability로 action을 제어한다 |
 | REQ-AUTH-003 | 서비스 owner 매핑 | REQUIRED | team/user 정보를 어디서 가져올지 결정 |
 | REQ-AUTH-004 | push credential 발급 | PARTIAL | API/UI 발급, rotate, revoke, service/environment 바인딩 검증은 구현됨. CI/CD secret 주입 방식과 조직별 rotation 주기 결정 필요 |
 | REQ-AUTH-005 | endpoint polling 인증 | PARTIAL | endpoint test API/UI, schema 검증, polling worker, DB lease 기반 중복 실행 방지, bearer token 전달은 구현됨. mTLS/HMAC 지원 범위와 secret manager/KMS 연동 방식 결정 필요 |
