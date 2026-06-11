@@ -1364,10 +1364,13 @@ def test_web_console_renders_database_readiness_panel():
     assert 'id="database-readiness"' in html
     assert 'id="canonicalization-status"' in html
     assert 'name="system_only"' in html
+    assert '<option value="resolved">resolved</option>' in html
     assert "/api/v1/operations/database-readiness" in script
     assert "/api/v1/operations/canonicalization" in script
     assert "/api/v1/operations/canonicalization/apply" in script
     assert "System Alerts" in script
+    assert "event.reason" in script
+    assert "event.alert_suppression_key" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script

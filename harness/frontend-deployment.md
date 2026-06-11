@@ -16,7 +16,7 @@
 - impact 상태 변경
 - accepted risk 요청/승인: MVP는 Impact Action Panel에서 `accepted_risk` 전환 시 reason과 expires_at 입력을 요구하고 승인 정보를 저장
 - alert channel 설정: MVP는 Settings 화면에서 default webhook channel 등록/조회/default 전환/disable 지원
-- alert event 운영: MVP는 Settings 화면에서 status/search/limit/system-only 기반 alert event 조회와 dead-letter 단건/일괄 requeue 지원
+- alert event 운영: MVP는 Settings 화면에서 status/search/limit/system-only 기반 alert event 조회와 dead-letter 단건/일괄 requeue 지원. resolved system alert도 status 필터로 조회할 수 있고, alert reason과 suppression key를 표시해 운영 원인을 확인할 수 있어야 한다
 - audit log 운영: MVP는 Settings 화면에서 action/target/search/limit 기반 audit log 조회 지원
 
 ## 2. URL 요구사항

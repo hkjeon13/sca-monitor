@@ -969,7 +969,7 @@ async function loadAlertEvents() {
     <div class="credential-item">
       <div>
         <strong>${escapeHtml(event.status)} · ${escapeHtml(event.service_id || "-")} / ${escapeHtml(event.package_name || "-")}</strong>
-        <span>${escapeHtml(event.advisory_id || "-")} · retries ${escapeHtml(event.retry_count || 0)} · ${escapeHtml(event.created_at)}</span>
+        <span>${escapeHtml(event.reason || "-")} · ${escapeHtml(event.advisory_id || event.alert_suppression_key || "-")} · retries ${escapeHtml(event.retry_count || 0)} · ${escapeHtml(event.created_at)}</span>
       </div>
       <button type="button" class="secondary" data-alert-requeue="${escapeHtml(event.id)}" ${event.status !== "dead_letter" ? "disabled" : ""}>Requeue</button>
     </div>
