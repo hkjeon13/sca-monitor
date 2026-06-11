@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .config import Settings, env_flag, load_settings
+from .config import Settings, env_flag, load_settings, runtime_database_url_summary
 from .db import Database, canonical_package_name, json_column, row_to_dict, utcnow
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .postgres_cutover import assess_cutover, summarize_preflight
@@ -488,6 +488,7 @@ class ScaMonitorApp:
         return {
             "status": "ready" if readiness["database"] == "ok" else "not_ready",
             **readiness,
+            "runtime_database_urls": runtime_database_url_summary(self.settings),
             "cutover": cutover,
             "cutover_required": required_cutover,
             "postgres_preflight": summarize_preflight(cutover, required_cutover),

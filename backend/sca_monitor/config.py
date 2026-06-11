@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,38 @@ def resolve_database_url(*, component_database_url_name: str, component_database
     if api_database_url:
         return api_database_url, "API_DATABASE_URL"
     return f"sqlite:///{legacy_database_path}", "SCA_MONITOR_DB" if os.getenv("SCA_MONITOR_DB") else "default_sqlite"
+
+
+def database_backend_from_url(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    if parsed.scheme in {"postgres", "postgresql"}:
+        return "postgres"
+    if parsed.scheme == "sqlite" or "://" not in database_url:
+        return "sqlite"
+    return parsed.scheme or "unknown"
+
+
+def runtime_database_url_summary(settings: Settings) -> dict[str, dict[str, object]]:
+    worker_url, worker_source = resolve_database_url(
+        component_database_url_name="WORKER_DATABASE_URL",
+        component_database_url=os.getenv("WORKER_DATABASE_URL"),
+        legacy_database_path=settings.database_path,
+    )
+    migration_url = os.getenv("MIGRATION_DATABASE_URL") or settings.database_url
+    migration_source = "MIGRATION_DATABASE_URL" if os.getenv("MIGRATION_DATABASE_URL") else settings.database_url_source
+    roles = {
+        "api": (settings.database_url, settings.database_url_source),
+        "worker": (worker_url, worker_source),
+        "migration": (migration_url, migration_source),
+    }
+    return {
+        role: {
+            "source": source,
+            "backend": database_backend_from_url(database_url),
+            "configured": source != "default_sqlite",
+        }
+        for role, (database_url, source) in roles.items()
+    }
 
 
 def env_flag(value: str | None, *, default: bool) -> bool:

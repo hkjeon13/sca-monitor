@@ -175,6 +175,7 @@ function renderDatabaseReadiness(readiness) {
   const cutover = readiness.cutover || {};
   const required = readiness.cutover_required || {};
   const preflight = readiness.postgres_preflight || {};
+  const runtimeUrls = readiness.runtime_database_urls || {};
   document.querySelector("#database-readiness").innerHTML = `
     <div class="section-header">
       <h3>Database Readiness</h3>
@@ -194,12 +195,28 @@ function renderDatabaseReadiness(readiness) {
       ${detailRow("Split Ready", preflight.split_ready ? "yes" : "no")}
       ${detailRow("Preflight Checks", `${preflight.blockers ?? 0} blockers / ${preflight.warnings ?? 0} warnings / ${preflight.ok ?? 0} ok`)}
       ${detailRow("Next Action", preflight.next_action || "unknown")}
+      ${detailRow("Runtime URLs", renderRuntimeDatabaseUrls(runtimeUrls))}
     </div>
     <div class="history readiness-checks">
       <h3>PostgreSQL Cutover Checks</h3>
       ${renderPostgresCutoverCheckGroups(required.checks || [])}
     </div>
   `;
+}
+
+function renderRuntimeDatabaseUrls(runtimeUrls) {
+  const labels = [
+    ["api", "API DB"],
+    ["worker", "Worker DB"],
+    ["migration", "Migration DB"],
+  ];
+  return labels.map(([key, label]) => {
+    const item = runtimeUrls[key] || {};
+    const source = item.source || "unknown";
+    const backend = item.backend || "unknown";
+    const configured = item.configured ? "configured" : "default";
+    return `${label}: ${source} / ${backend} / ${configured}`;
+  }).join(" | ");
 }
 
 function renderPostgresPreflightSummary(preflight) {

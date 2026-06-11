@@ -30,7 +30,7 @@ from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configure
 from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql, row_to_dict
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp, advisory_import_from_row
-from backend.sca_monitor.config import Settings, load_settings
+from backend.sca_monitor.config import Settings, load_settings, runtime_database_url_summary
 from backend.sca_monitor.osv import parse_osv_advisories
 from backend.sca_monitor.postgres_cutover import assess_cutover, summarize_preflight
 from backend.sca_monitor.versioning import version_is_affected
@@ -184,6 +184,34 @@ def test_load_settings_reports_legacy_or_default_database_url_source(monkeypatch
 
     assert legacy_settings.database_url_source == "SCA_MONITOR_DB"
     assert legacy_settings.database_url == f"sqlite:///{legacy_path.resolve()}"
+
+
+def test_runtime_database_url_summary_reports_split_sources_without_values(monkeypatch, tmp_path):
+    monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://migration:secret@db.example.com/sca")
+    monkeypatch.setenv("API_DATABASE_URL", "postgresql://api:secret@db.example.com/sca")
+    monkeypatch.setenv("WORKER_DATABASE_URL", "postgresql://worker:secret@db.example.com/sca")
+    settings = Settings(
+        app_env="test",
+        host="127.0.0.1",
+        port=0,
+        data_dir=tmp_path,
+        database_url="postgresql://api:secret@db.example.com/sca",
+        database_path=tmp_path / "sca-monitor.sqlite3",
+        frontend_dir=tmp_path,
+        smoke_token="test",
+        database_url_source="API_DATABASE_URL",
+    )
+
+    summary = runtime_database_url_summary(settings)
+
+    assert summary == {
+        "api": {"source": "API_DATABASE_URL", "backend": "postgres", "configured": True},
+        "worker": {"source": "WORKER_DATABASE_URL", "backend": "postgres", "configured": True},
+        "migration": {"source": "MIGRATION_DATABASE_URL", "backend": "postgres", "configured": True},
+    }
+    assert "secret" not in json.dumps(summary)
+    assert "db.example.com" not in json.dumps(summary)
 
 
 def test_load_settings_supports_component_auto_migrate_flags(monkeypatch, tmp_path):
@@ -2061,6 +2089,25 @@ def test_ready_endpoint_reflects_required_split_cutover(monkeypatch, tmp_path):
     assert payload["postgres_preflight"]["split_ready"] is False
 
 
+def test_ready_endpoint_exposes_role_database_url_sources_without_secrets(monkeypatch, tmp_path):
+    monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://migration:secret@db.example.com/sca")
+    monkeypatch.setenv("API_DATABASE_URL", "postgresql://api:secret@db.example.com/sca")
+    monkeypatch.setenv("WORKER_DATABASE_URL", "postgresql://worker:secret@db.example.com/sca")
+    app = make_test_app(tmp_path, database_url_source="API_DATABASE_URL")
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["runtime_database_urls"] == {
+        "api": {"source": "API_DATABASE_URL", "backend": "sqlite", "configured": True},
+        "worker": {"source": "WORKER_DATABASE_URL", "backend": "postgres", "configured": True},
+        "migration": {"source": "MIGRATION_DATABASE_URL", "backend": "postgres", "configured": True},
+    }
+    assert "db.example.com" not in json.dumps(payload)
+    assert "secret" not in json.dumps(payload)
+
+
 def test_ready_endpoint_reports_invalid_split_flag_as_preflight_blocker(monkeypatch, tmp_path):
     monkeypatch.setenv("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT", "sometimes")
     app = make_test_app(tmp_path)
@@ -2528,6 +2575,10 @@ def test_web_console_renders_database_readiness_panel():
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
     assert "URL Source" in script
+    assert "Runtime URLs" in script
+    assert "API DB" in script
+    assert "Worker DB" in script
+    assert "Migration DB" in script
     assert "Split Ready" in script
     assert "Split Required" in script
     assert "Preflight Checks" in script
