@@ -31,7 +31,8 @@ def dispatch_pending_alerts(
     lock_owner: str | None = None,
     lock_ttl_seconds: int = 300,
     retry_backoff_seconds: int = 300,
-    sender: Callable[[str, dict], None] | None = None,
+    max_retries: int = 5,
+    sender: Callable | None = None,
 ) -> AlertDispatchResult:
     now = utcnow()
     owner = lock_owner or default_lock_owner()
@@ -84,19 +85,29 @@ def dispatch_pending_alerts(
         failed = 0
         for row in rows:
             payload = alert_payload(row)
+            headers = alert_headers(row)
             try:
-                send(webhook_url or "", payload)
+                call_sender(send, webhook_url or "", payload, headers)
             except Exception as exc:
                 failed += 1
-                next_attempt_at = utcnow_after_seconds(retry_delay_seconds(row["retry_count"], retry_backoff_seconds))
+                retry_count = int(row["retry_count"] or 0) + 1
+                terminal = retry_count >= max_retries
+                next_attempt_at = None if terminal else utcnow_after_seconds(retry_delay_seconds(row["retry_count"], retry_backoff_seconds))
+                status = "dead_letter" if terminal else "failed"
                 conn.execute(
                     """
                     UPDATE alert_events
-                    SET status = 'failed', payload = ?, retry_count = retry_count + 1,
+                    SET status = ?, payload = ?, retry_count = ?,
                         next_attempt_at = ?, dispatch_lock_owner = NULL, dispatch_lock_expires_at = NULL
                     WHERE id = ?
                     """,
-                    (json.dumps({**payload, "dispatch_error": str(exc)}, ensure_ascii=False), next_attempt_at, row["id"]),
+                    (
+                        status,
+                        json.dumps({**payload, "dispatch_error": str(exc), "dispatch_terminal": terminal}, ensure_ascii=False),
+                        retry_count,
+                        next_attempt_at,
+                        row["id"],
+                    ),
                 )
                 continue
             sent += 1
@@ -124,7 +135,8 @@ def dispatch_alert_batches(
     retry_backoff_seconds: int = 300,
     iterations: int = 1,
     interval_seconds: float = 0,
-    sender: Callable[[str, dict], None] | None = None,
+    max_retries: int = 5,
+    sender: Callable | None = None,
     sleeper: Callable[[float], None] | None = None,
 ) -> list[AlertDispatchResult]:
     if iterations < 0:
@@ -142,6 +154,7 @@ def dispatch_alert_batches(
             lock_owner=lock_owner,
             lock_ttl_seconds=lock_ttl_seconds,
             retry_backoff_seconds=retry_backoff_seconds,
+            max_retries=max_retries,
             sender=sender,
         )
         results.append(result)
@@ -171,12 +184,30 @@ def alert_payload(row) -> dict:
     }
 
 
-def send_webhook(webhook_url: str, payload: dict) -> None:
+def alert_headers(row) -> dict[str, str]:
+    return {
+        "Idempotency-Key": row["id"],
+        "X-SCA-Alert-Event-Id": row["id"],
+        "X-SCA-Alert-Suppression-Key": row["alert_suppression_key"],
+    }
+
+
+def call_sender(sender: Callable, webhook_url: str, payload: dict, headers: dict[str, str]) -> None:
+    try:
+        sender(webhook_url, payload, headers)
+    except TypeError as exc:
+        try:
+            sender(webhook_url, payload)
+        except TypeError:
+            raise exc
+
+
+def send_webhook(webhook_url: str, payload: dict, extra_headers: dict[str, str] | None = None) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
         webhook_url,
         data=body,
-        headers={"Content-Type": "application/json", "User-Agent": "sca-monitor/0.1"},
+        headers={"Content-Type": "application/json", "User-Agent": "sca-monitor/0.1", **(extra_headers or {})},
         method="POST",
     )
     with urlopen(request, timeout=10) as response:

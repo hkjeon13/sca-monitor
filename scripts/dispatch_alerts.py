@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--lock-owner", default=None, help="Explicit dispatch lock owner id")
     parser.add_argument("--lock-ttl-seconds", type=int, default=300, help="Per-alert dispatch lock time-to-live in seconds")
     parser.add_argument("--retry-backoff-seconds", type=int, default=300, help="Base retry backoff in seconds")
+    parser.add_argument("--max-retries", type=int, default=5, help="Move alert to dead_letter after this many failed attempts")
     parser.add_argument("--iterations", type=int, default=1, help="Number of dispatch iterations; use 0 to run forever")
     parser.add_argument("--interval-seconds", type=float, default=0, help="Sleep interval between iterations")
     args = parser.parse_args()
@@ -42,6 +43,7 @@ def main() -> None:
             lock_owner=args.lock_owner,
             lock_ttl_seconds=args.lock_ttl_seconds,
             retry_backoff_seconds=args.retry_backoff_seconds,
+            max_retries=args.max_retries,
         )
         payload = {"iteration": iteration, **result.__dict__}
         results.append(payload)

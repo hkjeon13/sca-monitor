@@ -720,6 +720,24 @@ def test_dispatch_pending_alerts_marks_sent(tmp_path):
         assert row["channel_type"] == "webhook"
 
 
+def test_dispatch_pending_alerts_sends_idempotency_headers(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    delivered = []
+
+    result = dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        sender=lambda url, payload, headers: delivered.append((url, payload, headers)),
+    )
+
+    assert result.sent == 1
+    event_id = delivered[0][1]["alert_event_id"]
+    assert delivered[0][2]["Idempotency-Key"] == event_id
+    assert delivered[0][2]["X-SCA-Alert-Event-Id"] == event_id
+    assert delivered[0][2]["X-SCA-Alert-Suppression-Key"] == delivered[0][1]["alert_suppression_key"]
+
+
 def test_dispatch_pending_alerts_uses_default_channel(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
@@ -782,6 +800,26 @@ def test_dispatch_pending_alerts_marks_failed(tmp_path):
         assert "delivery failed" in row["payload"]
         assert row["retry_count"] == 1
         assert row["next_attempt_at"] is not None
+
+
+def test_dispatch_pending_alerts_moves_to_dead_letter_after_max_retries(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    result = dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        max_retries=1,
+        sender=lambda url, payload, headers: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+    )
+
+    assert result.failed == 1
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT status, payload, retry_count, next_attempt_at FROM alert_events").fetchone()
+        assert row["status"] == "dead_letter"
+        assert row["retry_count"] == 1
+        assert row["next_attempt_at"] is None
+        assert json.loads(row["payload"])["dispatch_terminal"] is True
 
 
 def test_failed_alert_waits_for_next_attempt(tmp_path):

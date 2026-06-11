@@ -1200,10 +1200,12 @@ class ScaMonitorApp:
         pending = counts.get("pending", 0)
         sent = counts.get("sent", 0)
         failed = counts.get("failed", 0)
+        dead_letter = counts.get("dead_letter", 0)
         delivered_total = sent + failed
         delivery_rate = sent / delivered_total if delivered_total else 0.0
         lines.append(f"sca_monitor_alert_delivery_success_rate {delivery_rate:.6f}")
         lines.append(f"sca_monitor_alert_outbox_pending_count {pending}")
+        lines.append(f"sca_monitor_alert_dead_letter_count {dead_letter}")
         lines.append(f"sca_monitor_stale_services {stale_services}")
         return lines
 

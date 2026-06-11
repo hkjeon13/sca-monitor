@@ -30,11 +30,12 @@ GET /metrics
 | new_advisory_to_alert_latency_seconds | 신규 advisory 수집부터 alert 발송까지 지연 |
 | sca_monitor_alert_delivery_success_rate | alert 발송 성공률 |
 | sca_monitor_alert_outbox_pending_count | pending alert outbox 수 |
+| sca_monitor_alert_dead_letter_count | dead-letter alert 수 |
 | sca_monitor_critical_impacts | open Critical impact 수 |
 | sca_monitor_stale_services | freshness 기준 초과 서비스 수 |
 | worker_lease_acquire_failures | worker lease 획득 실패 수 |
 
-현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_stale_services`를 노출한다.
+현재 MVP `/metrics`는 `sca_monitor_services`, `sca_monitor_open_impacts`, `sca_monitor_critical_impacts`, `sca_monitor_high_impacts`, `sca_monitor_endpoint_unhealthy`, `sca_monitor_advisory_sync_lag_seconds`, `sca_monitor_endpoint_poll_success_rate`, `sca_monitor_alert_delivery_success_rate`, `sca_monitor_alert_outbox_pending_count`, `sca_monitor_alert_dead_letter_count`, `sca_monitor_stale_services`를 노출한다.
 `new_advisory_to_alert_latency_seconds`와 `worker_lease_acquire_failures`는 별도 event timestamp/lease failure counter가 필요하므로 후속 구현 대상이다.
 
 ## 4. Logs
