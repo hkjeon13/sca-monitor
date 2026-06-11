@@ -17,6 +17,19 @@
 9. metrics 수집 정상
 10. system alert channel 수신 가능
 
+VM systemd scheduler 등록:
+
+```bash
+cd /data/psyche/Projects/sca-monitor
+scripts/install_systemd_units.sh --user --dry-run
+scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-monitor --python /usr/bin/python3 --enable
+systemctl --user list-timers 'sca-monitor-*'
+systemctl --user status sca-monitor-api.service
+```
+
+`--dry-run`은 unit 파일만 생성하고 `systemctl`을 호출하지 않는다.
+운영 자동화는 먼저 `--dry-run`으로 unit 파일 경로와 내용을 검증한 뒤 `--enable`을 실행한다.
+
 ## 2. 주요 운영 지표
 
 | 지표 | 설명 |

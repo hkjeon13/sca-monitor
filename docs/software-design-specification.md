@@ -1487,7 +1487,7 @@ GET /api/v1/audit-logs
 
 - role-aware UI와 API 인가 연동
 - accepted risk role-aware 승인 정책과 운영 scheduler 등록
-- 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
+- 외부 endpoint polling scheduler 배치 enable, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - Slack app 방식, alert channel hard delete
 
 ### 14.7 UI 상태

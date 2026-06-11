@@ -1,8 +1,10 @@
 import json
+import subprocess
 import threading
 import zipfile
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -17,6 +19,9 @@ from backend.sca_monitor.app import ScaMonitorApp
 from backend.sca_monitor.config import Settings
 from backend.sca_monitor.osv import parse_osv_advisories
 from backend.sca_monitor.versioning import version_is_affected
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_pypi_canonical_name():
@@ -39,6 +44,48 @@ def test_sqlite_migration_records_version(tmp_path):
     assert readiness["migration"]["compatible"] is True
     with database.connect() as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit_logs'").fetchone()
+
+
+def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
+    unit_dir = tmp_path / "systemd"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "dry-run: systemctl was not called" in result.stdout
+    expected_units = {
+        "sca-monitor-api.service",
+        "sca-monitor-endpoint-poller.service",
+        "sca-monitor-alert-dispatcher.service",
+        "sca-monitor-accepted-risk-expiry.service",
+        "sca-monitor-accepted-risk-expiry.timer",
+        "sca-monitor-cisa-kev-sync.service",
+        "sca-monitor-cisa-kev-sync.timer",
+        "sca-monitor-osv-npm-sync.service",
+        "sca-monitor-osv-npm-sync.timer",
+    }
+    assert {path.name for path in unit_dir.iterdir()} == expected_units
+    poller = (unit_dir / "sca-monitor-endpoint-poller.service").read_text(encoding="utf-8")
+    assert f"WorkingDirectory={REPO_ROOT}" in poller
+    assert f"EnvironmentFile=-{REPO_ROOT}/.env" in poller
+    assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
+    expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
+    assert "OnUnitActiveSec=15min" in expiry_timer
 
 
 def test_push_credential_issue_and_bound_snapshot_push(tmp_path):

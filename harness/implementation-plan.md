@@ -167,7 +167,7 @@ Phase 0 착수 전 선행 조건:
 - 부분 완료: service registration wizard는 기본 등록, endpoint test, push credential 발급/revoke form을 제공하며 endpoint 인증 설정, polling scheduler, credential rotation policy/automation은 미구현
 - 완료: impact filtering은 API와 Web Console에서 status/risk/service/team/environment/package/advisory/KEV/search와 pagination/sorting을 제공하며, 필터 결과에 대한 bulk status action을 지원한다
 - 부분 완료: role-aware API 인가는 `SCA_MONITOR_AUTH_MODE=header` impact workflow와 admin-only service registration, endpoint test, push credential, alert channel 설정 범위에서 동작한다. OIDC/JWT 검증과 Web Console role-aware UI 제어는 미구현
-- 미구현: 운영 scheduler 등록
+- 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성까지 구현됨. 실제 운영 enable/start는 배포 환경별 승인 후 실행
 
 검증:
 

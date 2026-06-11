@@ -148,3 +148,44 @@ SIGTERM 수신
 Alert dispatch는 at-least-once를 전제로 한다.
 외부 채널이 idempotency key를 지원하면 `alert_suppression_key`를 함께 전달한다.
 지원하지 않으면 `alert_events` 상태 전이를 이용해 중복 가능성을 최소화하고, 재발송 가능성을 운영 로그에 남긴다.
+
+## 7. VM systemd Scheduler Registration
+
+VM 기반 MVP 배포에서는 다음 스크립트로 API와 worker scheduler unit을 생성한다.
+
+```bash
+scripts/install_systemd_units.sh --user --dry-run
+scripts/install_systemd_units.sh --user --enable
+```
+
+원격 운영 경로 예시:
+
+```bash
+cd /data/psyche/Projects/sca-monitor
+scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-monitor --python /usr/bin/python3 --enable
+```
+
+생성되는 unit:
+
+| Unit | 역할 | 실행 방식 |
+|---|---|---|
+| `sca-monitor-api.service` | API server | long-running service |
+| `sca-monitor-endpoint-poller.service` | endpoint polling | long-running loop, DB lease |
+| `sca-monitor-alert-dispatcher.service` | alert outbox dispatch | long-running loop, per-alert lock |
+| `sca-monitor-accepted-risk-expiry.timer` | accepted risk 만료 처리 | 15분 주기 oneshot |
+| `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
+| `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
+
+모든 unit은 repository의 `.env`를 `EnvironmentFile`로 읽는다.
+`SCA_MONITOR_DATABASE_URL`, `SCA_MONITOR_FRONTEND_DIR`, alert webhook 설정은 `.env`에서 유지한다.
+
+상태 확인:
+
+```bash
+systemctl --user status sca-monitor-api.service
+systemctl --user list-timers 'sca-monitor-*'
+journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
+```
+
+운영에서 system unit으로 설치하려면 `--system`을 사용한다.
+이 경우 root 권한과 `/etc/systemd/system` 쓰기 권한이 필요하다.
