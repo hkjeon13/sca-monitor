@@ -222,7 +222,7 @@ function renderImpactPagination(pagination) {
 }
 
 async function refreshAll() {
-  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels()]);
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAlertChannels(), loadAlertEvents()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", refreshAll);
@@ -379,6 +379,34 @@ async function loadAlertChannels() {
     button.addEventListener("click", async () => {
       await api.send(`/api/v1/settings/alert-channels/${encodeURIComponent(button.dataset.channelDisable)}`, "PATCH", {enabled: false});
       await loadAlertChannels();
+    });
+  });
+}
+
+async function loadAlertEvents() {
+  const target = document.querySelector("#alert-event-list");
+  if (!target) return;
+  const data = await api.get("/api/v1/alert-events?limit=10");
+  if (!data.alert_events.length) {
+    target.innerHTML = `<p>No alert events recorded.</p>`;
+    return;
+  }
+  target.innerHTML = data.alert_events.map((event) => `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(event.status)} · ${escapeHtml(event.service_id || "-")} / ${escapeHtml(event.package_name || "-")}</strong>
+        <span>${escapeHtml(event.advisory_id || "-")} · retries ${escapeHtml(event.retry_count || 0)} · ${escapeHtml(event.created_at)}</span>
+      </div>
+      <button type="button" class="secondary" data-alert-requeue="${escapeHtml(event.id)}" ${event.status !== "dead_letter" ? "disabled" : ""}>Requeue</button>
+    </div>
+  `).join("");
+  target.querySelectorAll("[data-alert-requeue]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api.send(`/api/v1/alert-events/${encodeURIComponent(button.dataset.alertRequeue)}/requeue`, "POST", {
+        actor: "web-console",
+        reason: "manual requeue",
+      });
+      await Promise.all([loadAlertEvents(), loadOverview()]);
     });
   });
 }

@@ -843,6 +843,37 @@ def test_requeue_dead_letter_alert_event(tmp_path):
     assert result["alert_event"]["payload"]["requeue_reason"] == "target fixed"
 
 
+def test_search_alert_events_lists_and_filters(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    page = app.search_alert_events({"status": ["pending"], "limit": ["5"]})
+
+    assert page["pagination"]["total"] == 1
+    assert page["alert_events"][0]["status"] == "pending"
+    assert page["alert_events"][0]["service_id"] == "alert-service"
+    assert page["alert_events"][0]["advisory_id"] == "OSV-TEST-0001"
+    assert "channel_target" not in page["alert_events"][0]
+
+    assert app.search_alert_events({"q": ["alert-service"]})["pagination"]["total"] == 1
+    assert app.search_alert_events({"status": ["sent"]})["pagination"]["total"] == 0
+
+
+def test_search_alert_events_masks_channel_target(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/hooks/secret",
+        sender=lambda url, payload, headers: None,
+    )
+
+    event = app.search_alert_events({"status": ["sent"]})["alert_events"][0]
+
+    assert event["channel_target_masked"] == "https://alerts.example.test/..."
+    assert "secret" not in json.dumps(event)
+
+
 def test_requeue_rejects_non_dead_letter_alert_event(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

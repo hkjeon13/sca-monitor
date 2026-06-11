@@ -125,6 +125,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.push_snapshot(self.read_json(request), request.headers.get("Authorization")), HTTPStatus.CREATED)
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
+            if path == "/api/v1/alert-events" and method == "GET":
+                return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
                 impact_id = path.split("/")[-1]
                 return self.json_response(request, self.get_impact(impact_id))
@@ -1126,6 +1128,76 @@ class ScaMonitorApp:
         impact["affected_versions"] = json.loads(impact["affected_versions"] or "[]")
         impact["affected_ranges"] = json.loads(impact["affected_ranges"] or "[]")
         return {"impact": impact, "history": [row_to_dict(history) for history in history_rows]}
+
+    def search_alert_events(self, query: dict[str, list[str]]) -> dict:
+        where = []
+        params = []
+        if status := query.get("status", [None])[0]:
+            where.append("ae.status = ?")
+            params.append(status)
+        if search := query.get("q", [None])[0]:
+            like = f"%{search.lower()}%"
+            where.append(
+                """
+                (
+                    lower(ae.id) LIKE ?
+                    OR lower(ae.reason) LIKE ?
+                    OR lower(ae.alert_suppression_key) LIKE ?
+                    OR lower(s.service_id) LIKE ?
+                    OR lower(i.package_name) LIKE ?
+                    OR lower(a.advisory_id) LIKE ?
+                )
+                """
+            )
+            params.extend([like] * 6)
+        sql_where = "WHERE " + " AND ".join(where) if where else ""
+        limit = bounded_int(query.get("limit", [None])[0], default=20, minimum=1, maximum=100)
+        offset = bounded_int(query.get("offset", [None])[0], default=0, minimum=0, maximum=1_000_000)
+        with self.db.connect() as conn:
+            total = conn.execute(
+                f"""
+                SELECT COUNT(*) AS c
+                FROM alert_events ae
+                LEFT JOIN impacts i ON i.id = ae.impact_pk
+                LEFT JOIN services s ON s.id = i.service_pk
+                LEFT JOIN advisories a ON a.id = i.advisory_pk
+                {sql_where}
+                """,
+                tuple(params),
+            ).fetchone()["c"]
+            rows = conn.execute(
+                f"""
+                SELECT ae.id, ae.impact_pk, ae.alert_suppression_key, ae.reason, ae.status,
+                       ae.channel_type, ae.channel_target, ae.sent_at, ae.created_at,
+                       ae.retry_count, ae.next_attempt_at,
+                       s.service_id, s.service_name, i.package_name, i.resolved_version,
+                       i.risk_level, a.advisory_id, a.summary
+                FROM alert_events ae
+                LEFT JOIN impacts i ON i.id = ae.impact_pk
+                LEFT JOIN services s ON s.id = i.service_pk
+                LEFT JOIN advisories a ON a.id = i.advisory_pk
+                {sql_where}
+                ORDER BY ae.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params + [limit, offset]),
+            ).fetchall()
+        events = []
+        for row in rows:
+            event = row_to_dict(row)
+            event["channel_target_masked"] = mask_url(event.pop("channel_target", None))
+            events.append(event)
+        return {
+            "alert_events": events,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "returned": len(events),
+                "next_offset": offset + limit if offset + limit < total else None,
+                "prev_offset": max(offset - limit, 0) if offset > 0 else None,
+            },
+        }
 
     def update_impact_status(self, impact_id: str, body: dict) -> dict:
         status = required(body, "status")
