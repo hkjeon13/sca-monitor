@@ -206,6 +206,10 @@ class ScaMonitorApp:
                 return self.json_response(request, self.bulk_update_impact_status(self.apply_authenticated_actor(body, auth_context)))
             if path == "/api/v1/alert-events" and method == "GET":
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
+            if path == "/api/v1/alerts/dispatcher/preflight" and method == "GET":
+                auth_context = self.auth_context(request)
+                self.authorize_admin(auth_context, "alert dispatcher preflight requires admin role")
+                return self.json_response(request, self.alert_dispatcher_preflight(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
                 return self.json_response(request, self.bulk_requeue_alert_events(self.read_json(request)))
             if path == "/api/v1/alerts/daily-digest/preview" and method == "POST":
@@ -2135,6 +2139,13 @@ class ScaMonitorApp:
             actor=body.get("actor", "web-console"),
         )
 
+    def alert_dispatcher_preflight(self, query: dict[str, list[str]]) -> dict:
+        from .alert_preflight import run_alert_dispatcher_preflight
+
+        limit = bounded_int(first_query_value(query, "limit"), default=50, minimum=1, maximum=1000)
+        allow_missing = truthy(first_query_value(query, "allow_missing_default_channel"))
+        return run_alert_dispatcher_preflight(self, limit=limit, require_default_channel=not allow_missing)
+
     def requeue_alert_event(self, alert_event_id: str, body: dict) -> dict:
         actor = body.get("actor", "operator")
         reason = body.get("reason", "requeue dead-letter alert")
@@ -2620,6 +2631,15 @@ def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(number, maximum))
+
+
+def first_query_value(query: dict[str, list[str]], key: str) -> str | None:
+    values = query.get(key) or []
+    return values[0] if values else None
+
+
+def truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def local_date_for_timestamp(timestamp: str, timezone_name: str) -> str:

@@ -89,6 +89,7 @@ function applyRoleControls() {
   setDisabled("#service-form button[type='submit'], #endpoint-test", !can("manage_services"));
   setDisabled("#credential-form button[type='submit']", !can("manage_credentials"));
   setDisabled("#alert-channel-form button[type='submit']", !can("manage_alert_channels"));
+  setDisabled("#dispatcher-preflight-form button[type='submit']", !can("manage_alert_channels"));
   setDisabled("#daily-digest-preview-form button[type='submit']", !can("manage_alert_channels"));
   setDisabled("#impact-bulk-action-form button[type='submit']", !can("bulk_update_impacts"));
   document.querySelectorAll("#impact-bulk-action-form select[name='target_status'] option").forEach((option) => {
@@ -469,7 +470,7 @@ function renderImpactPagination(pagination) {
 
 async function refreshAll() {
   await loadSession();
-  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAdvisories(), loadAlertChannels(), loadAlertEvents(), loadAuditLogs()]);
+  await Promise.all([loadOverview(), loadServices(), loadImpacts(), loadAdvisories(), loadAlertChannels(), loadDispatcherPreflight(), loadAlertEvents(), loadAuditLogs()]);
   applyRoleControls();
 }
 
@@ -518,6 +519,12 @@ document.querySelector("#alert-event-filter-form").addEventListener("submit", as
 document.querySelector("#audit-log-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   await loadAuditLogs();
+});
+
+document.querySelector("#dispatcher-preflight-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!can("manage_alert_channels")) return;
+  await loadDispatcherPreflight();
 });
 
 document.querySelector("#daily-digest-preview-form").addEventListener("submit", async (event) => {
@@ -726,6 +733,44 @@ async function loadAlertChannels() {
       await loadAlertChannels();
     });
   });
+}
+
+async function loadDispatcherPreflight() {
+  const target = document.querySelector("#dispatcher-preflight-result");
+  const form = document.querySelector("#dispatcher-preflight-form");
+  if (!target || !form) return;
+  if (!can("manage_alert_channels")) {
+    target.innerHTML = `<p>Admin role required.</p>`;
+    return;
+  }
+  const params = new URLSearchParams();
+  for (const [key, value] of new FormData(form).entries()) {
+    if (String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  if (!params.has("limit")) params.set("limit", "50");
+  const data = await api.get(`/api/v1/alerts/dispatcher/preflight?${params.toString()}`);
+  renderDispatcherPreflight(data);
+}
+
+function renderDispatcherPreflight(data) {
+  const target = document.querySelector("#dispatcher-preflight-result");
+  const checks = Object.entries(data.checks || {}).map(([name, passed]) => `
+    <span class="badge ${passed ? "" : "danger"}">${escapeHtml(name)}: ${escapeHtml(passed ? "ok" : "failed")}</span>
+  `).join("");
+  const channel = data.default_alert_channel || {};
+  const failures = data.failures?.length ? `<span>${escapeHtml(data.failures.join(", "))}</span>` : "";
+  target.innerHTML = `
+    <div class="credential-item">
+      <div>
+        <strong>${escapeHtml(data.status)} · pending ${escapeHtml(data.dry_run?.pending ?? 0)}</strong>
+        <span>${escapeHtml(channel.configured ? channel.target_url_masked : "default channel not configured")}</span>
+        ${failures}
+        <div class="badge-row">${checks}</div>
+      </div>
+    </div>
+  `;
 }
 
 async function loadAlertEvents() {

@@ -368,6 +368,18 @@ th {
   font-weight: 700;
 }
 
+.badge.danger {
+  background: #fff1f0;
+  color: var(--critical);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

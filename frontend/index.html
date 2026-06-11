@@ -276,6 +276,21 @@
             <div id="alert-channel-list" class="credential-list"></div>
           </div>
           <div>
+            <h2>Dispatcher Preflight</h2>
+            <form id="dispatcher-preflight-form" class="compact-filter">
+              <label>Limit
+                <select name="limit">
+                  <option value="10">10</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <label><input name="allow_missing_default_channel" type="checkbox" /> Allow missing channel</label>
+              <button type="submit" class="secondary">Check</button>
+            </form>
+            <div id="dispatcher-preflight-result" class="credential-list"></div>
+          </div>
+          <div>
             <h2>Alert Events</h2>
             <form id="alert-event-filter-form" class="compact-filter">
               <label>Status
@@ -353,6 +368,6 @@
         </section>
       </main>
     </div>
-    <script src="/app.js?v=20260611-digest-preview"></script>
+    <script src="/app.js?v=20260611-dispatcher-preflight"></script>
   </body>
 </html>

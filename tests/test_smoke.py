@@ -2827,6 +2827,56 @@ def test_alert_dispatcher_preflight_requires_default_channel(tmp_path):
     assert payload["default_alert_channel"] == {"configured": False}
 
 
+def test_alert_dispatcher_preflight_route_reports_failures_without_updating_rows(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default-secret", "is_default": True})
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/alerts/dispatcher/preflight?limit=10")
+
+    assert payload["status"] == "failed"
+    assert payload["checks"]["database_ready"] is True
+    assert payload["checks"]["default_alert_channel_configured"] is True
+    assert payload["checks"]["default_alert_channel_not_placeholder"] is False
+    assert payload["dry_run"]["pending"] == 1
+    assert payload["dry_run"]["claimed"] == 0
+    assert payload["default_alert_channel"]["target_url_masked"] == "https://alerts.example.test/..."
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT status FROM alert_events").fetchone()["status"] == "pending"
+
+
+def test_alert_dispatcher_preflight_route_passes_with_default_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/api/v1/alerts/dispatcher/preflight?limit=10")
+
+    assert payload["status"] == "ok"
+    assert payload["checks"]["default_alert_channel_not_placeholder"] is True
+    assert payload["dry_run"]["pending"] == 1
+
+
+def test_alert_dispatcher_preflight_route_requires_admin_in_header_auth(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/alerts/dispatcher/preflight",
+            headers={"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"},
+            expect_status=403,
+        )
+        allowed = http_json(
+            f"{base_url}/api/v1/alerts/dispatcher/preflight?allow_missing_default_channel=true",
+            headers={"X-SCA-Principal": "admin@example.test", "X-SCA-Roles": "admin"},
+        )
+
+    assert "admin role" in forbidden["error"]
+    assert allowed["status"] == "ok"
+
+
 def test_alert_dispatcher_preflight_passes_with_default_channel_and_does_not_update_rows(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
