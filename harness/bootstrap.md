@@ -100,13 +100,29 @@ python3 scripts/seed_default_alert_channel.py --json
 dev fixture에서만 placeholder URL이 필요하면 `--allow-placeholder`를 명시한다.
 seed 이후에는 live dispatcher enable 전 `python3 scripts/alert_dispatcher_activation_check.py --json`이 `ready`를 반환해야 한다.
 
-## 7. Bootstrap 완료 기준
+## 7. Bootstrap Readiness Check
+
+bootstrap 자동화는 최종 완료 판정 전에 read-only gate를 실행한다.
+
+```bash
+python3 scripts/bootstrap_readiness_check.py --json
+```
+
+이 gate는 DB migration/readiness, `advisory_sync_readiness`, alert dispatcher activation checklist를 확인한다.
+alert target이 아직 없는 advisory-only bootstrap 단계에서는 다음처럼 alert gate를 제외할 수 있다.
+
+```bash
+python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation
+```
+
+## 8. Bootstrap 완료 기준
 
 ```text
 GET /health -> 200
 GET /ready -> 200
 Web Console login -> success
 GET /api/v1/overview -> 200
+bootstrap_readiness_check -> ready
 synthetic service visible -> true
 synthetic snapshot accepted -> true
 worker health -> ok

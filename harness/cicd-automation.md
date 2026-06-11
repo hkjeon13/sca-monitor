@@ -148,6 +148,7 @@ live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activatio
 
 ```bash
 python3 scripts/alert_dispatcher_activation_check.py --json
+python3 scripts/bootstrap_readiness_check.py --json
 ```
 
 운영 환경에서는 destructive test를 실행하지 않는다.

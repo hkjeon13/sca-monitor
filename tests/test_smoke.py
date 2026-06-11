@@ -1756,6 +1756,82 @@ def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):
     assert sources["CISA_KEV"]["last_error_message"] == "rate limited"
 
 
+def test_bootstrap_readiness_check_cli_blocks_until_advisory_sync_ready(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/bootstrap_readiness_check.py", "--json", "--skip-alert-activation"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert payload["blocking_failures"] == ["advisory_initial_sync_ready"]
+    assert payload["advisory_sync_readiness"]["status"] == "initializing"
+
+
+def test_bootstrap_readiness_check_cli_ready_after_initial_sources_and_alert_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/bootstrap_readiness_check.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert payload["blocking_failures"] == []
+    assert payload["advisory_sync_readiness"]["status"] == "ready"
+    assert payload["alert_dispatcher_activation"]["status"] == "ready"
+
+
+def test_bootstrap_readiness_check_cli_can_skip_alert_activation(tmp_path):
+    app = make_test_app(tmp_path)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/bootstrap_readiness_check.py", "--json", "--skip-alert-activation"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert "alert_dispatcher_activation" not in payload
+
+
 def test_impacts_expose_sla_deadline_and_overdue_metrics(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

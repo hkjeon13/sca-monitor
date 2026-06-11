@@ -287,6 +287,7 @@ python3 scripts/rotate_push_credential.py \
 
 신규 환경 최초 기동은 `harness/bootstrap.md`를 따른다.
 bootstrap 완료 전에는 advisory matching 결과를 완전한 운영 결과로 간주하지 않는다.
+최종 완료 판정은 `python3 scripts/bootstrap_readiness_check.py --json`으로 확인한다.
 
 ## 6. Incident 기록
 
