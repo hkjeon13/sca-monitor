@@ -114,6 +114,16 @@ open impact가 참조하는 snapshot/dependency는 보존하거나 FK를 `ON DEL
 python3 scripts/db_smoke.py --json
 ```
 
+실제 PostgreSQL 연결 검증:
+
+```bash
+python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
+python3 scripts/postgres_integration_smoke.py --use-docker --json
+```
+
+`--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
+`--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.
+
 SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:
 
 - `services` read

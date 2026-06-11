@@ -275,6 +275,26 @@ def test_db_smoke_runs_postgres_runtime_adapter_path():
     assert result["checks"]["audit_log_rollback_clean"] is True
 
 
+def test_postgres_integration_smoke_helpers():
+    from scripts.postgres_integration_smoke import docker_database_url
+
+    assert docker_database_url(55432, "user", "pass", "db") == "postgresql://user:pass@127.0.0.1:55432/db"
+
+
+def test_postgres_integration_smoke_skips_without_database_url_or_docker():
+    result = subprocess.run(
+        ["python3", "scripts/postgres_integration_smoke.py", "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "skipped"
+    assert "--database-url or --use-docker" in payload["reason"]
+
+
 def test_push_credential_issue_and_bound_snapshot_push(tmp_path):
     app = make_test_app(tmp_path)
     app.create_service({"service_id": "credential-service", "environment": "prod", "owner_team": "platform"})
