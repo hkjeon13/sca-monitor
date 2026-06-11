@@ -10,7 +10,7 @@ from uuid import uuid4
 from urllib.request import Request, urlopen
 
 from .app import ScaMonitorApp
-from .db import utcnow
+from .db import json_column, utcnow
 
 
 @dataclass(frozen=True)
@@ -166,7 +166,7 @@ def dispatch_alert_batches(
 
 
 def alert_payload(row) -> dict:
-    base_payload = json.loads(row["payload"] or "{}")
+    base_payload = json_column(row["payload"], {})
     return {
         **base_payload,
         "alert_event_id": row["id"],

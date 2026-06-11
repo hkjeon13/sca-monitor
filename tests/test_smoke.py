@@ -11,12 +11,12 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from backend.sca_monitor.alert_dispatch import dispatch_alert_batches, dispatch_pending_alerts
+from backend.sca_monitor.alert_dispatch import alert_payload, dispatch_alert_batches, dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import parse_cisa_kev_vulnerability, sync_cisa_kev_catalog, sync_osv_ecosystem_dump
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
-from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, postgres_sql
+from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
-from backend.sca_monitor.app import ScaMonitorApp
+from backend.sca_monitor.app import ScaMonitorApp, advisory_import_from_row
 from backend.sca_monitor.config import Settings
 from backend.sca_monitor.osv import parse_osv_advisories
 from backend.sca_monitor.versioning import version_is_affected
@@ -31,6 +31,65 @@ def test_pypi_canonical_name():
 
 def test_npm_canonical_name():
     assert canonical_package_name("npm", "Lodash") == "lodash"
+
+
+def test_json_column_accepts_sqlite_and_postgres_values():
+    assert json_column('["CVE-2026-0001"]', []) == ["CVE-2026-0001"]
+    assert json_column(["CVE-2026-0001"], []) == ["CVE-2026-0001"]
+    assert json_column('{"source":"OSV"}', {}) == {"source": "OSV"}
+    assert json_column({"source": "OSV"}, {}) == {"source": "OSV"}
+    assert json_column(None, []) == []
+    assert json_column("", {}) == {}
+
+
+def test_alert_payload_accepts_postgres_jsonb_dict():
+    payload = alert_payload(
+        {
+            "payload": {"existing": "value"},
+            "id": "alert-1",
+            "impact_pk": "impact-1",
+            "alert_suppression_key": "svc:prod:adv:pkg:high:open",
+            "reason": "new impact",
+            "service_id": "svc",
+            "service_name": "Service",
+            "environment": "prod",
+            "advisory_id": "OSV-2026-0001",
+            "summary": "Reported malicious package",
+            "risk_level": "critical",
+            "package_name": "left-pad",
+            "resolved_version": "1.0.0",
+        }
+    )
+
+    assert payload["existing"] == "value"
+    assert payload["alert_event_id"] == "alert-1"
+    assert payload["advisory_id"] == "OSV-2026-0001"
+
+
+def test_advisory_import_from_row_accepts_postgres_jsonb_values():
+    advisory = advisory_import_from_row(
+        {
+            "advisory_id": "OSV-2026-0001",
+            "source": "OSV",
+            "summary": "Reported malicious package",
+            "severity": "critical",
+            "ecosystem": "npm",
+            "package_name": "left-pad",
+            "canonical_package_name": "left-pad",
+            "affected_versions": ["1.0.0"],
+            "affected_ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}]}],
+            "fixed_version": None,
+            "is_known_exploited": False,
+            "is_malicious_package": True,
+            "published_at": "2026-06-01T00:00:00+00:00",
+            "modified_at": "2026-06-02T00:00:00+00:00",
+            "raw_payload": {"id": "OSV-2026-0001"},
+        }
+    )
+
+    assert advisory.affected_versions == ["1.0.0"]
+    assert advisory.affected_ranges[0]["type"] == "SEMVER"
+    assert advisory.raw_payload == {"id": "OSV-2026-0001"}
 
 
 def test_sqlite_migration_records_version(tmp_path):

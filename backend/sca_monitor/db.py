@@ -314,6 +314,21 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return {key: row[key] for key in row.keys()}
 
 
+def json_column(value: Any, default: Any):
+    if value is None or value == "":
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return default
+    return value
+
+
 def canonical_package_name(ecosystem: str, name: str) -> str:
     if ecosystem.lower() == "pypi":
         return name.lower().replace("_", "-").replace(".", "-")

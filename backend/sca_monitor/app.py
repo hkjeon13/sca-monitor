@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from .config import Settings, load_settings
-from .db import Database, canonical_package_name, row_to_dict, utcnow
+from .db import Database, canonical_package_name, json_column, row_to_dict, utcnow
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .versioning import version_is_affected
 
@@ -839,8 +839,8 @@ class ScaMonitorApp:
         advisories = []
         for row in rows:
             advisory = row_to_dict(row)
-            advisory["affected_versions"] = json.loads(advisory["affected_versions"])
-            advisory["affected_ranges"] = json.loads(advisory["affected_ranges"])
+            advisory["affected_versions"] = json_column(advisory["affected_versions"], [])
+            advisory["affected_ranges"] = json_column(advisory["affected_ranges"], [])
             advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
             advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
             advisories.append(advisory)
@@ -1351,7 +1351,7 @@ class ScaMonitorApp:
                 raise PermissionError("push credential revoked")
             if row["expires_at"] and row["expires_at"] <= now:
                 raise PermissionError("push credential expired")
-            scopes = json.loads(row["scopes"])
+            scopes = json_column(row["scopes"], [])
             if "snapshot:push" not in scopes:
                 raise PermissionError("push credential lacks snapshot:push scope")
             if row["service_id"] != service_id or row["environment"] != environment:
@@ -1374,8 +1374,8 @@ class ScaMonitorApp:
                 (dep["ecosystem"], dep["canonical_package_name"]),
             ).fetchall()
             for adv in advisories:
-                affected_versions = json.loads(adv["affected_versions"])
-                affected_ranges = json.loads(adv["affected_ranges"])
+                affected_versions = json_column(adv["affected_versions"], [])
+                affected_ranges = json_column(adv["affected_ranges"], [])
                 if not version_is_affected(dep["resolved_version"], affected_versions, affected_ranges):
                     continue
                 risk = "critical" if adv["is_malicious_package"] or adv["is_known_exploited"] or adv["severity"] == "critical" else adv["severity"]
@@ -1588,8 +1588,8 @@ class ScaMonitorApp:
         if not row:
             raise ValueError("impact not found")
         impact = row_to_dict(row)
-        impact["affected_versions"] = json.loads(impact["affected_versions"] or "[]")
-        impact["affected_ranges"] = json.loads(impact["affected_ranges"] or "[]")
+        impact["affected_versions"] = json_column(impact["affected_versions"], [])
+        impact["affected_ranges"] = json_column(impact["affected_ranges"], [])
         return {
             "impact": impact,
             "history": [row_to_dict(history) for history in history_rows],
@@ -1862,7 +1862,7 @@ class ScaMonitorApp:
                 raise ValueError("alert event not found")
             if row["status"] != "dead_letter":
                 raise ValueError("only dead_letter alert events can be requeued")
-            payload = json.loads(row["payload"] or "{}")
+            payload = json_column(row["payload"], {})
             payload["requeued_by"] = actor
             payload["requeue_reason"] = reason
             payload["requeued_at"] = now
@@ -1889,7 +1889,7 @@ class ScaMonitorApp:
                 occurred_at=now,
             )
         result = row_to_dict(updated)
-        result["payload"] = json.loads(result["payload"] or "{}")
+        result["payload"] = json_column(result["payload"], {})
         return {"alert_event": result}
 
     def bulk_requeue_alert_events(self, body: dict) -> dict:
@@ -2247,24 +2247,19 @@ def advisory_import_from_row(row: dict) -> AdvisoryImport:
         ecosystem=row["ecosystem"],
         package_name=row["package_name"],
         canonical_package_name=row["canonical_package_name"],
-        affected_versions=json.loads(row["affected_versions"] or "[]"),
-        affected_ranges=json.loads(row["affected_ranges"] or "[]"),
+        affected_versions=json_column(row["affected_versions"], []),
+        affected_ranges=json_column(row["affected_ranges"], []),
         fixed_version=row.get("fixed_version"),
         is_known_exploited=bool(row["is_known_exploited"]),
         is_malicious_package=bool(row["is_malicious_package"]),
         published_at=row.get("published_at"),
         modified_at=row.get("modified_at"),
-        raw_payload=json.loads(row["raw_payload"] or "{}"),
+        raw_payload=json_column(row["raw_payload"], {}),
     )
 
 
 def safe_json_loads(value, default):
-    try:
-        if value is None or value == "":
-            return default
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return default
+    return json_column(value, default)
 
 
 def advisory_alias_values(row: dict | None) -> set[str]:
@@ -2272,7 +2267,7 @@ def advisory_alias_values(row: dict | None) -> set[str]:
         return set()
     values = {normalize_cve_id(row.get("advisory_id"))}
     try:
-        raw_payload = json.loads(row.get("raw_payload") or "{}")
+        raw_payload = json_column(row.get("raw_payload"), {})
     except (TypeError, ValueError):
         raw_payload = {}
     values.update(extract_cve_values(raw_payload))

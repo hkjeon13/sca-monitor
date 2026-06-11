@@ -133,6 +133,10 @@ SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:
 - `services` read
 - `advisory_sync_state` read
 - `alert_events` read
+- JSON/JSONB 컬럼 read normalization
+  - SQLite fallback은 JSON 문자열을 반환한다.
+  - PostgreSQL `psycopg` + `dict_row`는 JSONB 컬럼을 list/dict로 반환할 수 있다.
+  - advisory affected versions/ranges, alert payload, raw payload 조회 경로는 두 반환 타입을 모두 처리해야 한다.
 - `audit_logs` write 후 rollback cleanup
 
 PostgreSQL URL을 넣었을 때 `psycopg` import/connection/query 오류가 나오면 배포 stop condition이다.
