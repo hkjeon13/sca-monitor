@@ -157,6 +157,8 @@ NVD_REQUEST_DELAY_SECONDS=1 python3 scripts/nvd_cve_sync.py --use-cursor --lookb
 `--use-cursor`는 `advisory_sync_state.cursor`에 저장된 NVD lastModified timestamp를 다음 `lastModStartDate`로 사용한다. timestamp cursor가 없으면 `--lookback-hours` 기준으로 fallback 시작 시각을 계산하고, batch 전체가 성공한 경우에만 현재 window end를 새 cursor로 저장한다.
 batch 중 일부 CVE가 실패하면 `advisory_sync_state.cursor`는 이전 성공 cursor를 유지하고 `status=partial`, `records_processed`로 마지막 실행 범위를 남긴다.
 폐쇄망, stage, 재현 테스트에서는 `--modified-json-path fixtures/nvd-modified.json`으로 후보 추출을 검증하고, `--json-dir fixtures/nvd`를 함께 사용하면 로컬 `CVE-YYYY-NNNN.json` 파일을 읽고 원격 요청 지연 없이 같은 import 경로를 검증한다.
+VM systemd full `enable` 모드에서는 `sca-monitor-nvd-cve-sync.timer`가 `--use-cursor --lookback-hours 24 --modified-results-per-page 2000 --limit 100` 기준으로 6시간마다 NVD modified-window sync를 실행한다.
+canary 배포용 `enable-dispatcher-dry-run` 모드는 이 timer를 자동 시작하지 않으므로, 실제 NVD 운영 동기화 전에는 full `enable` 전환 또는 수동 명령 실행이 필요하다.
 
 ### Endpoint polling failed
 

@@ -208,6 +208,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-daily-digest.timer` | Medium 이하/비운영 이슈 Daily Digest 생성 | 매일 09:00 oneshot |
 | `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
 | `sca-monitor-ghsa-sync.timer` | GitHub Security Advisory sync | 1시간 주기 oneshot |
+| `sca-monitor-nvd-cve-sync.timer` | NVD CVE modified-window sync | 6시간 주기 oneshot |
 | `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
 | `sca-monitor-openssf-malicious-sync.timer` | OpenSSF malicious package sync | 1시간 주기 oneshot |
 | `sca-monitor-canonical-advisory-merge.timer` | alias 기반 canonical advisory merge 및 impact key backfill | 1시간 주기 oneshot |

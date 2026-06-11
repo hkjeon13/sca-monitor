@@ -79,6 +79,21 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=1h", "Unit={prefix}-ghsa-sync.service"],
         "kind": "timer",
     },
+    "nvd-cve-sync.service": {
+        "required": [
+            "scripts/nvd_cve_sync.py",
+            "--use-cursor",
+            "--lookback-hours 24",
+            "--modified-results-per-page 2000",
+            "--limit 100",
+            "--lock-owner systemd-nvd-cve-sync",
+        ],
+        "kind": "oneshot",
+    },
+    "nvd-cve-sync.timer": {
+        "required": ["OnUnitActiveSec=6h", "Unit={prefix}-nvd-cve-sync.service"],
+        "kind": "timer",
+    },
     "osv-npm-sync.service": {
         "required": ["scripts/osv_sync.py", "--ecosystem npm", "--lock-owner systemd-osv-npm-sync"],
         "kind": "oneshot",

@@ -321,6 +321,30 @@ Unit=${PREFIX}-ghsa-sync.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-nvd-cve-sync.service" <<EOF
+[Unit]
+Description=SCA Monitor NVD CVE modified-window sync job
+After=network-online.target
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/nvd_cve_sync.py --use-cursor --lookback-hours 24 --modified-results-per-page 2000 --limit 100 --lock-owner systemd-nvd-cve-sync --lock-ttl-seconds 3600
+EOF
+
+write_unit "${PREFIX}-nvd-cve-sync.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor NVD CVE modified-window sync every 6 hours
+
+[Timer]
+OnBootSec=18min
+OnUnitActiveSec=6h
+Unit=${PREFIX}-nvd-cve-sync.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 write_unit "${PREFIX}-osv-npm-sync.service" <<EOF
 [Unit]
 Description=SCA Monitor OSV npm sync job
@@ -453,6 +477,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
+    "${PREFIX}-nvd-cve-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer" \
     "${PREFIX}-canonical-advisory-merge.timer"
@@ -466,6 +491,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
     "${PREFIX}-ghsa-sync.timer" \
+    "${PREFIX}-nvd-cve-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer" \
     "${PREFIX}-canonical-advisory-merge.timer"
