@@ -63,6 +63,14 @@ EXPECTED_UNITS = {
         "required": ["OnUnitActiveSec=1h", "Unit={prefix}-cisa-kev-sync.service"],
         "kind": "timer",
     },
+    "ghsa-sync.service": {
+        "required": ["scripts/ghsa_sync.py", "--lock-owner systemd-ghsa-sync"],
+        "kind": "oneshot",
+    },
+    "ghsa-sync.timer": {
+        "required": ["OnUnitActiveSec=1h", "Unit={prefix}-ghsa-sync.service"],
+        "kind": "timer",
+    },
     "osv-npm-sync.service": {
         "required": ["scripts/osv_sync.py", "--ecosystem npm", "--lock-owner systemd-osv-npm-sync"],
         "kind": "oneshot",

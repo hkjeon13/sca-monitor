@@ -273,6 +273,30 @@ Unit=${PREFIX}-cisa-kev-sync.service
 WantedBy=timers.target
 EOF
 
+write_unit "${PREFIX}-ghsa-sync.service" <<EOF
+[Unit]
+Description=SCA Monitor GitHub Security Advisory sync job
+After=network-online.target
+
+[Service]
+Type=oneshot
+$(unit_header)
+ExecStart=$PYTHON_BIN scripts/ghsa_sync.py --lock-owner systemd-ghsa-sync --lock-ttl-seconds 3600
+EOF
+
+write_unit "${PREFIX}-ghsa-sync.timer" <<EOF
+[Unit]
+Description=Run SCA Monitor GitHub Security Advisory sync hourly
+
+[Timer]
+OnBootSec=12min
+OnUnitActiveSec=1h
+Unit=${PREFIX}-ghsa-sync.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 write_unit "${PREFIX}-osv-npm-sync.service" <<EOF
 [Unit]
 Description=SCA Monitor OSV npm sync job
@@ -380,6 +404,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-sla-escalation.timer" \
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
+    "${PREFIX}-ghsa-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"
   "${SYSTEMCTL[@]}" restart \
@@ -390,6 +415,7 @@ elif [[ "$ENABLE" == "1" ]]; then
     "${PREFIX}-sla-escalation.timer" \
     "${PREFIX}-daily-digest.timer" \
     "${PREFIX}-cisa-kev-sync.timer" \
+    "${PREFIX}-ghsa-sync.timer" \
     "${PREFIX}-osv-npm-sync.timer" \
     "${PREFIX}-openssf-malicious-sync.timer"
 else

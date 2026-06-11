@@ -74,6 +74,8 @@ Advisory worker command examples:
 python3 scripts/osv_sync.py --ecosystem npm --limit 100 --lock-ttl-seconds 3600
 python3 scripts/osv_sync.py --ecosystem npm --source OpenSSF --malicious-only --limit 100 --scan-limit 1000 --lock-ttl-seconds 3600
 python3 scripts/cisa_kev_sync.py --limit 100 --lock-ttl-seconds 3600
+python3 scripts/ghsa_sync.py --limit 100 --lock-ttl-seconds 3600
+python3 scripts/ghsa_sync.py --type malware --limit 100 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py CVE-2026-0001 --lock-ttl-seconds 3600
 python3 scripts/nvd_cve_sync.py --cve-list-path reported-cves.txt --limit 100 --lock-ttl-seconds 3600
 ```
@@ -196,6 +198,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 | `sca-monitor-sla-escalation.timer` | SLA 만료 alert 후보 생성 | 15분 주기 oneshot |
 | `sca-monitor-daily-digest.timer` | Medium 이하/비운영 이슈 Daily Digest 생성 | 매일 09:00 oneshot |
 | `sca-monitor-cisa-kev-sync.timer` | CISA KEV sync | 1시간 주기 oneshot |
+| `sca-monitor-ghsa-sync.timer` | GitHub Security Advisory sync | 1시간 주기 oneshot |
 | `sca-monitor-osv-npm-sync.timer` | OSV npm sync | 1시간 주기 oneshot |
 | `sca-monitor-openssf-malicious-sync.timer` | OpenSSF malicious package sync | 1시간 주기 oneshot |
 

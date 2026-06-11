@@ -103,6 +103,7 @@ Phase 0 착수 전 선행 조건:
 - `scripts/osv_sync.py` OSV ecosystem dump sync worker CLI 추가
 - `scripts/osv_sync.py --source OpenSSF --malicious-only` 기반 OSV-format `MAL-*` malicious package sync 추가
 - `scripts/bootstrap_advisory_sync.py` 기반 OSV/CISA KEV/OpenSSF initial sync 순차 실행 gate 추가
+- `scripts/ghsa_sync.py` 기반 GitHub Security Advisory reviewed/malware parser/import CLI 추가
 - `scripts/nvd_cve_sync.py` 기반 NVD CVE 2.0 단건 및 CVE 목록 batch parser/import CLI 추가
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
@@ -177,7 +178,7 @@ Phase 0 착수 전 선행 조건:
 - 완료: impact filtering은 API와 Web Console에서 status/risk/service/team/environment/package/advisory/KEV/malicious/search와 pagination/sorting을 제공하며, 필터 결과에 대한 bulk status action을 지원한다
 - 완료: push API hardening은 service/environment credential binding, payload size limit, dependency count limit, snapshot_id/content_hash 기반 멱등 replay, conflict 감지, `last_confirmed_at` 갱신, service credential 또는 service/environment 기준 분당 rate limit을 제공한다
 - 부분 완료: role-aware API 인가는 `SCA_MONITOR_AUTH_MODE=header` impact workflow와 admin-only service registration, endpoint test, push credential, alert channel 설정 범위에서 동작한다. Web Console은 `GET /api/v1/session` capability 기반으로 역할별 action을 비활성화한다. OIDC/JWT 검증과 인증 프록시 연동은 미구현
-- 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성과 `scripts/systemd_scheduler_status.py` read-only 검증까지 구현됨. SLA escalation, Daily Digest, OSV, OpenSSF malicious package, CISA KEV sync timer 정의 포함. 실제 운영 enable/start는 배포 환경별 승인 후 실행
+- 부분 완료: 운영 scheduler 등록은 `scripts/install_systemd_units.sh` 기반 VM systemd unit/timer 생성과 `scripts/systemd_scheduler_status.py` read-only 검증까지 구현됨. SLA escalation, Daily Digest, OSV, OpenSSF malicious package, CISA KEV, GHSA sync timer 정의 포함. 실제 운영 enable/start는 배포 환경별 승인 후 실행
 
 검증:
 

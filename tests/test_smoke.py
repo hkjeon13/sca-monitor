@@ -13,8 +13,10 @@ import pytest
 
 from backend.sca_monitor.alert_dispatch import alert_payload, dispatch_alert_batches, dispatch_pending_alerts
 from backend.sca_monitor.advisory_sync import (
+    parse_ghsa_advisory,
     parse_cisa_kev_vulnerability,
     parse_nvd_cve_vulnerability,
+    sync_github_advisories,
     sync_cisa_kev_catalog,
     sync_nvd_cve,
     sync_nvd_cves,
@@ -198,6 +200,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
         "sca-monitor-daily-digest.timer",
         "sca-monitor-cisa-kev-sync.service",
         "sca-monitor-cisa-kev-sync.timer",
+        "sca-monitor-ghsa-sync.service",
+        "sca-monitor-ghsa-sync.timer",
         "sca-monitor-osv-npm-sync.service",
         "sca-monitor-osv-npm-sync.timer",
         "sca-monitor-openssf-malicious-sync.service",
@@ -210,6 +214,8 @@ def test_install_systemd_units_dry_run_writes_worker_units(tmp_path):
     assert "scripts/poll_endpoints.py --limit 50 --iterations 0" in poller
     expiry_timer = (unit_dir / "sca-monitor-accepted-risk-expiry.timer").read_text(encoding="utf-8")
     assert "OnUnitActiveSec=15min" in expiry_timer
+    ghsa = (unit_dir / "sca-monitor-ghsa-sync.service").read_text(encoding="utf-8")
+    assert "scripts/ghsa_sync.py --lock-owner systemd-ghsa-sync" in ghsa
     sla_service = (unit_dir / "sca-monitor-sla-escalation.service").read_text(encoding="utf-8")
     assert "scripts/evaluate_sla_escalations.py --limit 100 --actor sla-scheduler" in sla_service
     sla_timer = (unit_dir / "sca-monitor-sla-escalation.timer").read_text(encoding="utf-8")
@@ -255,10 +261,11 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 16, "present": 16, "valid": 16, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 18, "present": 18, "valid": 18, "missing": 0, "invalid": 0}
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-daily-digest.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
+    assert payload["units"]["sca-monitor-ghsa-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
 
 
@@ -326,7 +333,7 @@ def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):
     payload = json.loads(result.stdout)
     assert result.returncode == 2
     assert payload["status"] == "not_ready"
-    assert payload["summary"]["missing"] == 16
+    assert payload["summary"]["missing"] == 18
 
 
 def test_deploy_systemd_gate_validates_generated_units():
@@ -348,7 +355,7 @@ def test_deploy_systemd_gate_validates_generated_units():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"expected": 16, "present": 16, "valid": 16, "missing": 0, "invalid": 0}
+    assert payload["summary"] == {"expected": 18, "present": 18, "valid": 18, "missing": 0, "invalid": 0}
 
 
 def test_deploy_systemd_gate_rejects_invalid_mode():
@@ -392,7 +399,7 @@ def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     unit_dir = home_dir / ".config/systemd/user"
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 16
+    assert payload["summary"]["valid"] == 18
     assert (unit_dir / "sca-monitor-api.service").exists()
     assert "unit files installed" in result.stdout
 
@@ -461,7 +468,7 @@ exit 0
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     api_status = payload["systemctl"]["sca-monitor-api.service"]
     assert payload["status"] == "ok"
-    assert payload["summary"]["valid"] == 16
+    assert payload["summary"]["valid"] == 18
     assert api_status == {"enabled": "enabled", "active": "active"}
     assert "--user list-unit-files" in log_path.read_text(encoding="utf-8")
 
@@ -3271,6 +3278,81 @@ def test_openssf_malicious_advisory_matches_as_critical_impact(tmp_path):
     assert app.overview()["critical_impacts"] == 1
 
 
+def test_parse_ghsa_advisory_extracts_package_vulnerability():
+    advisories = parse_ghsa_advisory(ghsa_fixture()[0])
+
+    assert len(advisories) == 1
+    advisory = advisories[0]
+    assert advisory.advisory_id == "GHSA-xxxx-yyyy-zzzz"
+    assert advisory.source == "GHSA"
+    assert advisory.severity == "high"
+    assert advisory.ecosystem == "npm"
+    assert advisory.package_name == "example-package"
+    assert advisory.fixed_version == "2.0.0"
+    assert advisory.affected_ranges[0]["events"] == [{"introduced": "1.0.0"}, {"fixed": "2.0.0"}]
+    assert advisory.is_malicious_package is False
+
+
+def test_sync_github_advisories_from_json_file_records_sync_state_and_matches(tmp_path):
+    app = make_test_app(tmp_path)
+    app.push_snapshot(
+        {
+            "service_id": "ghsa-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.5.0"}],
+        }
+    )
+    json_path = tmp_path / "ghsa.json"
+    json_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+
+    result = sync_github_advisories(app, json_path=json_path, limit=1)
+
+    assert result.source == "GHSA"
+    assert result.processed == 1
+    assert result.imported_rows == 1
+    assert result.failed == 0
+    assert result.rematched_impacts == 1
+    advisories = app.list_advisories({"source": ["GHSA"]})
+    assert advisories[0]["advisory_id"] == "GHSA-xxxx-yyyy-zzzz"
+    impacts = app.search_impacts({"service_id": ["ghsa-service"]})["impacts"]
+    assert impacts[0]["advisory_id"] == "GHSA-xxxx-yyyy-zzzz"
+    assert app.overview()["advisory_sync"]["GHSA"] == "ok"
+
+
+def test_sync_github_advisories_marks_malware_as_malicious(tmp_path):
+    app = make_test_app(tmp_path)
+    json_path = tmp_path / "ghsa-malware.json"
+    json_path.write_text(json.dumps([ghsa_fixture_item(advisory_type="malware")]), encoding="utf-8")
+
+    result = sync_github_advisories(app, json_path=json_path, advisory_type="malware")
+
+    assert result.imported_rows == 1
+    advisory = app.list_advisories({"source": ["GHSA"]})[0]
+    assert advisory["is_malicious_package"] is True
+    assert result.query["type"] == "malware"
+
+
+def test_ghsa_sync_cli_imports_local_json(tmp_path):
+    json_path = tmp_path / "ghsa.json"
+    json_path.write_text(json.dumps(ghsa_fixture()), encoding="utf-8")
+    database_url = f"sqlite:///{tmp_path / 'ghsa-cli.sqlite3'}"
+
+    result = subprocess.run(
+        ["python3", "scripts/ghsa_sync.py", "--json-path", str(json_path), "--limit", "1"],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "GHSA"
+    assert payload["processed"] == 1
+    assert payload["imported_rows"] == 1
+    assert payload["query"]["per_page"] == 1
+
+
 def test_parse_cisa_kev_vulnerability_marks_known_exploited():
     advisory = parse_cisa_kev_vulnerability(cisa_kev_fixture()["vulnerabilities"][0], cisa_kev_fixture())
 
@@ -4276,6 +4358,40 @@ def cisa_kev_fixture():
                 "cwes": [],
             },
         ],
+    }
+
+
+def ghsa_fixture():
+    return [ghsa_fixture_item()]
+
+
+def ghsa_fixture_item(advisory_type: str = "reviewed"):
+    return {
+        "ghsa_id": "GHSA-xxxx-yyyy-zzzz",
+        "cve_id": "CVE-2026-0001",
+        "url": "https://api.github.com/advisories/GHSA-xxxx-yyyy-zzzz",
+        "html_url": "https://github.com/advisories/GHSA-xxxx-yyyy-zzzz",
+        "summary": "Example package vulnerable to remote code execution",
+        "description": "Example package contains a remote code execution vulnerability.",
+        "type": advisory_type,
+        "severity": "high",
+        "source_code_location": "https://github.com/example/example-package",
+        "identifiers": [
+            {"type": "GHSA", "value": "GHSA-xxxx-yyyy-zzzz"},
+            {"type": "CVE", "value": "CVE-2026-0001"},
+        ],
+        "references": ["https://github.com/example/example-package/security/advisories/GHSA-xxxx-yyyy-zzzz"],
+        "vulnerabilities": [
+            {
+                "package": {"ecosystem": "npm", "name": "example-package"},
+                "vulnerable_version_range": ">= 1.0.0, < 2.0.0",
+                "first_patched_version": {"identifier": "2.0.0"},
+                "vulnerable_functions": [],
+            }
+        ],
+        "published_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-02T00:00:00Z",
+        "withdrawn_at": None,
     }
 
 

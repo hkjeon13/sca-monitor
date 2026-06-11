@@ -313,6 +313,14 @@ withdrawn_at
 - `type=malware` 결과는 `is_malicious_package=true`로 저장한다.
 - `updated_at` 또는 content hash 변경 시 재매칭한다.
 
+현재 구현:
+
+- `parse_ghsa_advisory()`는 GitHub Global Security Advisory API 응답의 `ghsa_id`, `severity`, `type`, `vulnerabilities[].package`, `vulnerable_version_range`, `first_patched_version`, `published_at`, `updated_at`을 `AdvisoryImport`로 변환한다.
+- `scripts/ghsa_sync.py --limit 100`은 `GET https://api.github.com/advisories`를 조회해 `source=GHSA` advisory row로 저장하고 `advisory_sync_state`에 `GHSA` 상태를 기록한다. `GITHUB_TOKEN`이 있으면 `Authorization: Bearer`로 전달한다.
+- `scripts/ghsa_sync.py --type malware --limit 100`은 GitHub malware advisory를 `is_malicious_package=true`로 저장한다.
+- `--json-path`는 fixture/staged import 검증에 사용한다.
+- GitHub pagination 전체 순회, alias 기반 canonical merge, GraphQL 기반 고급 조회는 후속 범위이다.
+
 ### 5.5 NVD CVE API 수집 방식
 
 NVD는 CVE 표준 메타데이터, CVSS, CWE, CPE, reference를 보강하는 소스이다.

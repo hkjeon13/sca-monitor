@@ -18,6 +18,7 @@ from .osv import AdvisoryImport
 OSV_DUMP_BASE_URL = "https://osv-vulnerabilities.storage.googleapis.com"
 CISA_KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+GITHUB_ADVISORIES_API_URL = "https://api.github.com/advisories"
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,17 @@ class NvdCveBatchSyncResult:
     failed: int
     results: list[dict[str, Any]]
     api_url: str
+
+
+@dataclass(frozen=True)
+class GhsaSyncResult:
+    source: str
+    processed: int
+    imported_rows: int
+    rematched_impacts: int
+    failed: int
+    api_url: str
+    query: dict[str, Any]
 
 
 def osv_dump_url(ecosystem: str) -> str:
@@ -212,6 +224,145 @@ def load_cisa_kev_catalog(*, catalog_url: str, json_path: Path | None = None) ->
         return json.loads(response.read().decode("utf-8"))
 
 
+def load_github_advisories(
+    *,
+    api_url: str = GITHUB_ADVISORIES_API_URL,
+    token: str | None = None,
+    query: dict[str, Any] | None = None,
+    timeout_seconds: int = 60,
+) -> list[dict[str, Any]]:
+    clean_query = {key: value for key, value in (query or {}).items() if value not in (None, "")}
+    url = f"{api_url}?{urlencode(clean_query)}" if clean_query else api_url
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "sca-monitor/0.1",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=timeout_seconds) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("GitHub advisory API response must be a list")
+    return payload
+
+
+def parse_ghsa_advisory(item: dict[str, Any]) -> list[AdvisoryImport]:
+    ghsa_id = str(item.get("ghsa_id") or "").strip()
+    if not ghsa_id:
+        raise ValueError("GHSA item ghsa_id required")
+    vulnerabilities = item.get("vulnerabilities") or []
+    package_count = sum(
+        1
+        for vulnerability in vulnerabilities
+        if (vulnerability.get("package") or {}).get("ecosystem") and (vulnerability.get("package") or {}).get("name")
+    )
+    imports: list[AdvisoryImport] = []
+    for vulnerability in vulnerabilities:
+        package = vulnerability.get("package") or {}
+        ecosystem = str(package.get("ecosystem") or "").strip()
+        package_name = str(package.get("name") or "").strip()
+        if not ecosystem or not package_name:
+            continue
+        advisory_id = ghsa_id if package_count == 1 else f"{ghsa_id}:{ecosystem}/{package_name}"
+        fixed_version = ghsa_first_patched_version(vulnerability)
+        imports.append(
+            AdvisoryImport(
+                advisory_id=advisory_id,
+                source="GHSA",
+                summary=str(item.get("summary") or item.get("description") or ghsa_id),
+                severity=normalize_severity(item.get("severity")),
+                ecosystem=ecosystem,
+                package_name=package_name,
+                canonical_package_name=canonical_package_name(ecosystem, package_name),
+                affected_versions=[],
+                affected_ranges=ghsa_affected_ranges(vulnerability),
+                fixed_version=fixed_version,
+                is_known_exploited=False,
+                is_malicious_package=str(item.get("type") or "").lower() == "malware",
+                published_at=item.get("published_at"),
+                modified_at=item.get("updated_at"),
+                raw_payload=item,
+            )
+        )
+    if not imports:
+        raise ValueError(f"GHSA advisory has no package vulnerability entries: {ghsa_id}")
+    return imports
+
+
+def sync_github_advisories(
+    app: ScaMonitorApp,
+    *,
+    api_url: str = GITHUB_ADVISORIES_API_URL,
+    token: str | None = None,
+    json_path: Path | None = None,
+    limit: int | None = None,
+    advisory_type: str | None = None,
+    ecosystem: str | None = None,
+    severity: str | None = None,
+    ghsa_id: str | None = None,
+    cve_id: str | None = None,
+    modified: str | None = None,
+    published: str | None = None,
+    updated: str | None = None,
+    sort: str = "updated",
+    direction: str = "desc",
+    lock_owner: str | None = None,
+    lock_ttl_seconds: int = 3600,
+) -> GhsaSyncResult:
+    query = {
+        "type": advisory_type,
+        "ecosystem": ecosystem,
+        "severity": severity,
+        "ghsa_id": ghsa_id,
+        "cve_id": cve_id,
+        "modified": modified,
+        "published": published,
+        "updated": updated,
+        "sort": sort,
+        "direction": direction,
+        "per_page": min(limit or 100, 100),
+    }
+    payload = json.loads(json_path.read_text(encoding="utf-8")) if json_path else load_github_advisories(api_url=api_url, token=token, query=query)
+    if not isinstance(payload, list):
+        raise ValueError("GitHub advisory payload must be a list")
+    processed = 0
+    imported_rows = 0
+    rematched_impacts = 0
+    failed = 0
+    owner = lock_owner or default_lock_owner("ghsa")
+    try:
+        with app.advisory_sync_lock("GHSA", owner, ttl_seconds=lock_ttl_seconds):
+            for item in payload:
+                if limit is not None and processed >= limit:
+                    break
+                processed += 1
+                try:
+                    for advisory in parse_ghsa_advisory(item):
+                        with app.db.connect() as conn:
+                            changed = app.upsert_advisory(conn, advisory)
+                            if changed:
+                                rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
+                            imported_rows += 1
+                except Exception:
+                    failed += 1
+            status = "ok" if failed == 0 else "partial"
+            app.record_advisory_sync("GHSA", status, f"advisories:{processed}", None, imported_count=imported_rows)
+    except Exception as exc:
+        app.record_advisory_sync("GHSA", "error", "advisories", str(exc), imported_count=0)
+        raise
+    return GhsaSyncResult(
+        source="GHSA",
+        processed=processed,
+        imported_rows=imported_rows,
+        rematched_impacts=rematched_impacts,
+        failed=failed,
+        api_url=api_url,
+        query={key: value for key, value in query.items() if value not in (None, "")},
+    )
+
+
 def load_nvd_cve_payload(
     *,
     cve_id: str,
@@ -264,6 +415,67 @@ def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
             )
         )
     return imports
+
+
+def normalize_severity(value: Any) -> str:
+    severity = str(value or "").lower()
+    if severity in {"critical", "high", "medium", "low"}:
+        return severity
+    if severity == "moderate":
+        return "medium"
+    return "medium"
+
+
+def ghsa_first_patched_version(vulnerability: dict[str, Any]) -> str | None:
+    value = vulnerability.get("first_patched_version")
+    if isinstance(value, dict):
+        identifier = value.get("identifier")
+        return str(identifier) if identifier else None
+    if value:
+        return str(value)
+    return None
+
+
+def ghsa_affected_ranges(vulnerability: dict[str, Any]) -> list[dict[str, Any]]:
+    vulnerable_range = str(vulnerability.get("vulnerable_version_range") or "").strip()
+    if not vulnerable_range:
+        return []
+    range_item: dict[str, Any] = {"type": "GHSA", "vulnerable_version_range": vulnerable_range}
+    events = ghsa_range_events(vulnerable_range)
+    if events:
+        range_item["events"] = events
+    return [range_item]
+
+
+def ghsa_range_events(vulnerable_range: str) -> list[dict[str, str]]:
+    introduced: str | None = None
+    fixed: str | None = None
+    last_affected: str | None = None
+    for clause in vulnerable_range.split(","):
+        part = clause.strip()
+        if not part:
+            continue
+        for operator in (">=", "<=", "<", "="):
+            if part.startswith(operator):
+                version = part[len(operator) :].strip()
+                if not version:
+                    break
+                if operator == ">=":
+                    introduced = version
+                elif operator == "<":
+                    fixed = version
+                elif operator == "<=":
+                    last_affected = version
+                elif operator == "=":
+                    introduced = version
+                    last_affected = version
+                break
+    events: list[dict[str, str]] = [{"introduced": introduced or "0"}]
+    if fixed:
+        events.append({"fixed": fixed})
+    elif last_affected:
+        events.append({"last_affected": last_affected})
+    return events
 
 
 def sync_nvd_cve(
