@@ -59,6 +59,12 @@ systemctl --user status sca-monitor-api.service
 
 Advisory sync stale 판정 기준은 기본 86400초이며, 운영 환경별 sync 주기와 장애 감지 민감도에 맞춰 `SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS`로 조정한다.
 변경 후에는 `GET /api/v1/overview`의 `advisory_sync_readiness.freshness.stale_after_seconds`와 source별 `freshness_status`를 확인한다.
+stale source를 system alert outbox에 반영하려면 다음 명령을 실행한다.
+
+```bash
+python3 scripts/evaluate_advisory_sync_freshness.py --dry-run
+python3 scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler
+```
 
 ## 3. 장애 대응
 

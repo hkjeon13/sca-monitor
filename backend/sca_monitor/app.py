@@ -569,8 +569,8 @@ class ScaMonitorApp:
             sync[row["source"]] = row["status"]
         return sync
 
-    def advisory_sync_readiness_overview(self, conn) -> dict:
-        now = datetime.now(timezone.utc)
+    def advisory_sync_readiness_overview(self, conn, now: datetime | None = None) -> dict:
+        now = now or datetime.now(timezone.utc)
         stale_after_seconds = self.settings.advisory_sync_stale_after_seconds
         rows_by_source = {}
         try:
@@ -1732,6 +1732,88 @@ class ScaMonitorApp:
                 """,
                 (json.dumps(payload, ensure_ascii=False), row["id"]),
             )
+
+    def evaluate_advisory_sync_freshness_alerts(self, *, now: str | None = None, dry_run: bool = False, actor: str = "system") -> dict:
+        checked_at = now or utcnow()
+        checked_dt = parse_iso_datetime(checked_at)
+        with self.db.connect() as conn:
+            readiness = self.advisory_sync_readiness_overview(conn, now=checked_dt)
+            stale_sources = [item for item in readiness["sources"] if item["freshness_status"] == "stale"]
+            stale_source_names = [item["source"] for item in stale_sources]
+            stale_suppression_keys = {f"system:advisory_sync:{source}:stale" for source in stale_source_names}
+            existing_rows = conn.execute(
+                """
+                SELECT id, alert_suppression_key, payload
+                FROM alert_events
+                WHERE reason = 'system_advisory_sync_stale'
+                  AND status IN ('pending', 'failed', 'dispatching')
+                """
+            ).fetchall()
+            existing_keys = {row["alert_suppression_key"] for row in existing_rows}
+            enqueued = 0
+            resolved = 0
+            for source in stale_sources:
+                suppression_key = f"system:advisory_sync:{source['source']}:stale"
+                if suppression_key in existing_keys:
+                    continue
+                payload = {
+                    "alert_type": "system",
+                    "source": source["source"],
+                    "freshness_status": source["freshness_status"],
+                    "lag_seconds": source["lag_seconds"],
+                    "stale_after_seconds": readiness["freshness"]["stale_after_seconds"],
+                    "last_success_at": source["last_success_at"],
+                    "occurred_at": checked_at,
+                }
+                if not dry_run:
+                    conn.execute(
+                        """
+                        INSERT INTO alert_events (id, impact_pk, alert_suppression_key, reason, status, payload, created_at)
+                        VALUES (?, NULL, ?, 'system_advisory_sync_stale', 'pending', ?, ?)
+                        """,
+                        (str(uuid.uuid4()), suppression_key, json.dumps(payload, ensure_ascii=False), checked_at),
+                    )
+                    self.write_audit_log(
+                        conn,
+                        actor=actor,
+                        action="advisory_sync.stale.enqueue",
+                        target_type="advisory_sync_source",
+                        target_id=source["source"],
+                        reason="advisory sync stale alert enqueued",
+                        before=None,
+                        after={"alert_suppression_key": suppression_key, "lag_seconds": source["lag_seconds"]},
+                        occurred_at=checked_at,
+                    )
+                enqueued += 1
+            for row in existing_rows:
+                if row["alert_suppression_key"] in stale_suppression_keys:
+                    continue
+                if not dry_run:
+                    payload = parse_json_field(row["payload"])
+                    if not isinstance(payload, dict):
+                        payload = {}
+                    payload.update({"resolved_at": checked_at, "resolved_by_freshness": "fresh"})
+                    conn.execute(
+                        """
+                        UPDATE alert_events
+                        SET status = 'resolved',
+                            payload = ?,
+                            next_attempt_at = NULL,
+                            dispatch_lock_owner = NULL,
+                            dispatch_lock_expires_at = NULL
+                        WHERE id = ?
+                        """,
+                        (json.dumps(payload, ensure_ascii=False), row["id"]),
+                    )
+                resolved += 1
+        return {
+            "checked_at": checked_at,
+            "stale_sources": stale_source_names,
+            "candidates": len(stale_sources),
+            "enqueued": 0 if dry_run else enqueued,
+            "resolved": 0 if dry_run else resolved,
+            "dry_run": dry_run,
+        }
 
     @contextmanager
     def advisory_sync_lock(self, source: str, owner: str, ttl_seconds: int = 3600):

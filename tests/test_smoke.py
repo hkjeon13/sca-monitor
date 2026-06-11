@@ -3844,6 +3844,77 @@ def test_overview_advisory_sync_readiness_uses_configured_stale_threshold(tmp_pa
     assert sources["OSV"]["freshness_status"] == "stale"
 
 
+def test_advisory_sync_stale_alert_enqueues_once_and_resolves(tmp_path):
+    app = make_test_app(tmp_path, advisory_sync_stale_after_seconds=30)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisory_sync_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE source = 'OSV'")
+
+    dry_run = app.evaluate_advisory_sync_freshness_alerts(now="2026-01-01T00:01:00+00:00", dry_run=True, actor="freshness-scheduler")
+    result = app.evaluate_advisory_sync_freshness_alerts(now="2026-01-01T00:01:00+00:00", actor="freshness-scheduler")
+    second = app.evaluate_advisory_sync_freshness_alerts(now="2026-01-01T00:01:00+00:00", actor="freshness-scheduler")
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=0)
+    resolved = app.evaluate_advisory_sync_freshness_alerts(now="2026-01-01T00:01:10+00:00", actor="freshness-scheduler")
+
+    assert dry_run["stale_sources"] == ["OSV"]
+    assert dry_run["enqueued"] == 0
+    assert result["stale_sources"] == ["OSV"]
+    assert result["enqueued"] == 1
+    assert second["enqueued"] == 0
+    assert resolved["resolved"] == 1
+    with app.db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT impact_pk, reason, status, alert_suppression_key, payload
+            FROM alert_events
+            WHERE reason = 'system_advisory_sync_stale'
+            """
+        ).fetchall()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["impact_pk"] is None
+    assert row["status"] == "resolved"
+    assert row["alert_suppression_key"] == "system:advisory_sync:OSV:stale"
+    payload = json.loads(row["payload"])
+    assert payload["source"] == "OSV"
+    assert payload["stale_after_seconds"] == 30
+    assert payload["resolved_at"] is not None
+    audit = app.search_audit_logs({"action": ["advisory_sync.stale.enqueue"], "target_id": ["OSV"]})
+    assert audit["pagination"]["total"] == 1
+
+
+def test_evaluate_advisory_sync_freshness_cli(tmp_path):
+    app = make_test_app(tmp_path, advisory_sync_stale_after_seconds=30)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisory_sync_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE source = 'OSV'")
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+        "SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS": "30",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/evaluate_advisory_sync_freshness.py", "--now", "2026-01-01T00:01:00+00:00", "--actor", "freshness-scheduler"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["stale_sources"] == ["OSV"]
+    assert payload["enqueued"] == 1
+    with app.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'system_advisory_sync_stale'").fetchone()["c"] == 1
+
+
 def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):
     app = make_test_app(tmp_path)
 
