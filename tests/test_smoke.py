@@ -4040,6 +4040,36 @@ def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
     assert state["records_processed"] == 1
 
 
+def test_sync_nvd_cve_enriches_matching_osv_alias_and_rematches_impacts(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "nvd-enrichment-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    before = app.search_impacts({"service_id": ["nvd-enrichment-service"]})["impacts"][0]
+    assert before["risk_level"] == "high"
+    json_path = tmp_path / "nvd-cve.json"
+    nvd_payload = nvd_cve_fixture("CVE-2026-0001", severity="CRITICAL")
+    json_path.write_text(json.dumps(nvd_payload), encoding="utf-8")
+
+    result = sync_nvd_cve(app, "CVE-2026-0001", json_path=json_path)
+
+    assert result.imported_rows == 1
+    assert result.rematched_impacts == 1
+    detail = app.get_advisory("OSV-TEST-0001")["advisory"]
+    assert detail["severity"] == "critical"
+    assert detail["raw_payload"]["_nvd_enrichment"]["cve_id"] == "CVE-2026-0001"
+    assert detail["raw_payload"]["_nvd_enrichment"]["severity"] == "critical"
+    assert detail["raw_payload"]["_nvd_enrichment"]["cpe_matches"][0]["criteria"].startswith("cpe:2.3:a:example:example-server")
+    after = app.search_impacts({"service_id": ["nvd-enrichment-service"]})["impacts"][0]
+    assert after["advisory_id"] == "OSV-TEST-0001"
+    assert after["risk_level"] == "critical"
+
+
 def test_sync_nvd_cves_dedupes_limits_and_reads_json_dir(tmp_path):
     app = make_test_app(tmp_path)
     json_dir = tmp_path / "nvd"

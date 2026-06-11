@@ -1477,6 +1477,58 @@ class ScaMonitorApp:
             rematched += self.rematch_latest_snapshots_for_advisory(conn, advisory_import_from_row(row_to_dict(updated)))
         return {"enriched_advisories": enriched, "rematched_impacts": rematched}
 
+    def enrich_nvd_advisories(self, conn, nvd_advisory: AdvisoryImport) -> dict:
+        cve = normalize_cve_id(nvd_advisory.advisory_id)
+        if not cve:
+            raise ValueError("nvd_advisory must have a CVE advisory_id")
+        enriched = 0
+        rematched = 0
+        rows = conn.execute("SELECT * FROM advisories WHERE source != 'NVD'").fetchall()
+        cpe_matches = [
+            item
+            for item in nvd_advisory.affected_ranges
+            if isinstance(item, dict) and item.get("criteria")
+        ]
+        for row in rows:
+            row_dict = row_to_dict(row)
+            aliases = advisory_alias_values(row_dict)
+            if cve not in aliases:
+                continue
+            raw_payload = json_column(row["raw_payload"], {})
+            if not isinstance(raw_payload, dict):
+                raw_payload = {"value": raw_payload}
+            enrichment = {
+                "cve_id": cve,
+                "severity": nvd_advisory.severity,
+                "published_at": nvd_advisory.published_at,
+                "modified_at": nvd_advisory.modified_at,
+                "cpe_matches": cpe_matches,
+                "raw_payload": nvd_advisory.raw_payload,
+            }
+            next_severity = highest_risk(row["severity"], nvd_advisory.severity)
+            if raw_payload.get("_nvd_enrichment") == enrichment and row["severity"] == next_severity:
+                continue
+            raw_payload["_nvd_enrichment"] = enrichment
+            conn.execute(
+                """
+                UPDATE advisories
+                SET severity = ?,
+                    modified_at = ?,
+                    raw_payload = ?
+                WHERE id = ?
+                """,
+                (
+                    next_severity,
+                    max_optional_text(row["modified_at"], nvd_advisory.modified_at),
+                    json.dumps(raw_payload, ensure_ascii=False),
+                    row["id"],
+                ),
+            )
+            updated = conn.execute("SELECT * FROM advisories WHERE id = ?", (row["id"],)).fetchone()
+            enriched += 1
+            rematched += self.rematch_latest_snapshots_for_advisory(conn, advisory_import_from_row(row_to_dict(updated)))
+        return {"enriched_advisories": enriched, "rematched_impacts": rematched}
+
     def record_advisory_sync(
         self,
         source: str,
@@ -3280,6 +3332,16 @@ def min_optional_text(left, right):
 def max_optional_text(left, right):
     values = [str(value) for value in (left, right) if value]
     return max(values) if values else None
+
+
+def highest_risk(left, right) -> str:
+    left_value = str(left or "medium").lower()
+    right_value = str(right or "medium").lower()
+    return (
+        right_value
+        if RISK_RANK.get(right_value, RISK_RANK["info"]) < RISK_RANK.get(left_value, RISK_RANK["info"])
+        else left_value
+    )
 
 
 def advisory_import_from_row(row: dict) -> AdvisoryImport:

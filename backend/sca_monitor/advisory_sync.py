@@ -556,8 +556,10 @@ def sync_nvd_cve(
             for advisory in parse_nvd_cve_vulnerability(item):
                 with app.db.connect() as conn:
                     changed = app.upsert_advisory(conn, advisory)
+                    enrichment = app.enrich_nvd_advisories(conn, advisory)
                     if changed:
                         rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
+                    rematched_impacts += enrichment["rematched_impacts"]
                     imported_rows += 1
         status = "ok" if imported_rows else "partial"
         error_message = None if imported_rows else f"NVD CVE not found: {cve_id}"
