@@ -39,16 +39,20 @@ validate_units() {
 }
 
 install_units() {
-  local enable_flag=()
   if [[ "$1" == "enable" ]]; then
-    enable_flag=(--enable)
+    bash scripts/install_systemd_units.sh \
+      "$SCOPE_FLAG" \
+      --repo-dir "$REPO_DIR" \
+      --python "$PYTHON_BIN" \
+      --prefix "$PREFIX" \
+      --enable
+  else
+    bash scripts/install_systemd_units.sh \
+      "$SCOPE_FLAG" \
+      --repo-dir "$REPO_DIR" \
+      --python "$PYTHON_BIN" \
+      --prefix "$PREFIX"
   fi
-  bash scripts/install_systemd_units.sh \
-    "$SCOPE_FLAG" \
-    --repo-dir "$REPO_DIR" \
-    --python "$PYTHON_BIN" \
-    --prefix "$PREFIX" \
-    "${enable_flag[@]}"
   python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
 }
 

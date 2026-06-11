@@ -89,6 +89,16 @@ POST /api/v1/snapshots with test credential in stage
 GET /api/v1/impacts
 ```
 
+원격 VM 배포에서 systemd unit 설치 단계까지 검증하려면 다음처럼 명시한다.
+이 모드는 unit 파일을 설치하지만 API runtime은 기존 nohup 방식을 유지한다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=install \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+scripts/deploy_remote.sh
+```
+
 운영 환경에서는 destructive test를 실행하지 않는다.
 prod smoke는 read-only와 synthetic service에 한정한다.
 

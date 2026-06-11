@@ -247,6 +247,33 @@ def test_deploy_systemd_gate_rejects_invalid_mode():
     assert "invalid SCA_MONITOR_SYSTEMD_MODE" in result.stderr
 
 
+def test_deploy_systemd_gate_install_mode_writes_user_units(tmp_path):
+    home_dir = tmp_path / "home"
+    env = {
+        **os.environ,
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "install",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    unit_dir = home_dir / ".config/systemd/user"
+    assert payload["status"] == "ok"
+    assert payload["summary"]["valid"] == 11
+    assert (unit_dir / "sca-monitor-api.service").exists()
+    assert "unit files installed" in result.stdout
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -349,8 +376,17 @@ def test_remote_deploy_uses_db_gate():
     assert "bash scripts/deploy_db_gate.sh" in script
     assert "bash scripts/deploy_systemd_gate.sh" in script
     assert 'SYSTEMD_MODE_OVERRIDE="${SCA_MONITOR_SYSTEMD_MODE:-}"' in script
+    assert 'SYSTEMD_SCOPE_OVERRIDE="${SCA_MONITOR_SYSTEMD_SCOPE:-}"' in script
+    assert 'SYSTEMD_PREFIX_OVERRIDE="${SCA_MONITOR_SYSTEMD_PREFIX:-}"' in script
+    assert 'SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"' in script
     assert 'SCA_MONITOR_SYSTEMD_MODE=\\"\\$SYSTEMD_MODE_OVERRIDE\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\$SYSTEMD_SCOPE_OVERRIDE\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\$SYSTEMD_PREFIX_OVERRIDE\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\$SYSTEMD_PYTHON_OVERRIDE\\"' in script
     assert 'SYSTEMD_MODE=\\"\\${SCA_MONITOR_SYSTEMD_MODE:-validate}\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\\"' in script
     assert 'if [ \\"\\$SYSTEMD_MODE\\" = ' in script
     assert "rm -f .data/sca-monitor.pid" in script
     assert "nohup python3 -m backend.sca_monitor" in script
