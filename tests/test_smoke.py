@@ -103,6 +103,66 @@ def test_push_credential_revoke_blocks_token_reuse(tmp_path):
         )
 
 
+def test_service_endpoint_test_records_healthy_status(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+        }
+    )
+
+    result = app.test_service_endpoint(
+        "endpoint-service",
+        {"environment": "prod"},
+        fetcher=lambda url, auth_header=None: {
+            "schema_version": "1.0",
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+        },
+    )
+
+    assert result["collection_status"] == "ok"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT collection_status, freshness_status, last_successful_poll_at FROM endpoint_health").fetchone()
+        assert row["collection_status"] == "ok"
+        assert row["freshness_status"] == "fresh"
+        assert row["last_successful_poll_at"] is not None
+
+
+def test_service_endpoint_test_records_invalid_response(tmp_path):
+    app = make_test_app(tmp_path)
+    app.create_service(
+        {
+            "service_id": "endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+        }
+    )
+
+    with pytest.raises(ValueError, match="service_id mismatch"):
+        app.test_service_endpoint(
+            "endpoint-service",
+            {"environment": "prod"},
+            fetcher=lambda url, auth_header=None: {
+                "schema_version": "1.0",
+                "service_id": "other-service",
+                "environment": "prod",
+                "dependencies": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20"}],
+            },
+        )
+
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT collection_status, freshness_status, last_error_code FROM endpoint_health").fetchone()
+        assert row["collection_status"] == "invalid_response"
+        assert row["freshness_status"] == "stale"
+        assert row["last_error_code"] == "invalid_response"
+
+
 def test_parse_osv_advisory_fixture():
     advisories = parse_osv_advisories(osv_fixture())
 

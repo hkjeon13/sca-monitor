@@ -345,7 +345,8 @@ input[readonly] {
   color: var(--text);
 }
 
-.credential-result {
+.credential-result,
+.inline-result {
   margin-top: 12px;
   display: grid;
   gap: 8px;

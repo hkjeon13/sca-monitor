@@ -249,6 +249,18 @@ document.querySelector("#service-form").addEventListener("submit", async (event)
   await refreshAll();
 });
 
+document.querySelector("#endpoint-test").addEventListener("click", async () => {
+  const form = Object.fromEntries(new FormData(document.querySelector("#service-form")).entries());
+  const result = document.querySelector("#endpoint-test-result");
+  await api.send("/api/v1/services", "POST", form);
+  const data = await api.send(`/api/v1/services/${encodeURIComponent(form.service_id)}/endpoint/test`, "POST", {
+    environment: form.environment,
+    endpoint_url: form.status_endpoint_url,
+  });
+  result.innerHTML = `<p><strong>${escapeHtml(data.collection_status)} / ${escapeHtml(data.freshness_status)}</strong></p>`;
+  await refreshAll();
+});
+
 document.querySelector("#credential-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());

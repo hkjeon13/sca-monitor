@@ -11,6 +11,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, row_to_dict, utcnow
@@ -102,6 +104,9 @@ class ScaMonitorApp:
                 service_id = parts[-4]
                 credential_id = parts[-2]
                 return self.json_response(request, self.revoke_push_credential(service_id, credential_id, self.read_json(request)))
+            if path.startswith("/api/v1/services/") and path.endswith("/endpoint/test") and method == "POST":
+                service_id = path.split("/")[-3]
+                return self.json_response(request, self.test_service_endpoint(service_id, self.read_json(request)))
             if path.startswith("/api/v1/services/") and method == "GET":
                 service_id = path.split("/")[-1]
                 return self.json_response(request, self.get_service_detail(service_id))
@@ -361,6 +366,72 @@ class ScaMonitorApp:
         credential["scopes"] = json.loads(credential["scopes"]) if isinstance(credential["scopes"], str) else credential["scopes"]
         credential["revoked_at"] = revoked_at
         return {"credential": credential}
+
+    def test_service_endpoint(self, service_id: str, body: dict, fetcher=None) -> dict:
+        environment = body.get("environment", "prod")
+        with self.db.connect() as conn:
+            service = conn.execute(
+                "SELECT id, service_id, environment, status_endpoint_url FROM services WHERE service_id = ? AND environment = ?",
+                (service_id, environment),
+            ).fetchone()
+            if not service:
+                raise ValueError("service not found")
+        endpoint_url = body.get("endpoint_url") or service["status_endpoint_url"]
+        if not endpoint_url:
+            self.record_endpoint_health(service["id"], "invalid_response", "stale", "missing_endpoint_url", "endpoint URL is not configured")
+            raise ValueError("endpoint URL is not configured")
+        fetcher = fetcher or fetch_json_endpoint
+        try:
+            payload = fetcher(endpoint_url, body.get("auth_header"))
+            self.validate_endpoint_payload(payload, service_id, environment)
+        except PermissionError as exc:
+            self.record_endpoint_health(service["id"], "auth_failed", "stale", "auth_failed", str(exc))
+            raise
+        except ConnectionError as exc:
+            self.record_endpoint_health(service["id"], "unreachable", "stale", "unreachable", str(exc))
+            raise ValueError(f"endpoint unreachable: {exc}") from exc
+        except ValueError as exc:
+            self.record_endpoint_health(service["id"], "invalid_response", "stale", "invalid_response", str(exc))
+            raise
+        self.record_endpoint_health(service["id"], "ok", "fresh", None, None, success=True)
+        return {"service_id": service_id, "environment": environment, "endpoint_url": endpoint_url, "collection_status": "ok", "freshness_status": "fresh"}
+
+    def validate_endpoint_payload(self, payload: dict, service_id: str, environment: str) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("endpoint response must be a JSON object")
+        if required(payload, "schema_version") != "1.0":
+            raise ValueError("unsupported schema_version")
+        if required(payload, "service_id") != service_id:
+            raise ValueError("endpoint service_id mismatch")
+        if required(payload, "environment") != environment:
+            raise ValueError("endpoint environment mismatch")
+        dependencies = payload.get("dependencies")
+        if not isinstance(dependencies, list) or not dependencies:
+            raise ValueError("dependencies required")
+        for dep in dependencies:
+            required(dep, "ecosystem")
+            required(dep, "name")
+            required(dep, "version")
+
+    def record_endpoint_health(self, service_pk: str, collection_status: str, freshness_status: str, error_code: str | None, error_message: str | None, success: bool = False) -> None:
+        now = utcnow()
+        with self.db.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO endpoint_health (
+                    service_pk, collection_status, freshness_status, last_successful_poll_at,
+                    last_error_code, last_error_message, snapshot_age_seconds, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT(service_pk) DO UPDATE SET
+                    collection_status=excluded.collection_status,
+                    freshness_status=excluded.freshness_status,
+                    last_successful_poll_at=excluded.last_successful_poll_at,
+                    last_error_code=excluded.last_error_code,
+                    last_error_message=excluded.last_error_message,
+                    updated_at=excluded.updated_at
+                """,
+                (service_pk, collection_status, freshness_status, now if success else None, error_code, error_message, now),
+            )
 
     def list_advisories(self, query: dict[str, list[str]]) -> list[dict]:
         where = []
@@ -985,6 +1056,27 @@ def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def fetch_json_endpoint(endpoint_url: str, auth_header: str | None = None) -> dict:
+    headers = {"Accept": "application/json"}
+    if auth_header:
+        headers["Authorization"] = auth_header
+    request = Request(endpoint_url, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=10) as response:  # noqa: S310 - user-configured service endpoint test.
+            content_type = response.headers.get("Content-Type", "")
+            if "json" not in content_type:
+                raise ValueError("endpoint did not return JSON")
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            raise PermissionError(f"endpoint returned HTTP {exc.code}") from exc
+        raise ConnectionError(f"endpoint returned HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise ConnectionError(str(exc.reason)) from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError("endpoint returned invalid JSON") from exc
 
 
 def utcnow_after_seconds(seconds: int) -> str:
