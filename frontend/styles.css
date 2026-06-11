@@ -176,6 +176,26 @@ th {
   font-size: 13px;
 }
 
+.service-row {
+  cursor: pointer;
+}
+
+.service-row:hover,
+.service-row.selected {
+  background: #f4f8f9;
+}
+
+.service-detail {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.service-detail h3 {
+  margin: 0;
+}
+
 .filter-bar {
   grid-template-columns: 130px 120px 150px 130px 120px minmax(220px, 1fr) auto auto;
   align-items: end;

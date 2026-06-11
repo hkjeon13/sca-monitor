@@ -11,6 +11,7 @@
 - endpoint test
 - 전체 보안 현황 모니터링
 - service impact 조회
+- service detail: MVP는 Services 화면에서 endpoint health, latest snapshot, dependency summary, service impact 조회 지원
 - impact 상태 변경
 - accepted risk 요청/승인
 - alert channel 설정: MVP는 Settings 화면에서 default webhook channel 등록/조회/default 전환/disable 지원

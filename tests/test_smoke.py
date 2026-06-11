@@ -583,6 +583,35 @@ def test_advisory_import_rematches_existing_latest_snapshot(tmp_path):
     assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
 
 
+def test_service_detail_includes_snapshot_dependencies_and_impacts(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "detail-service",
+            "service_name": "Detail Service",
+            "environment": "prod",
+            "dependencies": [
+                {"ecosystem": "npm", "name": "example-package", "version": "1.0.1", "direct": True},
+                {"ecosystem": "PyPI", "name": "Django_REST.Framework", "version": "3.14.0"},
+            ],
+        }
+    )
+
+    detail = app.get_service_detail("detail-service")
+
+    assert detail["service"]["service_id"] == "detail-service"
+    assert detail["latest_snapshot"]["snapshot_id"].startswith("detail-service-")
+    assert detail["dependency_summary"] == [{"ecosystem": "PyPI", "count": 1}, {"ecosystem": "npm", "count": 1}]
+    assert len(detail["dependencies"]) == 2
+    npm_dep = next(dep for dep in detail["dependencies"] if dep["ecosystem"] == "npm")
+    assert npm_dep["canonical_package_name"] == "example-package"
+    assert npm_dep["direct_dependency"] is True
+    assert len(detail["impacts"]) == 1
+    assert detail["impacts"][0]["advisory_id"] == "OSV-TEST-0001"
+    assert detail["impacts"][0]["risk_level"] == "high"
+
+
 def test_unchanged_advisory_import_does_not_rematch(tmp_path):
     app = make_test_app(tmp_path)
     first = app.import_osv_payload(osv_fixture())

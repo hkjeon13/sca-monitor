@@ -846,11 +846,71 @@ class ScaMonitorApp:
 
     def get_service_detail(self, service_id: str) -> dict:
         with self.db.connect() as conn:
-            service = conn.execute("SELECT * FROM services WHERE service_id = ?", (service_id,)).fetchone()
+            service = conn.execute(
+                """
+                SELECT s.*, eh.collection_status, eh.freshness_status, eh.last_successful_poll_at,
+                       eh.last_error_code, eh.last_error_message, eh.snapshot_age_seconds
+                FROM services s
+                LEFT JOIN endpoint_health eh ON eh.service_pk = s.id
+                WHERE s.service_id = ?
+                ORDER BY s.updated_at DESC
+                LIMIT 1
+                """,
+                (service_id,),
+            ).fetchone()
             if not service:
                 raise ValueError("service not found")
-            impacts = conn.execute("SELECT * FROM impacts WHERE service_pk = ? ORDER BY updated_at DESC", (service["id"],)).fetchall()
-        return {"service": sanitize_service(row_to_dict(service)), "impacts": [row_to_dict(row) for row in impacts]}
+            snapshot = conn.execute(
+                """
+                SELECT id, snapshot_id, schema_version, environment, generated_at, collected_at,
+                       source_type, freshness_status, content_hash, artifact_type, artifact_name,
+                       artifact_digest
+                FROM dependency_snapshots
+                WHERE id = ?
+                """,
+                (service["latest_snapshot_id"],),
+            ).fetchone() if service["latest_snapshot_id"] else None
+            dependencies = conn.execute(
+                """
+                SELECT ecosystem, package_name, canonical_package_name, resolved_version,
+                       package_url, dependency_scope, direct_dependency, source
+                FROM dependencies
+                WHERE snapshot_pk = ?
+                ORDER BY ecosystem, canonical_package_name, resolved_version
+                LIMIT 200
+                """,
+                (snapshot["id"],),
+            ).fetchall() if snapshot else []
+            dependency_summary = conn.execute(
+                """
+                SELECT ecosystem, COUNT(*) AS count
+                FROM dependencies
+                WHERE snapshot_pk = ?
+                GROUP BY ecosystem
+                ORDER BY ecosystem
+                """,
+                (snapshot["id"],),
+            ).fetchall() if snapshot else []
+            impacts = conn.execute(
+                """
+                SELECT i.id, i.package_name, i.resolved_version, i.fixed_version, i.risk_level,
+                       i.risk_reason, i.status, i.first_detected_at, i.last_seen_at,
+                       i.freshness_status, i.alert_suppression_key, i.updated_at,
+                       a.advisory_id, a.source, a.summary, a.is_known_exploited, a.is_malicious_package
+                FROM impacts i
+                JOIN advisories a ON a.id = i.advisory_pk
+                WHERE i.service_pk = ?
+                ORDER BY i.updated_at DESC
+                """,
+                (service["id"],),
+            ).fetchall()
+        return {
+            "service": sanitize_service(row_to_dict(service)),
+            "latest_snapshot": row_to_dict(snapshot),
+            "dependency_summary": [row_to_dict(row) for row in dependency_summary],
+            "dependencies": [sanitize_dependency(row_to_dict(row)) for row in dependencies],
+            "impacts": [sanitize_service_impact(row_to_dict(row)) for row in impacts],
+        }
 
     def push_snapshot(self, body: dict, authorization: str | None = None) -> dict:
         service_id = required(body, "service_id")
@@ -1537,6 +1597,23 @@ def sanitize_audit_log(row: dict | None) -> dict | None:
     sanitized = dict(row)
     sanitized["before"] = parse_json_field(sanitized.pop("before_state", None))
     sanitized["after"] = parse_json_field(sanitized.pop("after_state", None))
+    return sanitized
+
+
+def sanitize_dependency(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    sanitized = dict(row)
+    sanitized["direct_dependency"] = bool(sanitized.get("direct_dependency"))
+    return sanitized
+
+
+def sanitize_service_impact(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    sanitized = dict(row)
+    sanitized["is_known_exploited"] = bool(sanitized.get("is_known_exploited"))
+    sanitized["is_malicious_package"] = bool(sanitized.get("is_malicious_package"))
     return sanitized
 
 

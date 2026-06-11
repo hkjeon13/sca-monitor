@@ -26,6 +26,7 @@ const impactStatuses = [
 ];
 
 let selectedImpactId = null;
+let selectedServiceId = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -54,8 +55,18 @@ async function loadOverview() {
 async function loadServices() {
   const data = await api.get("/api/v1/services");
   document.querySelector("#service-count").textContent = `${data.services.length} registered`;
-  document.querySelector("#services-body").innerHTML = data.services.map((svc) => `
-    <tr>
+  const target = document.querySelector("#services-body");
+  if (!data.services.length) {
+    target.innerHTML = "";
+    selectedServiceId = null;
+    renderServiceDetailEmpty("No services registered.");
+    return;
+  }
+  if (!selectedServiceId || !data.services.some((svc) => svc.service_id === selectedServiceId)) {
+    selectedServiceId = data.services[0].service_id;
+  }
+  target.innerHTML = data.services.map((svc) => `
+    <tr class="service-row ${svc.service_id === selectedServiceId ? "selected" : ""}" data-service-id="${escapeHtml(svc.service_id)}">
       <td><strong>${escapeHtml(svc.service_name)}</strong><br><span>${escapeHtml(svc.service_id)}</span></td>
       <td>${escapeHtml(svc.environment)}</td>
       <td>${escapeHtml(svc.owner_team)}</td>
@@ -63,6 +74,63 @@ async function loadServices() {
       <td>${escapeHtml(svc.open_impacts || 0)}</td>
     </tr>
   `).join("");
+  target.querySelectorAll("[data-service-id]").forEach((row) => {
+    row.addEventListener("click", () => selectService(row.dataset.serviceId));
+  });
+  await loadServiceDetail(selectedServiceId);
+}
+
+async function selectService(serviceId) {
+  selectedServiceId = serviceId;
+  document.querySelectorAll("[data-service-id]").forEach((row) => {
+    row.classList.toggle("selected", row.dataset.serviceId === serviceId);
+  });
+  await loadServiceDetail(serviceId);
+}
+
+function renderServiceDetailEmpty(message) {
+  document.querySelector("#service-detail").innerHTML = `<p>${escapeHtml(message)}</p>`;
+}
+
+async function loadServiceDetail(serviceId) {
+  if (!serviceId) {
+    renderServiceDetailEmpty("No service selected.");
+    return;
+  }
+  const data = await api.get(`/api/v1/services/${encodeURIComponent(serviceId)}`);
+  const service = data.service;
+  const snapshot = data.latest_snapshot;
+  const summary = data.dependency_summary.length
+    ? data.dependency_summary.map((item) => `${item.ecosystem} ${item.count}`).join(" · ")
+    : "no dependencies";
+  const impacts = data.impacts.length
+    ? data.impacts.slice(0, 5).map((impact) => `
+      <li>
+        <strong>${escapeHtml(impact.risk_level)} · ${escapeHtml(impact.package_name)}@${escapeHtml(impact.resolved_version)}</strong>
+        <span>${escapeHtml(impact.advisory_id)} · ${escapeHtml(impact.status)}</span>
+      </li>
+    `).join("")
+    : `<li><span>No impacts recorded.</span></li>`;
+  document.querySelector("#service-detail").innerHTML = `
+    <div class="section-header">
+      <h3>${escapeHtml(service.service_name)}</h3>
+      <span>${escapeHtml(service.environment)}</span>
+    </div>
+    <div class="detail-grid">
+      ${detailRow("Owner", service.owner_team)}
+      ${detailRow("Collection", service.collection_mode)}
+      ${detailRow("Endpoint", service.status_endpoint_url || "-")}
+      ${detailRow("Endpoint Health", `${service.collection_status || "ok"} / ${service.freshness_status || "fresh"}`)}
+      ${detailRow("Snapshot", snapshot ? snapshot.snapshot_id : "-")}
+      ${detailRow("Collected", snapshot ? snapshot.collected_at : "-")}
+      ${detailRow("Dependencies", summary)}
+      ${detailRow("Open Impacts", data.impacts.filter((impact) => ["open", "acknowledged", "in_progress"].includes(impact.status)).length)}
+    </div>
+    <div class="history">
+      <h3>Service Impacts</h3>
+      <ul>${impacts}</ul>
+    </div>
+  `;
 }
 
 async function loadImpacts() {

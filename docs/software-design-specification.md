@@ -1461,6 +1461,7 @@ GET /api/v1/audit-logs
 
 - Overview dashboard: `GET /api/v1/overview` 기반 service/open impact/critical/high/endpoint unhealthy count 표시
 - Services: `GET /api/v1/services` 기반 등록 서비스 목록과 open impact count 표시
+- Service Detail: `GET /api/v1/services/{service_id}`와 Web Console Services 선택 패널에서 endpoint health, latest snapshot, dependency summary, dependency 목록, service impact를 조회한다
 - Service Registration: `POST /api/v1/services` 기반 기본 서비스 등록
 - Endpoint Test: `POST /api/v1/services/{service_id}/endpoint/test` 기반 dependency status endpoint 단건 호출, schema/service/environment/dependency 필수 필드 검증, `endpoint_health` 상태 반영. Web Console에서 등록 폼 입력값으로 test action 제공
 - Endpoint Poll Worker: `scripts/poll_endpoints.py` 기반 등록된 `status_endpoint_url`을 1회 또는 반복 polling하고, 유효한 endpoint payload를 dependency snapshot으로 저장해 impact 매칭까지 수행. `endpoint_poll_state` DB lease로 중복 실행을 차단
@@ -1482,7 +1483,7 @@ GET /api/v1/audit-logs
 
 - role-aware UI와 API 인가 연동
 - accepted risk 승인자/만료일 workflow
-- service detail, 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
+- 외부 endpoint polling scheduler 배치, mTLS/HMAC endpoint auth policy, push credential rotation policy/automation
 - advisory detail
 - impact 고급 필터 UI(service/team/environment/package/advisory 전용 control)와 bulk action
 - Slack app 방식, alert channel hard delete
