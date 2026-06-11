@@ -1365,6 +1365,7 @@ def test_web_console_renders_database_readiness_panel():
     assert 'id="canonicalization-status"' in html
     assert 'name="system_only"' in html
     assert '<option value="resolved">resolved</option>' in html
+    assert 'name="requeue_reason"' in html
     assert "/api/v1/operations/database-readiness" in script
     assert "/api/v1/operations/canonicalization" in script
     assert "/api/v1/operations/canonicalization/apply" in script
@@ -1375,6 +1376,8 @@ def test_web_console_renders_database_readiness_panel():
     assert "renderAlertEventPayloadDetails" in script
     assert "event.payload" in script
     assert "JSON.stringify(payload, null, 2)" in script
+    assert "alertEventRequeueReason" in script
+    assert "form.requeue_reason" in script
     assert "renderDatabaseReadiness" in script
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script

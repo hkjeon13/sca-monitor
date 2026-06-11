@@ -689,7 +689,7 @@ document.querySelector("#bulk-requeue-alert-events").addEventListener("click", a
     q: form.q,
     limit: form.limit,
     actor: "web-console",
-    reason: "bulk requeue from web console",
+    reason: alertEventRequeueReason(form, "bulk requeue from web console"),
   });
   await Promise.all([loadAlertEvents(), loadOverview()]);
   document.querySelector("#alert-event-list").insertAdjacentHTML(
@@ -978,9 +978,10 @@ async function loadAlertEvents() {
   `).join("");
   target.querySelectorAll("[data-alert-requeue]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const form = Object.fromEntries(new FormData(document.querySelector("#alert-event-filter-form")).entries());
       await api.send(`/api/v1/alert-events/${encodeURIComponent(button.dataset.alertRequeue)}/requeue`, "POST", {
         actor: "web-console",
-        reason: "manual requeue",
+        reason: alertEventRequeueReason(form, "manual requeue"),
       });
       await Promise.all([loadAlertEvents(), loadAuditLogs(), loadOverview()]);
     });
@@ -1035,12 +1036,17 @@ function alertEventFilterQuery() {
   const form = document.querySelector("#alert-event-filter-form");
   const params = new URLSearchParams();
   for (const [key, value] of new FormData(form).entries()) {
+    if (key === "requeue_reason") continue;
     if (String(value).trim()) {
       params.set(key, String(value).trim());
     }
   }
   if (!params.has("limit")) params.set("limit", "10");
   return params.toString();
+}
+
+function alertEventRequeueReason(form, fallback) {
+  return String(form.requeue_reason || "").trim() || fallback;
 }
 
 async function loadAuditLogs() {
