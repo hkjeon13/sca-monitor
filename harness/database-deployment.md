@@ -240,6 +240,16 @@ scripts/deploy_remote.sh
 
 이 모드는 `validate_database_env_file.py`, `database_env_dry_run_gate.py`, `cutover_readiness_report.py`를 실행한 뒤 종료한다.
 placeholder가 남아 있거나 split PostgreSQL 준비도가 부족하면 blocked 결과를 출력하고 배포를 중단한다.
+placeholder template이 차단되는 상태를 자동화 증적으로 남기는 것이 목적이면 expected-blocked 모드를 사용한다.
+
+```bash
+SCA_MONITOR_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY=true \
+SCA_MONITOR_DATABASE_ENV_PREFLIGHT_EXPECT=blocked \
+scripts/deploy_remote.sh
+```
+
+이 모드는 `database_env_dry_run_gate.py --expect-status blocked`가 기대한 차단을 확인하면 0으로 종료하고 runtime에는 아무 변경도 하지 않는다.
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.

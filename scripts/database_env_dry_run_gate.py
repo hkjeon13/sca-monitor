@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
         "--database-env-file",
         help="Optional PostgreSQL .env-style file to validate; omitted uses a synthetic split credential file.",
     )
+    parser.add_argument(
+        "--expect-status",
+        choices=("ok", "action_required", "blocked"),
+        help="Treat the command as successful only when the dry-run result has this status.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -105,6 +110,9 @@ def dry_run(database_env_file: Path | None) -> dict[str, Any]:
 def main() -> int:
     args = parse_args()
     result = dry_run(Path(args.database_env_file) if args.database_env_file else None)
+    if args.expect_status:
+        result["expected_status"] = args.expect_status
+        result["expectation_met"] = result["status"] == args.expect_status
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
@@ -112,6 +120,10 @@ def main() -> int:
         print(f"- validator: {result['validator']['status']}")
         print(f"- configure: {result['configure']['status']}")
         print(f"- deployment readiness: {result['deployment_readiness']['status']}")
+        if args.expect_status:
+            print(f"- expected status: {args.expect_status}")
+    if args.expect_status:
+        return 0 if result["expectation_met"] else 2
     return 2 if result["status"] == "blocked" else 0
 
 

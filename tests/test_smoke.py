@@ -1952,6 +1952,33 @@ def test_database_env_dry_run_gate_rejects_placeholder_template_without_leaking_
     assert "<password>" not in result.stdout
 
 
+def test_database_env_dry_run_gate_allows_expected_blocked_placeholder_without_leaking_urls():
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/database_env_dry_run_gate.py",
+            "--database-env-file",
+            "deploy/postgres.env.example",
+            "--expect-status",
+            "blocked",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["expected_status"] == "blocked"
+    assert payload["expectation_met"] is True
+    assert payload["validator"]["status"] == "blocked"
+    assert any(check["id"] == "placeholder_values" and check["status"] == "blocker" for check in payload["validator"]["checks"])
+    assert "postgresql://<migration_user>" not in result.stdout
+    assert "<password>" not in result.stdout
+
+
 def test_advisory_source_preflight_lists_required_outbound_domains():
     result = subprocess.run(
         ["python3", "scripts/advisory_source_preflight.py", "--list-only", "--json"],
@@ -2465,6 +2492,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in script
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN" in script
     assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY" in script
+    assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_EXPECT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
@@ -2481,6 +2509,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
     assert "scripts/database_env_dry_run_gate.py --database-env-file" in script
+    assert "--expect-status" in script
+    assert "database env preflight matched expected status: blocked" in script
     assert "database env preflight completed; deployment stopped before runtime changes" in script
     assert "scripts/advisory_source_preflight.py --check" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
@@ -2534,6 +2564,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY=true" in database_doc
+    assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_EXPECT=blocked" in database_doc
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION=required" in database_doc
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE=required" in database_doc
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
