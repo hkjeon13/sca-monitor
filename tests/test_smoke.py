@@ -977,6 +977,62 @@ def test_postgres_integration_smoke_can_skip_migrate_and_write(monkeypatch):
     assert calls == {"migrate": 0, "write_check": False}
 
 
+def test_postgres_production_preflight_checks_split_roles(monkeypatch):
+    import scripts.postgres_integration_smoke as pg_smoke
+
+    calls = []
+
+    def fake_run_postgres_smoke(database_url, *, migrate=True, write_check=True):
+        calls.append({"database_url": database_url, "migrate": migrate, "write_check": write_check})
+        return {"status": "ok", "database_url": database_url}
+
+    monkeypatch.setattr(pg_smoke, "run_postgres_smoke", fake_run_postgres_smoke)
+
+    result = pg_smoke.run_production_preflight(
+        {
+            "MIGRATION_DATABASE_URL": "postgresql://migrator/db",
+            "API_DATABASE_URL": "postgresql://api/db",
+            "WORKER_DATABASE_URL": "postgresql://worker/db",
+        }
+    )
+
+    assert result["status"] == "ok"
+    assert calls == [
+        {"database_url": "postgresql://migrator/db", "migrate": True, "write_check": True},
+        {"database_url": "postgresql://api/db", "migrate": False, "write_check": False},
+        {"database_url": "postgresql://worker/db", "migrate": False, "write_check": False},
+    ]
+
+
+def test_postgres_production_preflight_fails_when_role_urls_missing():
+    from scripts.postgres_integration_smoke import run_production_preflight
+
+    result = run_production_preflight({"MIGRATION_DATABASE_URL": "sqlite:///tmp/sca.sqlite3"})
+
+    assert result["status"] == "failed"
+    assert result["checks"]["migration"]["status"] == "failed"
+    assert "MIGRATION_DATABASE_URL is not PostgreSQL" in result["checks"]["migration"]["error"]
+    assert result["checks"]["api"]["status"] == "failed"
+    assert "API_DATABASE_URL is not configured" in result["checks"]["api"]["error"]
+    assert result["checks"]["worker"]["status"] == "failed"
+
+
+def test_postgres_production_preflight_cli_fails_without_split_urls(tmp_path):
+    result = subprocess.run(
+        ["python3", "scripts/postgres_integration_smoke.py", "--production-preflight", "--json"],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"], "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "failed"
+    assert set(payload["checks"]) == {"migration", "api", "worker"}
+
+
 def test_postgres_integration_api_workflow_smoke_uses_app_flow(tmp_path):
     from scripts.postgres_integration_smoke import run_api_workflow_smoke
 

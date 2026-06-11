@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -87,6 +88,36 @@ def run_postgres_smoke(database_url: str, *, migrate: bool = True, write_check: 
     return run_smoke(database, write_check=write_check)
 
 
+def is_postgres_url(value: str | None) -> bool:
+    return bool(value and value.startswith(("postgres://", "postgresql://")))
+
+
+def run_production_preflight(env: dict[str, str]) -> dict[str, Any]:
+    urls = {
+        "migration": env.get("MIGRATION_DATABASE_URL", ""),
+        "api": env.get("API_DATABASE_URL", ""),
+        "worker": env.get("WORKER_DATABASE_URL", ""),
+    }
+    result: dict[str, Any] = {"status": "ok", "checks": {}}
+    for role, url in urls.items():
+        if not url:
+            result["checks"][role] = {"status": "failed", "error": f"{role.upper()}_DATABASE_URL is not configured"}
+            continue
+        if not is_postgres_url(url):
+            result["checks"][role] = {"status": "failed", "error": f"{role.upper()}_DATABASE_URL is not PostgreSQL"}
+            continue
+        try:
+            if role == "migration":
+                result["checks"][role] = run_postgres_smoke(url, migrate=True, write_check=True)
+            else:
+                result["checks"][role] = run_postgres_smoke(url, migrate=False, write_check=False)
+        except Exception as exc:  # noqa: BLE001 - preflight output should keep checking other roles.
+            result["checks"][role] = {"status": "failed", "error": exc.__class__.__name__, "detail": str(exc)}
+    if any(check.get("status") != "ok" for check in result["checks"].values()):
+        result["status"] = "failed"
+    return result
+
+
 def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
     app = ScaMonitorApp(
         Settings(
@@ -146,6 +177,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--with-api-workflow", action="store_true", help="Run a service registration and snapshot push workflow through ScaMonitorApp.")
     parser.add_argument("--skip-migrate", action="store_true", help="Do not run migrations before DB smoke.")
     parser.add_argument("--read-only", action="store_true", help="Skip transactional write/rollback check.")
+    parser.add_argument(
+        "--production-preflight",
+        action="store_true",
+        help="Validate MIGRATION/API/WORKER PostgreSQL URLs as a split-credential production cutover preflight.",
+    )
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
 
@@ -154,20 +190,25 @@ def main() -> int:
     args = parse_args()
     container_name = None
     try:
-        database_url = args.database_url
-        if not database_url:
-            if not args.use_docker:
-                result = {
-                    "status": "skipped",
-                    "reason": "provide --database-url or --use-docker to run PostgreSQL integration smoke",
-                }
-                print(json.dumps(result, indent=2) if args.json else result["reason"])
-                return 0
-            container_name, database_url = start_postgres_container(args)
-        result = run_postgres_smoke(database_url, migrate=not args.skip_migrate, write_check=not args.read_only)
-        if result["status"] == "ok" and args.with_api_workflow:
-            result["api_workflow"] = run_api_workflow_smoke(database_url)
-        result["database_url_source"] = "docker" if container_name else "provided"
+        if args.production_preflight:
+            result = run_production_preflight(os.environ)
+            container_name = None
+            database_url = None
+        else:
+            database_url = args.database_url
+            if not database_url:
+                if not args.use_docker:
+                    result = {
+                        "status": "skipped",
+                        "reason": "provide --database-url or --use-docker to run PostgreSQL integration smoke",
+                    }
+                    print(json.dumps(result, indent=2) if args.json else result["reason"])
+                    return 0
+                container_name, database_url = start_postgres_container(args)
+            result = run_postgres_smoke(database_url, migrate=not args.skip_migrate, write_check=not args.read_only)
+            if result["status"] == "ok" and args.with_api_workflow:
+                result["api_workflow"] = run_api_workflow_smoke(database_url)
+            result["database_url_source"] = "docker" if container_name else "provided"
     except Exception as exc:  # noqa: BLE001 - smoke output should expose exact integration blocker.
         result = {"status": "failed", "error": exc.__class__.__name__, "detail": str(exc)}
     finally:
@@ -181,6 +222,8 @@ def main() -> int:
         print(f"postgres smoke ok: migration={migration['current']}/{migration['required']}")
     elif result["status"] == "skipped":
         print(f"postgres smoke skipped: {result['reason']}")
+    elif args.production_preflight:
+        print("postgres production preflight failed", file=sys.stderr)
     else:
         print(f"postgres smoke failed: {result.get('error')} {result.get('detail', '')}", file=sys.stderr)
     return 0 if result["status"] in {"ok", "skipped"} else 2

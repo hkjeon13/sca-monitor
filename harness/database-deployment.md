@@ -125,6 +125,7 @@ curl -fsS "$PUBLIC_URL/api/v1/operations/database-readiness"
 ```bash
 python3 scripts/postgres_cutover_readiness.py --json
 python3 scripts/postgres_cutover_readiness.py --require-postgres --require-split --json
+python3 scripts/postgres_integration_smoke.py --production-preflight --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
 python3 scripts/postgres_integration_smoke.py --use-docker --with-api-workflow --json
@@ -136,6 +137,7 @@ bash scripts/deploy_db_gate.sh
 `--with-api-workflow`는 synthetic service 등록과 snapshot push까지 실행하므로 CI 또는 stage DB에서 사용하고, 운영 DB에서는 승인된 synthetic service 정책이 있을 때만 사용한다.
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
 `MIGRATION_DATABASE_URL`이 설정되면 migration owner URL로 migration smoke를 실행하고, `API_DATABASE_URL`은 `--skip-migrate` runtime smoke, `WORKER_DATABASE_URL`은 `--skip-migrate --read-only` smoke로 분리 검증한다.
+`--production-preflight`는 split credential 운영 전환 직전에 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`을 한 번에 검증한다. migration role은 migration과 transactional write/rollback smoke를 수행하고, API/worker role은 migrate 없이 read-only schema smoke만 수행한다.
 `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required`이면 `deploy_db_gate.sh`는 smoke 실행 전에 `scripts/postgres_cutover_readiness.py --require-postgres`를 stop gate로 실행한다.
 runtime auto-migrate를 끈 환경에서는 이 migration/gate 단계가 API/worker 시작 전 필수 stop gate이다.
 
