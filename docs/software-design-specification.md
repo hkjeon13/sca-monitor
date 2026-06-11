@@ -1580,8 +1580,10 @@ PATCH /api/v1/impacts/{impact_id}/status
 서버가 인증된 principal과 역할 검증 결과를 기준으로 저장한다.
 `accepted_risk` 처리는 `security-approver` 역할만 수행할 수 있으며, `service-owner`는 자기 서비스 impact의 acknowledge와 in-progress 전환만 수행할 수 있다.
 
-현재 MVP는 인증/인가 계층이 없으므로 request body의 `actor`를 인증 principal 대체값으로 `approved_by`에 저장한다.
-role-aware 검증과 운영 scheduler 등록은 후속 구현 범위이다.
+현재 MVP는 `SCA_MONITOR_AUTH_MODE=header`에서 trusted gateway가 주입한 `X-SCA-Principal`, `X-SCA-Roles`, `X-SCA-Owner-Teams` 헤더를 기준으로 impact workflow API의 role-aware 인가를 수행한다.
+이 모드에서 서버는 request body의 `actor`를 신뢰하지 않고 인증 principal을 `actor`와 accepted risk `approved_by`로 저장한다.
+`accepted_risk` 처리는 `security-approver` 역할만 허용하고, `service-owner`는 `X-SCA-Owner-Teams`에 포함된 자기 팀 impact의 `acknowledged`, `in_progress` 전환만 수행할 수 있다.
+OIDC/JWT 검증과 Web Console role-aware UI 제어, 운영 scheduler 등록은 후속 구현 범위이다.
 
 ## 16. Version Matching and Package Normalization
 

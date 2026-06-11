@@ -1,5 +1,10 @@
 import json
+import threading
 import zipfile
+from contextlib import contextmanager
+from http.server import ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -726,6 +731,117 @@ def test_accepted_risk_records_approval_and_revokes_on_status_change(tmp_path):
     assert row["revoked_at"] is not None
 
 
+def test_header_auth_uses_principal_for_accepted_risk_approval(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    create_alerting_impact(app)
+    impact_id = app.list_impacts({})[0]["id"]
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/impacts/{impact_id}/status",
+            method="PATCH",
+            body={
+                "status": "accepted_risk",
+                "actor": "spoofed-client",
+                "reason": "compensating control",
+                "expires_at": "2026-07-10T00:00:00Z",
+            },
+            headers={"X-SCA-Principal": "service-owner-a", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"},
+            expect_status=403,
+        )
+        assert "security-approver" in forbidden["error"]
+
+        result = http_json(
+            f"{base_url}/api/v1/impacts/{impact_id}/status",
+            method="PATCH",
+            body={
+                "status": "accepted_risk",
+                "actor": "spoofed-client",
+                "reason": "compensating control",
+                "expires_at": "2026-07-10T00:00:00Z",
+            },
+            headers={"X-SCA-Principal": "approver@example.test", "X-SCA-Roles": "security-approver"},
+        )
+
+    assert result["accepted_risk"]["approved_by"] == "approver@example.test"
+    assert app.get_impact(impact_id)["history"][0]["actor"] == "approver@example.test"
+
+
+def test_header_auth_service_owner_can_only_update_owned_impact(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "owned-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    app.push_snapshot(
+        {
+            "service_id": "other-service",
+            "environment": "prod",
+            "owner_team": "billing",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    owned_impact_id = app.list_impacts({"service_id": ["owned-service"]})[0]["id"]
+    other_impact_id = app.list_impacts({"service_id": ["other-service"]})[0]["id"]
+    headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+
+    with run_test_server(app) as base_url:
+        result = http_json(
+            f"{base_url}/api/v1/impacts/{owned_impact_id}/status",
+            method="PATCH",
+            body={"status": "acknowledged", "actor": "spoofed-client", "reason": "owned triage"},
+            headers=headers,
+        )
+        forbidden = http_json(
+            f"{base_url}/api/v1/impacts/{other_impact_id}/status",
+            method="PATCH",
+            body={"status": "acknowledged", "reason": "wrong team"},
+            headers=headers,
+            expect_status=403,
+        )
+
+    assert result["status"] == "acknowledged"
+    assert app.get_impact(owned_impact_id)["history"][0]["actor"] == "owner@example.test"
+    assert "not authorized" in forbidden["error"]
+
+
+def test_header_auth_service_owner_bulk_requires_owned_team_filter(tmp_path):
+    app = make_test_app(tmp_path, auth_mode="header")
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "owned-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    headers = {"X-SCA-Principal": "owner@example.test", "X-SCA-Roles": "service-owner", "X-SCA-Owner-Teams": "platform"}
+
+    with run_test_server(app) as base_url:
+        forbidden = http_json(
+            f"{base_url}/api/v1/impacts/status",
+            method="POST",
+            body={"target_status": "acknowledged", "filters": {"service_id": "owned-service"}, "reason": "missing owner_team"},
+            headers=headers,
+            expect_status=403,
+        )
+        result = http_json(
+            f"{base_url}/api/v1/impacts/status",
+            method="POST",
+            body={"target_status": "acknowledged", "filters": {"owner_team": "platform"}, "reason": "owned bulk"},
+            headers=headers,
+        )
+
+    assert "not authorized" in forbidden["error"]
+    assert result["updated"] == 1
+
+
 def test_expire_accepted_risks_reopens_due_impacts_and_audits(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)
@@ -1308,7 +1424,7 @@ def test_dispatch_alert_batches_repeats_with_sleep(tmp_path):
     assert len(delivered) == 1
 
 
-def make_test_app(tmp_path):
+def make_test_app(tmp_path, auth_mode="disabled"):
     settings = Settings(
         app_env="test",
         host="127.0.0.1",
@@ -1318,8 +1434,40 @@ def make_test_app(tmp_path):
         database_path=tmp_path / "sca-monitor.sqlite3",
         frontend_dir=tmp_path,
         smoke_token="test",
+        auth_mode=auth_mode,
     )
     return ScaMonitorApp(settings)
+
+
+@contextmanager
+def run_test_server(app):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), app.handler())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def http_json(url, *, method="GET", body=None, headers=None, expect_status=200):
+    payload = None if body is None else json.dumps(body).encode("utf-8")
+    request = Request(url, data=payload, method=method)
+    request.add_header("Accept", "application/json")
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    try:
+        with urlopen(request, timeout=5) as response:  # noqa: S310 - local test server.
+            assert response.status == expect_status
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        assert exc.code == expect_status
+        return json.loads(exc.read().decode("utf-8"))
 
 
 def write_osv_fixture_zip(tmp_path):

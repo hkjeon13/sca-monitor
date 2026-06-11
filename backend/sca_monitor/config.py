@@ -15,6 +15,7 @@ class Settings:
     database_path: Path
     frontend_dir: Path
     smoke_token: str
+    auth_mode: str = "disabled"
 
 
 def load_settings() -> Settings:
@@ -35,4 +36,5 @@ def load_settings() -> Settings:
         database_path=legacy_database_path,
         frontend_dir=frontend_dir,
         smoke_token=os.getenv("SMOKE_TEST_TOKEN", "dev-smoke-token"),
+        auth_mode=os.getenv("SCA_MONITOR_AUTH_MODE", "disabled"),
     )

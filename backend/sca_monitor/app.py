@@ -137,7 +137,10 @@ class ScaMonitorApp:
             if path == "/api/v1/impacts" and method == "GET":
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
             if path == "/api/v1/impacts/status" and method == "POST":
-                return self.json_response(request, self.bulk_update_impact_status(self.read_json(request)))
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_bulk_impact_status(body, auth_context)
+                return self.json_response(request, self.bulk_update_impact_status(self.apply_authenticated_actor(body, auth_context)))
             if path == "/api/v1/alert-events" and method == "GET":
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events/requeue" and method == "POST":
@@ -149,7 +152,10 @@ class ScaMonitorApp:
                 return self.json_response(request, self.get_impact(impact_id))
             if path.startswith("/api/v1/impacts/") and path.endswith("/status") and method == "PATCH":
                 impact_id = path.split("/")[-2]
-                return self.json_response(request, self.update_impact_status(impact_id, self.read_json(request)))
+                body = self.read_json(request)
+                auth_context = self.auth_context(request)
+                self.authorize_impact_status(impact_id, body, auth_context)
+                return self.json_response(request, self.update_impact_status(impact_id, self.apply_authenticated_actor(body, auth_context)))
             if path.startswith("/api/v1/alert-events/") and path.endswith("/requeue") and method == "POST":
                 alert_event_id = path.split("/")[-2]
                 return self.json_response(request, self.requeue_alert_event(alert_event_id, self.read_json(request)))
@@ -203,6 +209,80 @@ class ScaMonitorApp:
             request.send_header("Cache-Control", "public, max-age=31536000, immutable")
         request.end_headers()
         request.wfile.write(payload)
+
+    def auth_context(self, request: BaseHTTPRequestHandler) -> dict:
+        mode = (self.settings.auth_mode or "disabled").lower()
+        if mode in {"disabled", "off", "none"}:
+            return {"enabled": False, "principal": None, "roles": set(), "owner_teams": set()}
+        if mode != "header":
+            raise PermissionError(f"auth mode is not implemented: {mode}")
+        principal = normalize_optional(request.headers.get("X-SCA-Principal"))
+        if not principal:
+            raise PermissionError("missing authenticated principal")
+        roles = parse_csv_header(request.headers.get("X-SCA-Roles"))
+        if not roles:
+            raise PermissionError("missing authenticated roles")
+        return {
+            "enabled": True,
+            "principal": principal,
+            "roles": roles,
+            "owner_teams": parse_csv_header(request.headers.get("X-SCA-Owner-Teams")),
+        }
+
+    def apply_authenticated_actor(self, body: dict, auth_context: dict) -> dict:
+        if not auth_context.get("enabled"):
+            return body
+        updated = dict(body)
+        updated["actor"] = auth_context["principal"]
+        return updated
+
+    def authorize_impact_status(self, impact_id: str, body: dict, auth_context: dict) -> None:
+        if not auth_context.get("enabled"):
+            return
+        status = required(body, "status")
+        if status == "accepted_risk":
+            self.require_role(auth_context, {"security-approver"}, "accepted_risk requires security-approver role")
+            return
+        if "admin" in auth_context["roles"] or "security-approver" in auth_context["roles"]:
+            return
+        if status in {"acknowledged", "in_progress"} and "service-owner" in auth_context["roles"]:
+            owner_team = self.impact_owner_team(impact_id)
+            if owner_team in auth_context["owner_teams"]:
+                return
+        raise PermissionError("principal is not authorized to update this impact status")
+
+    def authorize_bulk_impact_status(self, body: dict, auth_context: dict) -> None:
+        if not auth_context.get("enabled"):
+            return
+        target_status = required(body, "target_status")
+        roles = auth_context["roles"]
+        if "admin" in roles or "security-approver" in roles:
+            return
+        if target_status in {"acknowledged", "in_progress"}:
+            filters = body.get("filters") or {}
+            owner_team = normalize_optional(filters.get("owner_team")) if isinstance(filters, dict) else None
+            if "service-owner" in roles and owner_team in auth_context["owner_teams"]:
+                return
+        raise PermissionError("principal is not authorized to bulk update impact status")
+
+    def require_role(self, auth_context: dict, allowed_roles: set[str], message: str) -> None:
+        if not auth_context["roles"].intersection(allowed_roles):
+            raise PermissionError(message)
+
+    def impact_owner_team(self, impact_id: str) -> str | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT s.owner_team
+                FROM impacts i
+                JOIN services s ON s.id = i.service_pk
+                WHERE i.id = ?
+                """,
+                (impact_id,),
+            ).fetchone()
+        if not row:
+            raise ValueError("impact not found")
+        return row["owner_team"]
 
     def overview(self) -> dict:
         active_status_filter = ",".join("?" for _ in ACTIVE_IMPACT_STATUSES)
@@ -2024,6 +2104,12 @@ def bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(number, maximum))
+
+
+def parse_csv_header(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
 
 
 def hash_token(token: str) -> str:

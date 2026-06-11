@@ -37,6 +37,7 @@ SCA_MONITOR_DATABASE_URL=sqlite:////data/psyche/Projects/sca-monitor/.data/sca-m
 ### API Server
 
 ```text
+SCA_MONITOR_AUTH_MODE
 SESSION_SECRET or JWT_SECRET
 OIDC_AUTHORITY
 OIDC_CLIENT_ID
@@ -46,6 +47,17 @@ CORS_ALLOWED_ORIGINS
 ```
 
 `CORS_ALLOWED_ORIGINS`는 frontend와 API가 split domain일 때만 필수이다.
+
+현재 구현된 API 인가 첫 단계는 `SCA_MONITOR_AUTH_MODE=header`이다.
+이 모드에서는 신뢰된 reverse proxy 또는 gateway가 다음 헤더를 주입해야 한다.
+
+```text
+X-SCA-Principal: user@example.com
+X-SCA-Roles: admin,service-owner,security-approver
+X-SCA-Owner-Teams: platform-security,billing
+```
+
+`SCA_MONITOR_AUTH_MODE` 기본값은 `disabled`이며, 운영에서 `header`를 사용할 경우 public 인터넷에서 클라이언트가 임의 헤더를 직접 주입할 수 없도록 proxy에서 외부 입력 헤더를 제거하고 인증 후 재주입해야 한다.
 
 ### Worker
 
