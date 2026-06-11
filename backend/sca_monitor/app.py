@@ -127,6 +127,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.search_impacts(parse_qs(parsed.query)))
             if path == "/api/v1/alert-events" and method == "GET":
                 return self.json_response(request, self.search_alert_events(parse_qs(parsed.query)))
+            if path == "/api/v1/alert-events/requeue" and method == "POST":
+                return self.json_response(request, self.bulk_requeue_alert_events(self.read_json(request)))
             if path.startswith("/api/v1/impacts/") and method == "GET":
                 impact_id = path.split("/")[-1]
                 return self.json_response(request, self.get_impact(impact_id))
@@ -1245,6 +1247,32 @@ class ScaMonitorApp:
         result = row_to_dict(updated)
         result["payload"] = json.loads(result["payload"] or "{}")
         return {"alert_event": result}
+
+    def bulk_requeue_alert_events(self, body: dict) -> dict:
+        status = body.get("status", "dead_letter")
+        if status != "dead_letter":
+            raise ValueError("bulk requeue only supports dead_letter alert events")
+        limit = bounded_int(body.get("limit"), default=100, minimum=1, maximum=100)
+        query = {"status": ["dead_letter"], "limit": [str(limit)], "offset": ["0"]}
+        if search := str(body.get("q", "")).strip():
+            query["q"] = [search]
+        page = self.search_alert_events(query)
+        requeued = []
+        for event in page["alert_events"]:
+            result = self.requeue_alert_event(
+                event["id"],
+                {
+                    "actor": body.get("actor", "operator"),
+                    "reason": body.get("reason", "bulk requeue dead-letter alerts"),
+                },
+            )
+            requeued.append(result["alert_event"])
+        return {
+            "requeued": len(requeued),
+            "matched": page["pagination"]["total"],
+            "limit": limit,
+            "alert_events": requeued,
+        }
 
     def metrics(self) -> str:
         overview = self.overview()

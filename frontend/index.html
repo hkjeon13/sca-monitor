@@ -210,6 +210,28 @@
           </div>
           <div>
             <h2>Alert Events</h2>
+            <form id="alert-event-filter-form" class="compact-filter">
+              <label>Status
+                <select name="status">
+                  <option value="">Any</option>
+                  <option value="pending">pending</option>
+                  <option value="dispatching">dispatching</option>
+                  <option value="sent">sent</option>
+                  <option value="failed">failed</option>
+                  <option value="dead_letter">dead_letter</option>
+                </select>
+              </label>
+              <label>Limit
+                <select name="limit">
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <label>Search<input name="q" placeholder="service, package, advisory" /></label>
+              <button type="submit">Apply</button>
+              <button type="button" id="bulk-requeue-alert-events" class="secondary">Requeue Dead Letters</button>
+            </form>
             <div id="alert-event-list" class="credential-list"></div>
           </div>
         </section>

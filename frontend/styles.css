@@ -183,6 +183,17 @@ th {
   margin-bottom: 14px;
 }
 
+.compact-filter {
+  grid-template-columns: minmax(110px, 0.8fr) minmax(90px, 0.6fr) minmax(180px, 1.2fr);
+  align-items: end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.compact-filter button {
+  width: 100%;
+}
+
 .impact-list {
   display: grid;
   gap: 10px;
@@ -395,7 +406,8 @@ pre {
   .impact-workspace,
   .detail-grid,
   .status-form,
-  .filter-bar {
+  .filter-bar,
+  .compact-filter {
     grid-template-columns: 1fr;
   }
 

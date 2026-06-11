@@ -843,6 +843,51 @@ def test_requeue_dead_letter_alert_event(tmp_path):
     assert result["alert_event"]["payload"]["requeue_reason"] == "target fixed"
 
 
+def test_bulk_requeue_dead_letter_alert_events_filters_and_limits(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        max_retries=1,
+        sender=lambda url, payload, headers: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+    )
+    with app.db.connect() as conn:
+        original = conn.execute("SELECT * FROM alert_events").fetchone()
+        clone = dict(original)
+        clone["id"] = "dead-letter-secondary"
+        clone["reason"] = "secondary delivery failure"
+        columns = list(clone.keys())
+        conn.execute(
+            f"INSERT INTO alert_events ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            tuple(clone[column] for column in columns),
+        )
+
+    result = app.bulk_requeue_alert_events(
+        {
+            "q": "secondary",
+            "actor": "security",
+            "reason": "target fixed",
+            "limit": 10,
+        }
+    )
+
+    assert result["matched"] == 1
+    assert result["requeued"] == 1
+    assert result["alert_events"][0]["id"] == "dead-letter-secondary"
+    with app.db.connect() as conn:
+        statuses = {row["id"]: row["status"] for row in conn.execute("SELECT id, status FROM alert_events").fetchall()}
+    assert statuses["dead-letter-secondary"] == "pending"
+    assert [status for event_id, status in statuses.items() if event_id != "dead-letter-secondary"] == ["dead_letter"]
+
+
+def test_bulk_requeue_rejects_non_dead_letter_status(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with pytest.raises(ValueError, match="bulk requeue only supports dead_letter"):
+        app.bulk_requeue_alert_events({"status": "pending"})
+
+
 def test_search_alert_events_lists_and_filters(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

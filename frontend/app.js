@@ -241,6 +241,27 @@ document.querySelector("#clear-impact-filters").addEventListener("click", async 
   await loadImpacts();
 });
 
+document.querySelector("#alert-event-filter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await loadAlertEvents();
+});
+
+document.querySelector("#bulk-requeue-alert-events").addEventListener("click", async () => {
+  const form = Object.fromEntries(new FormData(document.querySelector("#alert-event-filter-form")).entries());
+  const data = await api.send("/api/v1/alert-events/requeue", "POST", {
+    status: "dead_letter",
+    q: form.q,
+    limit: form.limit,
+    actor: "web-console",
+    reason: "bulk requeue from web console",
+  });
+  await Promise.all([loadAlertEvents(), loadOverview()]);
+  document.querySelector("#alert-event-list").insertAdjacentHTML(
+    "afterbegin",
+    `<p><strong>${escapeHtml(data.requeued)} dead-letter events requeued.</strong></p>`,
+  );
+});
+
 document.querySelector("#service-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -386,9 +407,10 @@ async function loadAlertChannels() {
 async function loadAlertEvents() {
   const target = document.querySelector("#alert-event-list");
   if (!target) return;
-  const data = await api.get("/api/v1/alert-events?limit=10");
+  const query = alertEventFilterQuery();
+  const data = await api.get(`/api/v1/alert-events?${query}`);
   if (!data.alert_events.length) {
-    target.innerHTML = `<p>No alert events recorded.</p>`;
+    target.innerHTML = `<p>No alert events match the selected filters.</p>`;
     return;
   }
   target.innerHTML = data.alert_events.map((event) => `
@@ -409,6 +431,18 @@ async function loadAlertEvents() {
       await Promise.all([loadAlertEvents(), loadOverview()]);
     });
   });
+}
+
+function alertEventFilterQuery() {
+  const form = document.querySelector("#alert-event-filter-form");
+  const params = new URLSearchParams();
+  for (const [key, value] of new FormData(form).entries()) {
+    if (String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  if (!params.has("limit")) params.set("limit", "10");
+  return params.toString();
 }
 
 loadImpactFiltersFromUrl();

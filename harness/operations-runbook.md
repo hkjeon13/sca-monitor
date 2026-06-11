@@ -134,9 +134,9 @@ python3 scripts/requeue_alerts.py --all --limit 20 --actor operator --reason "we
 python3 scripts/requeue_alerts.py --alert-event-id <alert_event_id> --actor operator --reason "manual retry"
 ```
 
-Web Console Settings 화면에서도 최근 alert event와 dead-letter requeue action을 확인할 수 있다.
+Web Console Settings 화면에서도 status/search/limit 기반 alert event 조회와 dead-letter 단건/일괄 requeue action을 확인할 수 있다.
 
-Slack app 방식과 dead-letter bulk UI는 후속 구현 대상이다.
+Slack app 방식은 후속 구현 대상이다.
 
 ## 4. 운영자 수동 작업
 
