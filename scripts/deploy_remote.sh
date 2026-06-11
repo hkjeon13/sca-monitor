@@ -16,6 +16,10 @@ DATABASE_ENV_DRY_RUN="${SCA_MONITOR_DATABASE_ENV_DRY_RUN:-disabled}"
 ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
 ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
 BOOTSTRAP_READINESS="${SCA_MONITOR_BOOTSTRAP_READINESS:-disabled}"
+POST_DEPLOY_HTTP_SMOKE="${SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE:-auto}"
+EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
+EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
+EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
 
 ssh "$REMOTE" "set -euo pipefail
   cd '$REMOTE_DIR'
@@ -81,6 +85,10 @@ ssh "$REMOTE" "set -euo pipefail
   ADVISORY_SOURCE_PREFLIGHT='$ADVISORY_SOURCE_PREFLIGHT'
   ADVISORY_SOURCE_PREFLIGHT_TIMEOUT='$ADVISORY_SOURCE_PREFLIGHT_TIMEOUT'
   BOOTSTRAP_READINESS='$BOOTSTRAP_READINESS'
+  POST_DEPLOY_HTTP_SMOKE='$POST_DEPLOY_HTTP_SMOKE'
+  EXPECT_POSTGRES_SPLIT_REQUIRED='$EXPECT_POSTGRES_SPLIT_REQUIRED'
+  EXPECT_ADVISORY_SYNC_READY='$EXPECT_ADVISORY_SYNC_READY'
+  EXPECT_DATABASE_BACKEND='$EXPECT_DATABASE_BACKEND'
   if [ -n \"\$SYSTEMD_MODE_OVERRIDE\" ]; then
     SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE_OVERRIDE\"
   fi
@@ -229,13 +237,40 @@ ssh "$REMOTE" "set -euo pipefail
   else
     start_legacy_api
   fi
+  api_ready=0
   for attempt in \$(seq 1 20); do
     if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
        curl -fsS http://127.0.0.1:$PORT/ready >/dev/null 2>&1; then
-      exit 0
+      api_ready=1
+      break
     fi
     sleep 1
   done
+  if [ \"\$api_ready\" = '1' ]; then
+    case \"\$POST_DEPLOY_HTTP_SMOKE\" in
+      disabled|skip|false|0|'')
+        echo 'post-deploy HTTP smoke skipped'
+        ;;
+      auto|required)
+        http_smoke_args=(--base-url http://127.0.0.1:$PORT)
+        if [ -n \"\$EXPECT_POSTGRES_SPLIT_REQUIRED\" ]; then
+          http_smoke_args+=(--expect-postgres-split-required \"\$EXPECT_POSTGRES_SPLIT_REQUIRED\")
+        fi
+        if [ -n \"\$EXPECT_ADVISORY_SYNC_READY\" ]; then
+          http_smoke_args+=(--expect-advisory-sync-ready \"\$EXPECT_ADVISORY_SYNC_READY\")
+        fi
+        if [ -n \"\$EXPECT_DATABASE_BACKEND\" ]; then
+          http_smoke_args+=(--expect-database-backend \"\$EXPECT_DATABASE_BACKEND\")
+        fi
+        python3 scripts/http_smoke.py \"\${http_smoke_args[@]}\" --json
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE: \$POST_DEPLOY_HTTP_SMOKE\" >&2
+        exit 2
+        ;;
+    esac
+    exit 0
+  fi
   tail -80 logs/sca-monitor.log || true
   if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
     systemctl --user status sca-monitor-api.service --no-pager || true

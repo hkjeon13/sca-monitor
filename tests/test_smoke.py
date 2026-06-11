@@ -2110,6 +2110,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
+    assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
+    assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
@@ -2117,6 +2119,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/advisory_source_preflight.py --check" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
+    assert "scripts/http_smoke.py" in script
+    assert "--expect-database-backend" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
@@ -2125,6 +2129,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
+    assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
 
 
 def test_harness_documents_deployment_input_readiness():
@@ -2147,6 +2152,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
+    assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
     assert "--expect-database-backend sqlite" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
 
 
