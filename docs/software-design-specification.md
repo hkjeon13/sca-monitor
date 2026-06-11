@@ -251,7 +251,7 @@ notes
 - `vendorProject/product`, `requiredAction`, `dueDate`, `knownRansomwareCampaignUse`, `notes`, `cwes`는 `raw_payload`에 보존한다.
 - 기존 OSV/GHSA row를 덮어쓰지 않기 위해 source-specific advisory ID를 사용한다.
 - 기존 OSV/GHSA raw payload의 `aliases`에 같은 CVE가 있으면 기존 package advisory를 `is_known_exploited=true`, `severity=critical`로 보강하고 기존 package impact를 재평가한다.
-- 별도 `advisory_aliases` 테이블과 canonical advisory row 병합은 FR-027 후속 범위이다.
+- 별도 `advisory_aliases` 테이블은 구현되어 advisory import 시 CVE/GHSA/OSV/MAL alias를 저장하고 advisory list/detail API에 노출한다. canonical advisory row 병합은 FR-027 후속 범위이다.
 
 ### 5.4 GitHub Security Advisory 수집 방식
 
@@ -1122,14 +1122,14 @@ advisory의 CVE, GHSA, OSV alias를 저장한다.
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid PK | 내부 식별자 |
-| advisory_id | uuid FK -> advisories.id | advisory |
+| advisory_pk | uuid FK -> advisories.id | advisory |
 | alias_type | text | `CVE`, `GHSA`, `OSV`, `MAL` |
 | alias_value | text | alias 값 |
 
 권장 unique constraint:
 
 ```sql
-unique (advisory_id, alias_value)
+unique (advisory_pk, alias_value)
 ```
 
 #### affected_ranges

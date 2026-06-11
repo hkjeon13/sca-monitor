@@ -23,7 +23,7 @@ from backend.sca_monitor.advisory_sync import (
     sync_osv_ecosystem_dump,
 )
 from backend.sca_monitor.endpoint_poll import endpoint_poll_lock, poll_configured_endpoints
-from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql
+from backend.sca_monitor.db import Database, PostgresConnectionAdapter, canonical_package_name, json_column, postgres_sql, row_to_dict
 from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp, advisory_import_from_row
 from backend.sca_monitor.config import Settings, load_settings
@@ -116,6 +116,7 @@ def test_sqlite_migration_records_version(tmp_path):
         snapshot_columns = {row["name"] for row in conn.execute("PRAGMA table_info(dependency_snapshots)").fetchall()}
         assert "last_confirmed_at" in snapshot_columns
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_push_rate_limits'").fetchone()
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'advisory_aliases'").fetchone()
 
 
 def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
@@ -1950,8 +1951,8 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert "sca_monitor_sla_overdue_impacts 0" in metrics
     assert "sca_monitor_database_ready 1" in metrics
     assert 'sca_monitor_database_backend_info{backend="sqlite"} 1' in metrics
-    assert "sca_monitor_migration_current_version 13" in metrics
-    assert "sca_monitor_migration_required_version 13" in metrics
+    assert f"sca_monitor_migration_current_version {REQUIRED_MIGRATION_VERSION}" in metrics
+    assert f"sca_monitor_migration_required_version {REQUIRED_MIGRATION_VERSION}" in metrics
     assert "sca_monitor_migration_compatible 1" in metrics
     assert "sca_monitor_postgres_configured 0" in metrics
     assert 'sca_monitor_postgres_cutover_status{mode="sqlite_fallback",status="sqlite_fallback"} 1' in metrics
@@ -2519,6 +2520,29 @@ def test_import_osv_payload_updates_advisory_and_sync_state(tmp_path):
     assert overview["advisory_sync"]["OSV"] == "ok"
 
 
+def test_import_osv_payload_syncs_advisory_aliases(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.import_osv_payload(osv_fixture())
+
+    advisory = next(item for item in app.list_advisories({"source": ["OSV"]}) if item["advisory_id"] == "OSV-TEST-0001")
+    assert advisory["aliases"] == [
+        {"alias_type": "CVE", "alias_value": "CVE-2026-0001"},
+        {"alias_type": "OSV", "alias_value": "OSV-TEST-0001"},
+    ]
+    with app.db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT aa.alias_type, aa.alias_value
+            FROM advisory_aliases aa
+            JOIN advisories a ON a.id = aa.advisory_pk
+            WHERE a.advisory_id = 'OSV-TEST-0001'
+            ORDER BY aa.alias_type, aa.alias_value
+            """
+        ).fetchall()
+    assert [row_to_dict(row) for row in rows] == advisory["aliases"]
+
+
 def test_range_only_osv_advisory_matches_snapshot(tmp_path):
     app = make_test_app(tmp_path)
     payload = osv_fixture()
@@ -2611,6 +2635,10 @@ def test_advisory_detail_includes_raw_payload_and_related_impacts(tmp_path):
     assert sorted(detail["advisory"]["affected_versions"]) == ["1.0.0", "1.0.1"]
     assert detail["advisory"]["affected_ranges"] == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
     assert detail["advisory"]["raw_payload"]["aliases"] == ["CVE-2026-0001"]
+    assert detail["advisory"]["aliases"] == [
+        {"alias_type": "CVE", "alias_value": "CVE-2026-0001"},
+        {"alias_type": "OSV", "alias_value": "OSV-TEST-0001"},
+    ]
     assert detail["advisory"]["is_known_exploited"] is False
     assert len(detail["impacts"]) == 1
     assert detail["impacts"][0]["service_id"] == "advisory-detail-service"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 import secrets
 from contextlib import contextmanager
 import uuid
@@ -70,6 +71,7 @@ class ScaMonitorApp:
         self.db = Database(settings.database_url)
         if settings.auto_migrate:
             self.db.migrate()
+            self.rebuild_missing_advisory_aliases()
 
     def handler(self):
         app = self
@@ -1010,7 +1012,7 @@ class ScaMonitorApp:
                 f"""
                 SELECT advisory_id, source, summary, severity, ecosystem, package_name,
                        affected_versions, affected_ranges, fixed_version, is_known_exploited,
-                       is_malicious_package, published_at, modified_at
+                       is_malicious_package, published_at, modified_at, raw_payload
                 FROM advisories
                 {sql_where}
                 ORDER BY COALESCE(modified_at, published_at, advisory_id) DESC
@@ -1023,6 +1025,8 @@ class ScaMonitorApp:
             advisory = row_to_dict(row)
             advisory["affected_versions"] = json_column(advisory["affected_versions"], [])
             advisory["affected_ranges"] = json_column(advisory["affected_ranges"], [])
+            advisory["aliases"] = advisory_aliases_for_row(advisory)
+            advisory.pop("raw_payload", None)
             advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
             advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
             advisories.append(advisory)
@@ -1055,10 +1059,20 @@ class ScaMonitorApp:
                 """,
                 (row["id"],),
             ).fetchall()
+            alias_rows = conn.execute(
+                """
+                SELECT alias_type, alias_value
+                FROM advisory_aliases
+                WHERE advisory_pk = ?
+                ORDER BY alias_type, alias_value
+                """,
+                (row["id"],),
+            ).fetchall()
         advisory = row_to_dict(row)
         advisory["affected_versions"] = safe_json_loads(advisory.get("affected_versions"), [])
         advisory["affected_ranges"] = safe_json_loads(advisory.get("affected_ranges"), [])
         advisory["raw_payload"] = safe_json_loads(advisory.get("raw_payload"), {})
+        advisory["aliases"] = [row_to_dict(alias) for alias in alias_rows] or advisory_aliases_for_row(advisory)
         advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
         advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
         return {
@@ -1165,7 +1179,39 @@ class ScaMonitorApp:
                 json.dumps(advisory.raw_payload, ensure_ascii=False),
             ),
         )
+        stored = conn.execute("SELECT id FROM advisories WHERE advisory_id = ?", (advisory.advisory_id,)).fetchone()
+        if stored:
+            self.replace_advisory_aliases(conn, stored["id"], advisory)
         return changed
+
+    def replace_advisory_aliases(self, conn, advisory_pk: str, advisory: AdvisoryImport) -> None:
+        aliases = advisory_aliases_for_import(advisory)
+        conn.execute("DELETE FROM advisory_aliases WHERE advisory_pk = ?", (advisory_pk,))
+        now = utcnow()
+        for alias in aliases:
+            conn.execute(
+                """
+                INSERT INTO advisory_aliases (id, advisory_pk, alias_type, alias_value, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(advisory_pk, alias_value) DO NOTHING
+                """,
+                (str(uuid.uuid4()), advisory_pk, alias["alias_type"], alias["alias_value"], now),
+            )
+
+    def rebuild_missing_advisory_aliases(self) -> int:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.*
+                FROM advisories a
+                LEFT JOIN advisory_aliases aa ON aa.advisory_pk = a.id
+                WHERE aa.id IS NULL
+                """
+            ).fetchall()
+            for row in rows:
+                advisory = advisory_import_from_row(row_to_dict(row))
+                self.replace_advisory_aliases(conn, row["id"], advisory)
+        return len(rows)
 
     def rematch_latest_snapshots_for_advisory(self, conn, advisory: AdvisoryImport) -> int:
         rows = conn.execute(
@@ -2722,13 +2768,76 @@ def safe_json_loads(value, default):
 def advisory_alias_values(row: dict | None) -> set[str]:
     if not row:
         return set()
-    values = {normalize_cve_id(row.get("advisory_id"))}
+    values = {alias["alias_value"] for alias in advisory_aliases_for_row(row)}
+    values.add(normalize_cve_id(row.get("advisory_id")))
+    return {value for value in values if value}
+
+
+def advisory_aliases_for_import(advisory: AdvisoryImport) -> list[dict[str, str]]:
+    return advisory_aliases_for_row(
+        {
+            "advisory_id": advisory.advisory_id,
+            "source": advisory.source,
+            "raw_payload": advisory.raw_payload,
+            "is_malicious_package": advisory.is_malicious_package,
+        }
+    )
+
+
+def advisory_aliases_for_row(row: dict | None) -> list[dict[str, str]]:
+    if not row:
+        return []
+    values: dict[str, set[str]] = {"CVE": set(), "GHSA": set(), "OSV": set(), "MAL": set()}
+    add_alias_value(values, row.get("advisory_id"))
     try:
         raw_payload = json_column(row.get("raw_payload"), {})
     except (TypeError, ValueError):
         raw_payload = {}
-    values.update(extract_cve_values(raw_payload))
-    return {value for value in values if value}
+    extract_alias_values(raw_payload, values)
+    aliases = []
+    for alias_type in ("CVE", "GHSA", "OSV", "MAL"):
+        for alias_value in sorted(values[alias_type]):
+            aliases.append({"alias_type": alias_type, "alias_value": alias_value})
+    return aliases
+
+
+def add_alias_value(values: dict[str, set[str]], value) -> None:
+    for alias_type, alias_value in normalize_advisory_aliases(value):
+        values.setdefault(alias_type, set()).add(alias_value)
+
+
+def normalize_advisory_aliases(value) -> list[tuple[str, str]]:
+    if value is None:
+        return []
+    text = str(value).strip().upper()
+    if text.startswith("CISA_KEV:"):
+        text = text.split(":", 1)[1]
+    aliases: list[tuple[str, str]] = []
+    if re.fullmatch(r"CVE-\d{4}-\d{4,}", text):
+        aliases.append(("CVE", text))
+    if re.fullmatch(r"GHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}", text):
+        aliases.append(("GHSA", text))
+    if text.startswith("OSV-") or text.startswith("PYSEC-"):
+        aliases.append(("OSV", text))
+    if text.startswith("MAL-"):
+        aliases.append(("MAL", text))
+    return aliases
+
+
+def extract_alias_values(value, values: dict[str, set[str]]) -> None:
+    if isinstance(value, dict):
+        if value.get("type") and value.get("value"):
+            add_alias_value(values, value.get("value"))
+        for key in ("id", "ghsa_id", "cve_id", "cveID"):
+            add_alias_value(values, value.get(key))
+        for item in value.values():
+            extract_alias_values(item, values)
+        return
+    if isinstance(value, list):
+        for item in value:
+            extract_alias_values(item, values)
+        return
+    add_alias_value(values, value)
 
 
 def extract_cve_values(value) -> set[str]:
