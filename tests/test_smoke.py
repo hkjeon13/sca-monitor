@@ -903,6 +903,23 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
+def test_ready_endpoint_exposes_postgres_cutover_summary(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["status"] == "ready"
+    assert payload["database"] == "ok"
+    assert payload["database_backend"] == "sqlite"
+    assert payload["database_url_source"] == "default_sqlite"
+    assert payload["migration"]["compatible"] is True
+    assert payload["cutover"]["status"] == "sqlite_fallback"
+    assert payload["cutover_required"]["status"] == "blocked"
+    assert payload["postgres_preflight"]["blockers"] == 1
+    assert payload["postgres_preflight"]["next_action"] == "no PostgreSQL database URL configured"
+
+
 def test_canonicalization_endpoint_reports_ready_without_candidates(tmp_path):
     app = make_test_app(tmp_path)
 

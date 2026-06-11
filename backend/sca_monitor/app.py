@@ -123,10 +123,10 @@ class ScaMonitorApp:
             if path == "/health":
                 return self.json_response(request, {"status": "ok", "app": "sca-monitor"})
             if path == "/ready":
-                readiness = self.db.readiness()
-                readiness["database_url_source"] = self.settings.database_url_source
+                readiness = self.database_readiness_summary()
                 status = HTTPStatus.OK if readiness["database"] == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
-                return self.json_response(request, {"status": "ready" if status == HTTPStatus.OK else "not_ready", **readiness}, status)
+                readiness["status"] = "ready" if status == HTTPStatus.OK else "not_ready"
+                return self.json_response(request, readiness, status)
             if path == "/metrics":
                 return self.text_response(request, self.metrics(), "text/plain; charset=utf-8")
             if path == "/api/v1/session" and method == "GET":
