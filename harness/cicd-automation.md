@@ -79,6 +79,7 @@ SMOKE_TEST_PUSH_TOKEN
 ```text
 GET /health
 GET /ready
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/db_smoke.py --json
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
 SCA_MONITOR_SYSTEMD_MODE=validate bash scripts/deploy_systemd_gate.sh

@@ -4,7 +4,7 @@ import subprocess
 import threading
 import zipfile
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -193,6 +193,58 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
     assert payload["units"]["sca-monitor-api.service"]["valid"] is True
     assert payload["units"]["sca-monitor-cisa-kev-sync.timer"]["valid"] is True
     assert payload["units"]["sca-monitor-openssf-malicious-sync.timer"]["valid"] is True
+
+
+def test_http_smoke_checks_read_only_endpoints():
+    seen_paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen_paths.append(self.path)
+            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html>SCA Monitor</html>")
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert [check["path"] for check in payload["checks"]] == ["/health", "/ready", "/api/v1/overview", "/"]
+    assert all(check["ok"] for check in payload["checks"])
+    assert seen_paths == ["/health", "/ready", "/api/v1/overview", "/"]
 
 
 def test_systemd_scheduler_status_fails_when_units_are_missing(tmp_path):

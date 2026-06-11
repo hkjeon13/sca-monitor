@@ -17,6 +17,14 @@
 9. metrics 수집 정상
 10. system alert channel 수신 가능
 
+read-only HTTP smoke:
+
+```bash
+SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --json
+```
+
+이 검증은 `/health`, `/ready`, `/api/v1/overview`, `/`만 조회하며 운영 데이터를 변경하지 않는다.
+
 VM systemd scheduler 등록:
 
 ```bash
