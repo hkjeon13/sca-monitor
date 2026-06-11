@@ -1600,12 +1600,57 @@ class ScaMonitorApp:
                     now,
                 ),
             )
+            if status != "ok":
+                self.enqueue_advisory_sync_failure_alert(
+                    connection,
+                    source=source,
+                    advisory_id=advisory_id,
+                    error_message=error_message,
+                    occurred_at=now,
+                )
 
         if conn is not None:
             write(conn)
             return
         with self.db.connect() as connection:
             write(connection)
+
+    def enqueue_advisory_sync_failure_alert(
+        self,
+        conn,
+        *,
+        source: str,
+        advisory_id: str | None,
+        error_message: str | None,
+        occurred_at: str,
+    ) -> None:
+        suppression_key = f"system:advisory_sync:{source}:failed"
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM alert_events
+            WHERE reason = 'system_advisory_sync_failed'
+              AND alert_suppression_key = ?
+            LIMIT 1
+            """,
+            (suppression_key,),
+        ).fetchone()
+        if existing:
+            return
+        payload = {
+            "alert_type": "system",
+            "source": source,
+            "advisory_id": advisory_id,
+            "error_message": error_message,
+            "occurred_at": occurred_at,
+        }
+        conn.execute(
+            """
+            INSERT INTO alert_events (id, impact_pk, alert_suppression_key, reason, status, payload, created_at)
+            VALUES (?, NULL, ?, 'system_advisory_sync_failed', 'pending', ?, ?)
+            """,
+            (str(uuid.uuid4()), suppression_key, json.dumps(payload, ensure_ascii=False), occurred_at),
+        )
 
     @contextmanager
     def advisory_sync_lock(self, source: str, owner: str, ttl_seconds: int = 3600):

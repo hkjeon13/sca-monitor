@@ -81,11 +81,15 @@ secret, token, endpoint credential, private registry credential은 로그에 남
 시스템 alert 대상:
 
 - advisory sync lag 임계값 초과
+- advisory source sync 실패
 - worker down
 - alert outbox pending 급증
 - DB connection failure
 - endpoint polling success rate 급락
 - frontend error rate 급증
+
+advisory source sync 실패는 `/metrics`의 `sca_monitor_advisory_sync_failed`로 노출되며, 동시에 `reason='system_advisory_sync_failed'` alert outbox row로 기록된다.
+source별 suppression key는 `system:advisory_sync:{source}:failed`이다.
 
 ## 6. Frontend Error Tracking
 

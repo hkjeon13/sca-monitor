@@ -2503,7 +2503,7 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert 'sca_monitor_endpoint_poll_success_rate{worker="metric-worker"} 1.000000' in metrics
     assert "sca_monitor_endpoint_poll_success_rate 1.000000" in metrics
     assert "sca_monitor_alert_delivery_success_rate 1.000000" in metrics
-    assert "sca_monitor_alert_outbox_pending_count 0" in metrics
+    assert "sca_monitor_alert_outbox_pending_count 1" in metrics
     assert "sca_monitor_alert_readiness_ready 0" in metrics
     assert "sca_monitor_stale_services 0" in metrics
     assert "sca_monitor_sla_overdue_impacts 0" in metrics
@@ -2518,6 +2518,32 @@ def test_metrics_exposes_operational_indicators(tmp_path):
     assert "sca_monitor_postgres_cutover_blockers 1" in metrics
     assert "sca_monitor_postgres_split_required 0" in metrics
     assert "sca_monitor_postgres_split_ready 0" in metrics
+
+
+def test_advisory_sync_error_enqueues_deduplicated_system_alert(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST", "rate limit")
+    app.record_advisory_sync("GHSA", "error", "GHSA-TEST", "rate limit")
+
+    with app.db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT impact_pk, reason, status, alert_suppression_key, payload
+            FROM alert_events
+            WHERE reason = 'system_advisory_sync_failed'
+            """
+        ).fetchall()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["impact_pk"] is None
+    assert row["status"] == "pending"
+    assert row["alert_suppression_key"] == "system:advisory_sync:GHSA:failed"
+    payload = json.loads(row["payload"])
+    assert payload["source"] == "GHSA"
+    assert payload["advisory_id"] == "GHSA-TEST"
+    assert payload["error_message"] == "rate limit"
 
 
 def test_overview_exposes_alert_readiness_summary(tmp_path):
