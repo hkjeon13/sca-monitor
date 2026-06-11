@@ -13,8 +13,8 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 
-DEFAULT_PATHS = ("/health", "/ready", "/api/v1/overview", "/")
-JSON_PATHS = {"/health", "/ready", "/api/v1/overview"}
+DEFAULT_PATHS = ("/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/")
+JSON_PATHS = {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}
 POSTGRES_SPLIT_METRICS = ("sca_monitor_postgres_split_required", "sca_monitor_postgres_split_ready")
 
 

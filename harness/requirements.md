@@ -102,7 +102,7 @@
 | REQ-AUTO-001 | CI/CD 시스템 | REQUIRED | GitHub Actions, Jenkins, GitLab CI, Harness, Argo CD 등 선택 |
 | REQ-AUTO-002 | 배포 승인 | REQUIRED | main push 자동 배포, tag 배포, 수동 승인 중 선택 |
 | REQ-AUTO-003 | rollback 방식 | REQUIRED | 이전 image tag rollback, DB migration rollback 정책 |
-| REQ-AUTO-004 | smoke test endpoint | ASSUMED | `/health`, `/ready`, `/api/v1/overview` |
+| REQ-AUTO-004 | smoke test endpoint | ASSUMED | `/health`, `/ready`, `/api/v1/overview`, `/api/v1/operations/cutover-readiness-report` |
 | REQ-AUTO-005 | release artifact | REQUIRED | container image tag, frontend build artifact, migration bundle |
 | REQ-AUTO-006 | smoke 자격증명 | REQUIRED | 환경별 `SMOKE_TEST_TOKEN`과 synthetic service credential 발급 방식 |
 | REQ-AUTO-007 | bootstrap owner | REQUIRED | 최초 admin, default SLA, default alert channel seed 책임자 |

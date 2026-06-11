@@ -400,7 +400,7 @@ def test_http_smoke_checks_read_only_endpoints():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             seen_paths.append(self.path)
-            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -441,9 +441,21 @@ def test_http_smoke_checks_read_only_endpoints():
 
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert [check["path"] for check in payload["checks"]] == ["/health", "/ready", "/api/v1/overview", "/"]
+    assert [check["path"] for check in payload["checks"]] == [
+        "/health",
+        "/ready",
+        "/api/v1/overview",
+        "/api/v1/operations/cutover-readiness-report",
+        "/",
+    ]
     assert all(check["ok"] for check in payload["checks"])
-    assert seen_paths == ["/health", "/ready", "/api/v1/overview", "/"]
+    assert seen_paths == [
+        "/health",
+        "/ready",
+        "/api/v1/overview",
+        "/api/v1/operations/cutover-readiness-report",
+        "/",
+    ]
 
 
 def test_http_smoke_can_require_postgres_split_metrics():
@@ -452,7 +464,7 @@ def test_http_smoke_can_require_postgres_split_metrics():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             seen_paths.append(self.path)
-            if self.path in {"/health", "/ready", "/api/v1/overview"}:
+            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -508,7 +520,7 @@ def test_http_smoke_can_require_postgres_split_metrics():
         "required_metric_present": True,
         "ready_metric_present": True,
     }
-    assert seen_paths[:4] == ["/health", "/ready", "/api/v1/overview", "/"]
+    assert seen_paths[:5] == ["/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/"]
     assert "/metrics" in seen_paths
 
 
@@ -529,7 +541,7 @@ def test_http_smoke_can_expect_postgres_split_required_value():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/api/v1/overview"}:
+            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -606,7 +618,7 @@ def test_http_smoke_can_expect_database_backend():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/api/v1/overview"}:
+            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -737,7 +749,7 @@ def test_http_smoke_can_expect_advisory_sync_ready():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/ready"}:
+            if self.path in {"/health", "/ready", "/api/v1/operations/cutover-readiness-report"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -2660,6 +2672,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
+    assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
+    assert "/api/v1/operations/cutover-readiness-report" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
     assert "--expect-database-backend sqlite" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
 
 
