@@ -55,6 +55,8 @@ PostgreSQL 운영 적용 전 실제 PostgreSQL instance, credential, network acc
 
 배포 pipeline은 backend/worker 시작 전에 migration을 실행한다.
 현재 임시 배포 스크립트도 서버 시작 전에 `python3 scripts/migrate.py`를 실행한다.
+VM systemd 배포에서 이미 endpoint poller 또는 alert dispatcher가 실행 중이면 migration과 DB gate 전에 worker unit을 일시 중지하고 gate 후 재시작한다.
+SQLite fallback에서는 장시간 실행 worker의 write lock이 migration 또는 smoke gate와 경합할 수 있으므로 이 순서를 배포 자동화의 기본값으로 둔다.
 
 ## 3. Migration Rules
 

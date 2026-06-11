@@ -36,8 +36,57 @@ ssh "$REMOTE" "set -euo pipefail
     SCA_MONITOR_SYSTEMD_PYTHON=\"\$SYSTEMD_PYTHON_OVERRIDE\"
   fi
   SYSTEMD_MODE=\"\${SCA_MONITOR_SYSTEMD_MODE:-validate}\"
+  systemd_worker_units_for_migration() {
+    case \"\$SYSTEMD_MODE\" in
+      enable-poller)
+        printf '%s' \"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-endpoint-poller.service\"
+        ;;
+      enable-dispatcher-dry-run)
+        printf '%s' \"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-endpoint-poller.service \${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-alert-dispatcher-dry-run.service\"
+        ;;
+      enable)
+        printf '%s' \"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-endpoint-poller.service \${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-alert-dispatcher.service \${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-alert-dispatcher-dry-run.service\"
+        ;;
+      *)
+        printf ''
+        ;;
+    esac
+  }
+  systemd_scope_args() {
+    if [ \"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\" = 'system' ]; then
+      printf ''
+    else
+      printf -- '--user'
+    fi
+  }
+  workers_stopped_for_migration=0
+  migration_worker_units=\"\$(systemd_worker_units_for_migration)\"
+  stop_systemd_workers_for_migration() {
+    if [ -z \"\$migration_worker_units\" ] || ! command -v systemctl >/dev/null 2>&1; then
+      return
+    fi
+    scope_args=\"\$(systemd_scope_args)\"
+    echo \"stopping systemd workers for migration: \$migration_worker_units\"
+    # shellcheck disable=SC2086
+    systemctl \$scope_args stop \$migration_worker_units 2>/dev/null || true
+    workers_stopped_for_migration=1
+  }
+  restart_systemd_workers_after_migration() {
+    if [ \"\$workers_stopped_for_migration\" != '1' ] || [ -z \"\$migration_worker_units\" ] || ! command -v systemctl >/dev/null 2>&1; then
+      return
+    fi
+    scope_args=\"\$(systemd_scope_args)\"
+    echo \"starting systemd workers after migration: \$migration_worker_units\"
+    # shellcheck disable=SC2086
+    systemctl \$scope_args start \$migration_worker_units 2>/dev/null || true
+    workers_stopped_for_migration=0
+  }
+  stop_systemd_workers_for_migration
+  trap restart_systemd_workers_after_migration EXIT
   python3 scripts/migrate.py
   bash scripts/deploy_db_gate.sh
+  restart_systemd_workers_after_migration
+  trap - EXIT
   start_legacy_api() {
     nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
     echo \$! > .data/sca-monitor.pid
