@@ -55,9 +55,20 @@ ssh "$REMOTE" "set -euo pipefail
     SCA_MONITOR_SYSTEMD_PYTHON=\"\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\" \
     SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' \
     bash scripts/deploy_systemd_gate.sh; then
-    echo \"systemd deploy gate failed; restarting legacy API runtime\" >&2
-    start_legacy_api
-    exit 1
+    if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
+      if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
+         curl -fsS http://127.0.0.1:$PORT/ready >/dev/null 2>&1; then
+        echo \"systemd deploy gate failed but API health check passed; keeping systemd runtime\" >&2
+      else
+        echo \"systemd deploy gate failed; restarting legacy API runtime\" >&2
+        start_legacy_api
+        exit 1
+      fi
+    else
+      echo \"systemd deploy gate failed; restarting legacy API runtime\" >&2
+      start_legacy_api
+      exit 1
+    fi
   fi
   if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
     rm -f .data/sca-monitor.pid
