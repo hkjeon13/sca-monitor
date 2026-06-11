@@ -61,6 +61,7 @@ CORS_ALLOWED_ORIGINS
 SCA_MONITOR_MAX_SNAPSHOT_PAYLOAD_BYTES
 SCA_MONITOR_MAX_SNAPSHOT_DEPENDENCIES
 SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE
+SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS
 SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE
 ```
 
@@ -86,6 +87,15 @@ SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE=30
 ```
 
 운영 환경에서 service dependency 규모가 더 크거나 CI/CD fan-out이 큰 경우 먼저 stage에서 push smoke와 rate-limit 동작을 통과시킨 뒤 상향한다.
+
+Advisory sync freshness 기준:
+
+```text
+SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS=86400
+```
+
+이 값은 `GET /api/v1/overview`의 `advisory_sync_readiness.freshness.stale_after_seconds`와 source별 `freshness_status` 판정에 사용한다.
+운영 source sync 주기를 늘리거나 줄일 때 같은 stage에서 stale 판정과 alert 운영 기준을 함께 검증한 뒤 조정한다.
 
 PostgreSQL integration smoke gate:
 

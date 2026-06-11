@@ -57,6 +57,9 @@ systemctl --user status sca-monitor-api.service
 | sca_monitor_alert_outbox_pending_count | pending alert outbox 수 |
 | sca_monitor_alert_dead_letter_count | dead-letter alert 수 |
 
+Advisory sync stale 판정 기준은 기본 86400초이며, 운영 환경별 sync 주기와 장애 감지 민감도에 맞춰 `SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS`로 조정한다.
+변경 후에는 `GET /api/v1/overview`의 `advisory_sync_readiness.freshness.stale_after_seconds`와 source별 `freshness_status`를 확인한다.
+
 ## 3. 장애 대응
 
 감사 로그 확인:

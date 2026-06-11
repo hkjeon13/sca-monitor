@@ -186,6 +186,15 @@ def test_load_settings_supports_component_auto_migrate_flags(monkeypatch, tmp_pa
     assert load_settings(component="worker").auto_migrate is False
 
 
+def test_load_settings_supports_advisory_sync_stale_threshold(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS", "3600")
+
+    settings = load_settings(component="api")
+
+    assert settings.advisory_sync_stale_after_seconds == 3600
+
+
 def test_sca_monitor_app_can_skip_runtime_migration(tmp_path):
     settings = Settings(
         app_env="test",
@@ -3805,6 +3814,25 @@ def test_overview_advisory_sync_readiness_summarizes_stale_and_failed_sources(tm
     assert sources["OSV"]["freshness_status"] == "stale"
     assert sources["CISA_KEV"]["freshness_status"] == "fresh"
     assert sources["OpenSSF"]["freshness_status"] == "partial"
+
+
+def test_overview_advisory_sync_readiness_uses_configured_stale_threshold(tmp_path):
+    app = make_test_app(tmp_path, advisory_sync_stale_after_seconds=30)
+
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisory_sync_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE source = 'OSV'")
+
+    readiness = app.overview()["advisory_sync_readiness"]
+    sources = {item["source"]: item for item in readiness["sources"]}
+
+    assert readiness["status"] == "ready"
+    assert readiness["freshness"]["status"] == "stale"
+    assert readiness["freshness"]["stale_after_seconds"] == 30
+    assert readiness["freshness"]["stale_count"] == 1
+    assert sources["OSV"]["freshness_status"] == "stale"
 
 
 def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):

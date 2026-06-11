@@ -26,7 +26,6 @@ from .versioning import version_is_affected
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
 INITIAL_ADVISORY_SYNC_SOURCES = ("OSV", "CISA_KEV", "OpenSSF")
-ADVISORY_SYNC_STALE_AFTER_SECONDS = 24 * 60 * 60
 RISK_RANK = {
     "critical": 0,
     "high": 1,
@@ -572,6 +571,7 @@ class ScaMonitorApp:
 
     def advisory_sync_readiness_overview(self, conn) -> dict:
         now = datetime.now(timezone.utc)
+        stale_after_seconds = self.settings.advisory_sync_stale_after_seconds
         rows_by_source = {}
         try:
             rows = conn.execute(
@@ -599,7 +599,7 @@ class ScaMonitorApp:
                 freshness_status = "partial"
             elif not initialized:
                 freshness_status = "pending"
-            elif lag_seconds is not None and lag_seconds > ADVISORY_SYNC_STALE_AFTER_SECONDS:
+            elif lag_seconds is not None and lag_seconds > stale_after_seconds:
                 freshness_status = "stale"
             else:
                 freshness_status = "fresh"
@@ -648,7 +648,7 @@ class ScaMonitorApp:
             "initialized_count": initialized_count,
             "freshness": {
                 "status": freshness_status,
-                "stale_after_seconds": ADVISORY_SYNC_STALE_AFTER_SECONDS,
+                "stale_after_seconds": stale_after_seconds,
                 "stale_count": len(stale_sources),
                 "failed_count": failed_count,
                 "partial_count": partial_count,
