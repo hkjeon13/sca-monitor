@@ -920,6 +920,21 @@ def test_ready_endpoint_exposes_postgres_cutover_summary(tmp_path):
     assert payload["postgres_preflight"]["next_action"] == "no PostgreSQL database URL configured"
 
 
+def test_ready_endpoint_reflects_required_split_cutover(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT", "true")
+    monkeypatch.setenv("SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE", "required")
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["status"] == "ready"
+    assert payload["cutover_required"]["require_postgres"] is True
+    assert payload["cutover_required"]["require_split"] is True
+    assert payload["postgres_preflight"]["status"] == "blocked"
+    assert payload["postgres_preflight"]["split_ready"] is False
+
+
 def test_canonicalization_endpoint_reports_ready_without_candidates(tmp_path):
     app = make_test_app(tmp_path)
 
