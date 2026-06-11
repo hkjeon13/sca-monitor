@@ -935,6 +935,20 @@ def test_ready_endpoint_reflects_required_split_cutover(monkeypatch, tmp_path):
     assert payload["postgres_preflight"]["split_ready"] is False
 
 
+def test_ready_endpoint_reports_invalid_split_flag_as_preflight_blocker(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT", "sometimes")
+    app = make_test_app(tmp_path)
+
+    with run_test_server(app) as base_url:
+        payload = http_json(f"{base_url}/ready")
+
+    assert payload["status"] == "ready"
+    assert payload["cutover_required"]["status"] == "blocked"
+    assert payload["postgres_preflight"]["status"] == "blocked"
+    assert payload["postgres_preflight"]["blockers"] == 2
+    assert any(check["id"] == "postgres_require_split_flag" for check in payload["cutover_required"]["checks"])
+
+
 def test_canonicalization_endpoint_reports_ready_without_candidates(tmp_path):
     app = make_test_app(tmp_path)
 

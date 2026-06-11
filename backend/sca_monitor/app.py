@@ -465,8 +465,26 @@ class ScaMonitorApp:
         readiness = self.db.readiness()
         readiness["database_url_source"] = self.settings.database_url_source
         cutover = assess_cutover(os.environ)
-        require_split = env_flag(os.environ.get("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT"), default=False)
+        require_split_error = None
+        try:
+            require_split = env_flag(os.environ.get("SCA_MONITOR_POSTGRES_REQUIRE_SPLIT"), default=False)
+        except ValueError as exc:
+            require_split = False
+            require_split_error = str(exc)
         required_cutover = assess_cutover(os.environ, require_postgres=True, require_split=require_split)
+        if require_split_error:
+            required_cutover = {
+                **required_cutover,
+                "status": "blocked",
+                "checks": [
+                    {
+                        "id": "postgres_require_split_flag",
+                        "status": "blocker",
+                        "detail": f"SCA_MONITOR_POSTGRES_REQUIRE_SPLIT: {require_split_error}",
+                    },
+                    *required_cutover["checks"],
+                ],
+            }
         return {
             "status": "ready" if readiness["database"] == "ok" else "not_ready",
             **readiness,

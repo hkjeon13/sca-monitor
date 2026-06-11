@@ -28,6 +28,7 @@ PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, 
 운영자는 Web Console Overview, `/ready`, 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, DB URL source, migration version, cutover mode, require-postgres preflight 요약, split credential 준비 여부, 차단 사유를 확인할 수 있다.
 `database_url_source`는 `SCA_MONITOR_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`, `SCA_MONITOR_DB`, `default_sqlite` 중 어떤 설정이 선택됐는지만 표시하며 URL 원문이나 credential은 노출하지 않는다.
 `postgres_preflight`는 blocker/warning/ok 개수와 다음 조치 문구를 제공해 배포 자동화와 운영자가 PostgreSQL 전환 준비 상태를 같은 기준으로 확인하게 한다.
+`SCA_MONITOR_POSTGRES_REQUIRE_SPLIT` 값이 잘못 설정되면 `/ready`와 database-readiness 응답의 `postgres_require_split_flag` blocker로 노출되며, 배포 gate는 같은 오류를 stop condition으로 처리한다.
 
 ## 2. Migration
 
