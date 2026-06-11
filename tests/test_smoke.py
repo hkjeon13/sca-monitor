@@ -1450,6 +1450,11 @@ def test_web_console_renders_database_readiness_panel():
     assert "postgres-preflight-summary" in script
     assert "Cutover blocked" in script
     assert "Cutover ready" in script
+    assert "renderPostgresCutoverCheckGroups" in script
+    assert "cutover-check-group" in script
+    assert "Blocking checks" in script
+    assert "Warning checks" in script
+    assert "Passing checks" in script
 
 
 def enabled_now_lines(text: str) -> str:

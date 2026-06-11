@@ -168,13 +168,6 @@ function renderDatabaseReadiness(readiness) {
   const cutover = readiness.cutover || {};
   const required = readiness.cutover_required || {};
   const preflight = readiness.postgres_preflight || {};
-  const checks = (required.checks || []).map((check) => `
-    <li>
-      ${renderReadinessBadge(check.status)}
-      <span>${escapeHtml(check.id)}</span>
-      <strong>${escapeHtml(check.detail)}</strong>
-    </li>
-  `).join("");
   document.querySelector("#database-readiness").innerHTML = `
     <div class="section-header">
       <h3>Database Readiness</h3>
@@ -197,7 +190,7 @@ function renderDatabaseReadiness(readiness) {
     </div>
     <div class="history readiness-checks">
       <h3>PostgreSQL Cutover Checks</h3>
-      <ul>${checks || "<li><span>No checks reported.</span></li>"}</ul>
+      ${renderPostgresCutoverCheckGroups(required.checks || [])}
     </div>
   `;
 }
@@ -222,6 +215,33 @@ function renderPostgresPreflightSummary(preflight) {
       <p>${escapeHtml(preflight.next_action || "No next action reported.")}</p>
     </div>
   `;
+}
+
+function renderPostgresCutoverCheckGroups(checks) {
+  if (!checks.length) {
+    return '<ul><li><span>No checks reported.</span></li></ul>';
+  }
+  const groups = [
+    ["blocker", "Blocking checks"],
+    ["warning", "Warning checks"],
+    ["ok", "Passing checks"],
+  ];
+  return groups.map(([status, title]) => {
+    const items = checks.filter((check) => check.status === status);
+    if (!items.length) return "";
+    return `
+      <div class="cutover-check-group ${status}">
+        <h4>${escapeHtml(title)}</h4>
+        <ul>${items.map((check) => `
+          <li>
+            ${renderReadinessBadge(check.status)}
+            <span>${escapeHtml(check.id)}</span>
+            <strong>${escapeHtml(check.detail)}</strong>
+          </li>
+        `).join("")}</ul>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderCanonicalizationStatus(status) {

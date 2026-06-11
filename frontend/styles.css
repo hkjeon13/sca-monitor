@@ -451,6 +451,34 @@ th {
   align-items: start;
 }
 
+.cutover-check-group {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.cutover-check-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cutover-check-group h4 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.cutover-check-group.blocker h4 {
+  color: var(--critical);
+}
+
+.cutover-check-group.warning h4 {
+  color: var(--high);
+}
+
+.cutover-check-group.ok h4 {
+  color: var(--ok);
+}
+
 .split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
