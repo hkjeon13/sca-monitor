@@ -177,12 +177,42 @@ def collect_systemctl_status(scope: str, units: dict[str, Any]) -> dict[str, dic
     return status
 
 
-def build_status(unit_dir: Path, prefix: str, scope: str, include_systemctl: bool) -> dict[str, Any]:
+def check_required_active_units(
+    systemctl_status: dict[str, dict[str, str]],
+    required_units: list[str],
+) -> list[dict[str, Any]]:
+    checks = []
+    for unit in required_units:
+        unit_status = systemctl_status.get(unit, {})
+        enabled = unit_status.get("enabled", "unknown:not-queried")
+        active = unit_status.get("active", "unknown:not-queried")
+        checks.append(
+            {
+                "unit": unit,
+                "enabled": enabled,
+                "active": active,
+                "ok": enabled == "enabled" and active == "active",
+            }
+        )
+    return checks
+
+
+def build_status(
+    unit_dir: Path,
+    prefix: str,
+    scope: str,
+    include_systemctl: bool,
+    required_active_units: list[str] | None = None,
+) -> dict[str, Any]:
     units = check_unit_files(unit_dir, prefix)
     missing = [unit for unit, data in units.items() if not data["exists"]]
     invalid = [unit for unit, data in units.items() if data["exists"] and not data["valid"]]
+    required_active_units = required_active_units or []
+    systemctl_status = collect_systemctl_status(scope, units) if include_systemctl or required_active_units else {}
+    required_active_checks = check_required_active_units(systemctl_status, required_active_units)
+    inactive_required = [item for item in required_active_checks if not item["ok"]]
     result: dict[str, Any] = {
-        "status": "ok" if not missing and not invalid else "not_ready",
+        "status": "ok" if not missing and not invalid and not inactive_required else "not_ready",
         "scope": scope,
         "unit_dir": str(unit_dir),
         "prefix": prefix,
@@ -195,8 +225,10 @@ def build_status(unit_dir: Path, prefix: str, scope: str, include_systemctl: boo
         },
         "units": units,
     }
-    if include_systemctl:
-        result["systemctl"] = collect_systemctl_status(scope, units)
+    if include_systemctl or required_active_units:
+        result["systemctl"] = systemctl_status
+    if required_active_units:
+        result["required_active_units"] = required_active_checks
     return result
 
 
@@ -207,6 +239,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--system", dest="scope", action="store_const", const="system")
     parser.add_argument("--unit-dir", type=Path, help="Unit directory to inspect.")
     parser.add_argument("--systemctl", action="store_true", help="Also query systemctl is-enabled/is-active.")
+    parser.add_argument(
+        "--require-active-unit",
+        action="append",
+        default=[],
+        help="Fail unless the named unit is both systemctl enabled and active. May be repeated.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -214,7 +252,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     unit_dir = args.unit_dir or default_unit_dir(args.scope)
-    result = build_status(unit_dir, args.prefix, args.scope, args.systemctl)
+    result = build_status(unit_dir, args.prefix, args.scope, args.systemctl, args.require_active_unit)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif result["status"] == "ok":
@@ -224,10 +262,16 @@ def main() -> int:
             f"valid={result['summary']['valid']}/{result['summary']['expected']}"
         )
     else:
+        inactive_required = [
+            item["unit"]
+            for item in result.get("required_active_units", [])
+            if not item.get("ok")
+        ]
+        inactive_detail = f" inactive_required={','.join(inactive_required)}" if inactive_required else ""
         print(
             "systemd scheduler not ready: "
             f"scope={result['scope']} unit_dir={result['unit_dir']} "
-            f"missing={result['summary']['missing']} invalid={result['summary']['invalid']}",
+            f"missing={result['summary']['missing']} invalid={result['summary']['invalid']}{inactive_detail}",
             file=sys.stderr,
         )
     return 0 if result["status"] == "ok" else 2

@@ -301,6 +301,14 @@ python3 scripts/expire_accepted_risks.py --limit 100 --actor risk-scheduler
 
 실행 시 만료된 impact는 `open`으로 전환되고, 기존 accepted risk row는 revoked 처리되며 impact history와 audit log에 `accepted_risk.expire`가 기록된다.
 
+systemd full `enable` 운영 전환 후에는 timer가 실제로 enabled/active인지 gate로 확인한다.
+
+```bash
+python3 scripts/systemd_scheduler_status.py --user --systemctl --require-active-unit sca-monitor-accepted-risk-expiry.timer --json
+```
+
+원격 배포 자동화에서 같은 검증을 강제하려면 `SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer`를 지정한다.
+
 ## 4. 운영자 수동 작업
 
 | 작업 | 위치 |

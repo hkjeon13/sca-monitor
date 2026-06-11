@@ -6,6 +6,7 @@ SCOPE="${SCA_MONITOR_SYSTEMD_SCOPE:-user}"
 PREFIX="${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}"
 PYTHON_BIN="${SCA_MONITOR_SYSTEMD_PYTHON:-python3}"
 REPO_DIR="${SCA_MONITOR_SYSTEMD_REPO_DIR:-$PWD}"
+REQUIRE_ACTIVE_UNITS="${SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS:-}"
 
 case "$SCOPE" in
   user)
@@ -53,6 +54,15 @@ preflight_enable() {
   fi
 }
 
+required_active_args() {
+  local raw unit
+  raw="${REQUIRE_ACTIVE_UNITS//,/ }"
+  for unit in $raw; do
+    printf '%s\n' "--require-active-unit"
+    printf '%s\n' "$unit"
+  done
+}
+
 install_units() {
   if [[ "$1" == "enable-api" ]]; then
     bash scripts/install_systemd_units.sh \
@@ -90,7 +100,15 @@ install_units() {
       --prefix "$PREFIX"
   fi
   if [[ "$1" == "enable" || "$1" == "enable-api" || "$1" == "enable-poller" || "$1" == "enable-dispatcher-dry-run" ]]; then
-    python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl --json
+    if [[ -n "$REQUIRE_ACTIVE_UNITS" ]]; then
+      required_args=()
+      while IFS= read -r arg; do
+        required_args+=("$arg")
+      done < <(required_active_args)
+      python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl "${required_args[@]}" --json
+    else
+      python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --systemctl --json
+    fi
   else
     python3 scripts/systemd_scheduler_status.py "$SCOPE_FLAG" --prefix "$PREFIX" --json
   fi

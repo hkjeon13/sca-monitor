@@ -394,6 +394,137 @@ def test_systemd_scheduler_status_reports_generated_units(tmp_path):
     assert payload["units"]["sca-monitor-canonical-advisory-merge.timer"]["valid"] is True
 
 
+def test_systemd_scheduler_status_can_require_active_units(tmp_path):
+    unit_dir = tmp_path / "systemd"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        f"""#!/bin/sh
+echo "$@" >> "{log_path}"
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/systemd_scheduler_status.py",
+            "--unit-dir",
+            str(unit_dir),
+            "--systemctl",
+            "--require-active-unit",
+            "sca-monitor-accepted-risk-expiry.timer",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["required_active_units"] == [
+        {
+            "unit": "sca-monitor-accepted-risk-expiry.timer",
+            "enabled": "enabled",
+            "active": "active",
+            "ok": True,
+        }
+    ]
+
+
+def test_systemd_scheduler_status_fails_when_required_unit_is_not_active(tmp_path):
+    unit_dir = tmp_path / "systemd"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        """#!/bin/sh
+case " $* " in
+  *" is-enabled "*) echo disabled ;;
+  *" is-active "*) echo inactive ;;
+esac
+exit 3
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    subprocess.run(
+        [
+            "bash",
+            "scripts/install_systemd_units.sh",
+            "--dry-run",
+            "--unit-dir",
+            str(unit_dir),
+            "--repo-dir",
+            str(REPO_ROOT),
+            "--python",
+            "/usr/bin/python3",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/systemd_scheduler_status.py",
+            "--unit-dir",
+            str(unit_dir),
+            "--systemctl",
+            "--require-active-unit",
+            "sca-monitor-accepted-risk-expiry.timer",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "not_ready"
+    assert payload["required_active_units"] == [
+        {
+            "unit": "sca-monitor-accepted-risk-expiry.timer",
+            "enabled": "disabled",
+            "active": "inactive",
+            "ok": False,
+        }
+    ]
+
+
 def test_http_smoke_checks_read_only_endpoints():
     seen_paths = []
 
@@ -1168,6 +1299,59 @@ exit 0
     assert "sca-monitor-canonical-advisory-merge.timer" in restart_lines(log_text)
     assert "sca-monitor-advisory-freshness.timer" in restart_lines(log_text)
     assert "sca-monitor-nvd-cve-sync.timer" in restart_lines(log_text)
+
+
+def test_deploy_systemd_gate_can_require_active_systemd_units(tmp_path):
+    home_dir = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        """#!/bin/sh
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+        "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS": "sca-monitor-accepted-risk-expiry.timer,sca-monitor-sla-escalation.timer",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["status"] == "ok"
+    assert payload["required_active_units"] == [
+        {
+            "unit": "sca-monitor-accepted-risk-expiry.timer",
+            "enabled": "enabled",
+            "active": "active",
+            "ok": True,
+        },
+        {
+            "unit": "sca-monitor-sla-escalation.timer",
+            "enabled": "enabled",
+            "active": "active",
+            "ok": True,
+        },
+    ]
 
 
 def test_deploy_systemd_gate_enable_api_mode_only_enables_api_service(tmp_path):
@@ -2516,10 +2700,12 @@ def test_remote_deploy_uses_db_gate():
     assert 'SYSTEMD_SCOPE_OVERRIDE="${SCA_MONITOR_SYSTEMD_SCOPE:-}"' in script
     assert 'SYSTEMD_PREFIX_OVERRIDE="${SCA_MONITOR_SYSTEMD_PREFIX:-}"' in script
     assert 'SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"' in script
+    assert 'SYSTEMD_REQUIRE_ACTIVE_UNITS_OVERRIDE="${SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS:-}"' in script
     assert 'SCA_MONITOR_SYSTEMD_MODE=\\"\\$SYSTEMD_MODE_OVERRIDE\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\$SYSTEMD_SCOPE_OVERRIDE\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\$SYSTEMD_PREFIX_OVERRIDE\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\$SYSTEMD_PYTHON_OVERRIDE\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=\\"\\$SYSTEMD_REQUIRE_ACTIVE_UNITS_OVERRIDE\\"' in script
     assert 'SYSTEMD_MODE=\\"\\${SCA_MONITOR_SYSTEMD_MODE:-validate}\\"' in script
     assert "stop_systemd_workers_for_migration() {" in script
     assert "restart_systemd_workers_after_migration() {" in script
@@ -2533,6 +2719,7 @@ def test_remote_deploy_uses_db_gate():
     assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\\"' in script
+    assert 'SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=\\"\\${SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS:-}\\"' in script
     assert "start_legacy_api() {" in script
     assert "systemd deploy gate failed; restarting legacy API runtime" in script
     assert "systemd deploy gate failed but API health check passed; keeping systemd runtime" in script
@@ -2730,6 +2917,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
+    assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
@@ -2780,7 +2968,9 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
 
 def test_harness_documents_deployment_input_readiness():
     database_doc = (REPO_ROOT / "harness" / "database-deployment.md").read_text(encoding="utf-8")
+    backend_doc = (REPO_ROOT / "harness" / "backend-deployment.md").read_text(encoding="utf-8")
     cicd_doc = (REPO_ROOT / "harness" / "cicd-automation.md").read_text(encoding="utf-8")
+    operations_doc = (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
     values_doc = (REPO_ROOT / "harness" / "values" / "deployment-inputs.md").read_text(encoding="utf-8")
 
     for text in (database_doc, cicd_doc, values_doc):
@@ -2814,8 +3004,12 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "--expect-cutover-report-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
-    assert "/api/v1/operations/cutover-readiness-report" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
-    assert "--expect-database-backend sqlite" in (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
+    assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer" in cicd_doc
+    assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in backend_doc
+    assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in backend_doc
+    assert "/api/v1/operations/cutover-readiness-report" in operations_doc
+    assert "--expect-database-backend sqlite" in operations_doc
+    assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in operations_doc
 
 
 def test_harness_documents_advisory_source_preflight():

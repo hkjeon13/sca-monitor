@@ -201,6 +201,17 @@ SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
 scripts/deploy_remote.sh
 ```
 
+full systemd 운영 전환에서 특정 운영 timer까지 실제 활성화되었는지 자동화 gate로 강제하려면 `SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS`를 함께 지정한다.
+accepted risk 만료 scheduler를 운영 전환 조건에 포함하는 예시는 다음과 같다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer \
+scripts/deploy_remote.sh
+```
+
 live dispatcher 전환 전 webhook endpoint 자체는 synthetic payload로 별도 검증한다.
 이 단계는 alert outbox row를 claim/send 처리하지 않는다.
 

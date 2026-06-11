@@ -225,6 +225,7 @@ scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-mon
 
 ```bash
 python3 scripts/systemd_scheduler_status.py --user --systemctl --json
+python3 scripts/systemd_scheduler_status.py --user --systemctl --require-active-unit sca-monitor-accepted-risk-expiry.timer --json
 systemctl --user status sca-monitor-api.service
 systemctl --user list-timers 'sca-monitor-*'
 journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
@@ -243,6 +244,7 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 | `SCA_MONITOR_SYSTEMD_PREFIX` | `sca-monitor` | unit 이름 prefix |
 | `SCA_MONITOR_SYSTEMD_PYTHON` | `python3` | unit `ExecStart`에 사용할 Python 실행 파일 |
 | `SCA_MONITOR_SYSTEMD_REPO_DIR` | 현재 checkout | unit `WorkingDirectory`와 `EnvironmentFile` 기준 repository 경로 |
+| `SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS` | empty | 쉼표 또는 공백으로 구분한 unit 목록. `enable*` 모드의 systemd status gate에서 지정 unit이 `enabled` 및 `active`가 아니면 배포를 실패시킨다. |
 
 원격 배포 스크립트는 DB gate 후 `scripts/deploy_systemd_gate.sh`를 실행한다.
 `enable-poller`, `enable-dispatcher-dry-run`, `enable` mode에서는 migration과 DB gate 실행 전에 기존 systemd worker unit을 잠시 중지하고, gate가 끝나면 다시 시작한다.
@@ -257,7 +259,7 @@ live dispatcher를 포함하는 `enable` 전환 전에는 `python3 scripts/alert
 `enable-api`, `enable-poller`, `enable-dispatcher-dry-run`, `enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
 systemd deploy gate가 실패하면 원격 배포 스크립트는 legacy nohup API runtime을 다시 시작하고 실패를 반환한다.
 원격 배포는 기본적으로 원격 `.env`의 `SCA_MONITOR_SYSTEMD_*` 값을 사용한다.
-CI/CD 또는 수동 자동화에서 `SCA_MONITOR_SYSTEMD_MODE`, `SCA_MONITOR_SYSTEMD_SCOPE`, `SCA_MONITOR_SYSTEMD_PREFIX`, `SCA_MONITOR_SYSTEMD_PYTHON`을 로컬 환경변수로 명시하면 해당 값이 원격 `.env` 값을 override한다.
+CI/CD 또는 수동 자동화에서 `SCA_MONITOR_SYSTEMD_MODE`, `SCA_MONITOR_SYSTEMD_SCOPE`, `SCA_MONITOR_SYSTEMD_PREFIX`, `SCA_MONITOR_SYSTEMD_PYTHON`, `SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS`를 로컬 환경변수로 명시하면 해당 값이 원격 `.env` 값을 override한다.
 
 운영에서 system unit으로 설치하려면 `--system`을 사용한다.
 이 경우 root 권한과 `/etc/systemd/system` 쓰기 권한이 필요하다.
