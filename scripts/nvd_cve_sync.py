@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.sca_monitor.advisory_sync import NVD_CVE_API_URL, sync_nvd_cve, sync_nvd_cves
+from backend.sca_monitor.advisory_sync import NVD_CVE_API_URL, load_nvd_modified_cve_ids, sync_nvd_cve, sync_nvd_cves
 from backend.sca_monitor.app import ScaMonitorApp
 from backend.sca_monitor.config import load_settings
 
@@ -24,6 +24,9 @@ def main() -> None:
     parser.add_argument("--json-path", type=Path, default=None, help="Read a local NVD CVE API response JSON instead of downloading")
     parser.add_argument("--json-dir", type=Path, default=None, help="Read local NVD CVE API response files named CVE-YYYY-NNNN.json")
     parser.add_argument("--cve-list-path", type=Path, default=None, help="Read CVE ids from a newline-delimited text file")
+    parser.add_argument("--last-mod-start", default=None, help="NVD lastModStartDate window for incremental candidate discovery")
+    parser.add_argument("--last-mod-end", default=None, help="NVD lastModEndDate window for incremental candidate discovery")
+    parser.add_argument("--modified-json-path", type=Path, default=None, help="Read a local NVD modified-window response JSON instead of discovering candidates remotely")
     parser.add_argument("--limit", type=int, default=None, help="Maximum CVE ids to process from arguments/list")
     parser.add_argument(
         "--delay-seconds",
@@ -42,6 +45,18 @@ def main() -> None:
             line.strip()
             for line in args.cve_list_path.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
+        )
+    if args.last_mod_start or args.last_mod_end or args.modified_json_path:
+        if not args.modified_json_path and not (args.last_mod_start and args.last_mod_end):
+            raise SystemExit("--last-mod-start and --last-mod-end are required unless --modified-json-path is provided")
+        cve_ids.extend(
+            load_nvd_modified_cve_ids(
+                last_mod_start=args.last_mod_start or "fixture-start",
+                last_mod_end=args.last_mod_end or "fixture-end",
+                api_url=args.api_url,
+                api_key=args.api_key,
+                json_path=args.modified_json_path,
+            )
         )
     if args.json_path:
         if len(cve_ids) != 1:

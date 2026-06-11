@@ -383,6 +383,40 @@ def load_nvd_cve_payload(
         return json.loads(response.read().decode("utf-8"))
 
 
+def nvd_cve_ids_from_payload(payload: dict[str, Any]) -> list[str]:
+    cve_ids: list[str] = []
+    seen: set[str] = set()
+    for item in payload.get("vulnerabilities") or []:
+        cve = item.get("cve") or item
+        cve_id = str(cve.get("id") or "").strip().upper()
+        if cve_id and cve_id not in seen:
+            seen.add(cve_id)
+            cve_ids.append(cve_id)
+    return cve_ids
+
+
+def load_nvd_modified_cve_ids(
+    *,
+    last_mod_start: str,
+    last_mod_end: str,
+    api_url: str = NVD_CVE_API_URL,
+    api_key: str | None = None,
+    timeout_seconds: int = 60,
+    json_path: Path | None = None,
+) -> list[str]:
+    if not last_mod_start or not last_mod_end:
+        raise ValueError("last_mod_start and last_mod_end are required")
+    if json_path is not None:
+        return nvd_cve_ids_from_payload(json.loads(json_path.read_text(encoding="utf-8")))
+    query = {"lastModStartDate": last_mod_start, "lastModEndDate": last_mod_end}
+    headers = {"Accept": "application/json", "User-Agent": "sca-monitor/0.1"}
+    if api_key:
+        headers["apiKey"] = api_key
+    request = Request(f"{api_url}?{urlencode(query)}", headers=headers)
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return nvd_cve_ids_from_payload(json.loads(response.read().decode("utf-8")))
+
+
 def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
     cve = item.get("cve") or item
     cve_id = str(cve.get("id") or "").strip()

@@ -17,6 +17,8 @@ from backend.sca_monitor.advisory_sync import (
     parse_ghsa_advisory,
     parse_cisa_kev_vulnerability,
     parse_nvd_cve_vulnerability,
+    load_nvd_modified_cve_ids,
+    nvd_cve_ids_from_payload,
     sync_github_advisories,
     sync_cisa_kev_catalog,
     sync_nvd_cve,
@@ -3945,6 +3947,26 @@ def test_parse_nvd_cve_vulnerability_extracts_cpe_advisory():
     assert advisory.is_known_exploited is True
 
 
+def test_nvd_modified_window_extracts_deduped_cve_ids(tmp_path):
+    payload = {
+        "vulnerabilities": [
+            nvd_cve_fixture("CVE-2026-0001")["vulnerabilities"][0],
+            nvd_cve_fixture("cve-2026-0001")["vulnerabilities"][0],
+            nvd_cve_fixture("CVE-2026-0002")["vulnerabilities"][0],
+            {"cve": {"id": ""}},
+        ]
+    }
+    json_path = tmp_path / "nvd-modified.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert nvd_cve_ids_from_payload(payload) == ["CVE-2026-0001", "CVE-2026-0002"]
+    assert load_nvd_modified_cve_ids(
+        last_mod_start="2026-01-01T00:00:00.000",
+        last_mod_end="2026-01-02T00:00:00.000",
+        json_path=json_path,
+    ) == ["CVE-2026-0001", "CVE-2026-0002"]
+
+
 def test_sync_nvd_cve_from_json_file_records_sync_state(tmp_path):
     app = make_test_app(tmp_path)
     json_path = tmp_path / "nvd-cve.json"
@@ -4146,6 +4168,43 @@ def test_nvd_cve_sync_cli_batch_exposes_delay_seconds(tmp_path):
     assert payload["processed"] == 2
     assert payload["imported_rows"] == 2
     assert payload["request_delay_seconds"] == 1.5
+
+
+def test_nvd_cve_sync_cli_imports_modified_window_candidates_from_json(tmp_path):
+    json_dir = tmp_path / "nvd"
+    json_dir.mkdir()
+    first = nvd_cve_fixture("CVE-2026-0001")
+    second = nvd_cve_fixture("CVE-2026-0002", product="example-client", severity="HIGH")
+    (json_dir / "CVE-2026-0001.json").write_text(json.dumps(first), encoding="utf-8")
+    (json_dir / "CVE-2026-0002.json").write_text(json.dumps(second), encoding="utf-8")
+    modified_path = tmp_path / "nvd-modified.json"
+    modified_path.write_text(
+        json.dumps({"vulnerabilities": [first["vulnerabilities"][0], first["vulnerabilities"][0], second["vulnerabilities"][0]]}),
+        encoding="utf-8",
+    )
+    database_url = f"sqlite:///{tmp_path / 'nvd-modified-cli.sqlite3'}"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/nvd_cve_sync.py",
+            "--modified-json-path",
+            str(modified_path),
+            "--json-dir",
+            str(json_dir),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "NVD"
+    assert payload["processed"] == 2
+    assert payload["imported_rows"] == 2
+    assert [item["cve_id"] for item in payload["results"]] == ["CVE-2026-0001", "CVE-2026-0002"]
 
 
 def test_nvd_cve_sync_cli_imports_list_file_from_json_dir(tmp_path):
