@@ -1,0 +1,4 @@
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS dispatch_lock_owner TEXT;
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS dispatch_lock_expires_at TIMESTAMPTZ;

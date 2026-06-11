@@ -97,6 +97,7 @@ Phase 0 착수 전 선행 조건:
 - OSV source별 sync lock/TTL 추가
 - advisory 변경 감지 후 관련 latest snapshot 재매칭 추가
 - `scripts/dispatch_alerts.py` webhook alert outbox dispatcher CLI 추가
+- alert 재시도/backoff와 per-alert dispatcher lock 추가
 
 남은 작업:
 
@@ -107,7 +108,7 @@ Phase 0 착수 전 선행 조건:
 - production migration tool 확정
 - OSV dump sync scheduler
 - 재매칭 job queue와 대량 변경 batch 처리
-- Slack app 방식, alert 재시도/backoff, dispatcher job lock
+- Slack app 방식, dead-letter 정책, idempotency header
 - ecosystem별 정밀 version matcher와 pre-release 정책 보강
 
 ### Phase 2. API Server

@@ -1629,9 +1629,10 @@ last_alerted_status
 
 - impact 신규 생성 시 `alert_events`에 `pending` outbox row를 생성한다.
 - `scripts/dispatch_alerts.py`는 pending alert를 webhook JSON으로 발송하고 `sent_at`, `status=sent`를 기록한다.
-- 발송 실패 시 `status=failed`로 기록하고 payload에 `dispatch_error`를 남긴다.
+- 발송 실패 시 `status=failed`, `retry_count`, `next_attempt_at`를 기록하고 payload에 `dispatch_error`를 남긴다.
+- dispatcher는 per-alert `dispatch_lock_owner`, `dispatch_lock_expires_at`을 사용해 중복 발송을 줄이고 만료된 lock을 재획득한다.
 - `--dry-run`은 pending 수만 확인하고 DB row를 변경하지 않는다.
-- Slack app 방식, 재시도 backoff, dispatcher job locking, idempotency header는 후속 구현 대상이다.
+- Slack app 방식, dead-letter 정책, idempotency header는 후속 구현 대상이다.
 
 ## 19. 보안 설계
 

@@ -90,10 +90,11 @@ python3 scripts/dispatch_alerts.py --dry-run --limit 50
 Webhook 수동 발송:
 
 ```bash
-ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_alerts.py --limit 50
+ALERT_WEBHOOK_URL=https://alert-router.example/webhook python3 scripts/dispatch_alerts.py --limit 50 --retry-backoff-seconds 300
 ```
 
-현재 MVP dispatcher는 webhook JSON 발송을 지원한다. Slack app 방식, 재시도 backoff, dispatcher job lock은 후속 구현 대상이다.
+현재 MVP dispatcher는 webhook JSON 발송, 재시도 backoff, per-alert dispatch lock을 지원한다.
+Slack app 방식, dead-letter 정책, idempotency header는 후속 구현 대상이다.
 
 ## 4. 운영자 수동 작업
 

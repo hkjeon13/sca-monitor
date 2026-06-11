@@ -215,6 +215,7 @@ def test_dispatch_pending_alerts_marks_sent(tmp_path):
     )
 
     assert result.pending == 1
+    assert result.claimed == 1
     assert result.sent == 1
     assert result.failed == 0
     assert delivered[0][0] == "https://alerts.example.test/webhook"
@@ -233,6 +234,7 @@ def test_dispatch_pending_alerts_dry_run_does_not_update(tmp_path):
     result = dispatch_pending_alerts(app, webhook_url=None, dry_run=True)
 
     assert result.pending == 1
+    assert result.claimed == 0
     assert result.sent == 0
     with app.db.connect() as conn:
         row = conn.execute("SELECT status FROM alert_events").fetchone()
@@ -253,12 +255,58 @@ def test_dispatch_pending_alerts_marks_failed(tmp_path):
     )
 
     assert result.pending == 1
+    assert result.claimed == 1
     assert result.sent == 0
     assert result.failed == 1
     with app.db.connect() as conn:
-        row = conn.execute("SELECT status, payload FROM alert_events").fetchone()
+        row = conn.execute("SELECT status, payload, retry_count, next_attempt_at FROM alert_events").fetchone()
         assert row["status"] == "failed"
         assert "delivery failed" in row["payload"]
+        assert row["retry_count"] == 1
+        assert row["next_attempt_at"] is not None
+
+
+def test_failed_alert_waits_for_next_attempt(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+
+    dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        retry_backoff_seconds=3600,
+        sender=lambda url, payload: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+    )
+
+    result = dispatch_pending_alerts(app, webhook_url=None, dry_run=True)
+
+    assert result.pending == 0
+
+
+def test_expired_dispatch_lock_can_be_reclaimed(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    with app.db.connect() as conn:
+        conn.execute(
+            """
+            UPDATE alert_events
+            SET status = 'dispatching',
+                dispatch_lock_owner = 'stale-owner',
+                dispatch_lock_expires_at = '2000-01-01T00:00:00+00:00'
+            """
+        )
+    delivered = []
+
+    result = dispatch_pending_alerts(
+        app,
+        webhook_url="https://alerts.example.test/webhook",
+        lock_owner="new-owner",
+        sender=lambda url, payload: delivered.append(payload),
+    )
+
+    assert result.pending == 1
+    assert result.claimed == 1
+    assert result.sent == 1
+    assert len(delivered) == 1
 
 
 def make_test_app(tmp_path):

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import socket
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable
+from uuid import uuid4
 from urllib.request import Request, urlopen
 
 from .app import ScaMonitorApp
@@ -12,6 +15,7 @@ from .db import utcnow
 @dataclass(frozen=True)
 class AlertDispatchResult:
     pending: int
+    claimed: int
     sent: int
     failed: int
     dry_run: bool
@@ -23,10 +27,15 @@ def dispatch_pending_alerts(
     webhook_url: str | None,
     limit: int = 50,
     dry_run: bool = False,
+    lock_owner: str | None = None,
+    lock_ttl_seconds: int = 300,
+    retry_backoff_seconds: int = 300,
     sender: Callable[[str, dict], None] | None = None,
 ) -> AlertDispatchResult:
+    now = utcnow()
+    owner = lock_owner or default_lock_owner()
     with app.db.connect() as conn:
-        rows = conn.execute(
+        eligible_rows = conn.execute(
             """
             SELECT ae.*, i.risk_level, i.package_name, i.resolved_version,
                    s.service_id, s.service_name, s.environment,
@@ -36,16 +45,37 @@ def dispatch_pending_alerts(
             LEFT JOIN services s ON s.id = i.service_pk
             LEFT JOIN advisories a ON a.id = i.advisory_pk
             WHERE ae.status = 'pending'
+               OR (ae.status = 'failed' AND (ae.next_attempt_at IS NULL OR ae.next_attempt_at <= ?))
+               OR (ae.status = 'dispatching' AND (ae.dispatch_lock_expires_at IS NULL OR ae.dispatch_lock_expires_at <= ?))
             ORDER BY ae.created_at ASC
             LIMIT ?
             """,
-            (limit,),
+            (now, now, limit),
         ).fetchall()
 
         if dry_run:
-            return AlertDispatchResult(pending=len(rows), sent=0, failed=0, dry_run=True)
-        if rows and not webhook_url:
+            return AlertDispatchResult(pending=len(eligible_rows), claimed=0, sent=0, failed=0, dry_run=True)
+        if eligible_rows and not webhook_url:
             raise ValueError("webhook_url required when pending alerts exist")
+
+        rows = []
+        lock_expires_at = utcnow_after_seconds(lock_ttl_seconds)
+        for row in eligible_rows:
+            updated = conn.execute(
+                """
+                UPDATE alert_events
+                SET status = 'dispatching', dispatch_lock_owner = ?, dispatch_lock_expires_at = ?
+                WHERE id = ?
+                  AND (
+                    status = 'pending'
+                    OR (status = 'failed' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+                    OR (status = 'dispatching' AND (dispatch_lock_expires_at IS NULL OR dispatch_lock_expires_at <= ?))
+                  )
+                """,
+                (owner, lock_expires_at, row["id"], now, now),
+            ).rowcount
+            if updated == 1:
+                rows.append(row)
 
         send = sender or send_webhook
         sent = 0
@@ -56,13 +86,15 @@ def dispatch_pending_alerts(
                 send(webhook_url or "", payload)
             except Exception as exc:
                 failed += 1
+                next_attempt_at = utcnow_after_seconds(retry_delay_seconds(row["retry_count"], retry_backoff_seconds))
                 conn.execute(
                     """
                     UPDATE alert_events
-                    SET status = 'failed', payload = ?, created_at = created_at
+                    SET status = 'failed', payload = ?, retry_count = retry_count + 1,
+                        next_attempt_at = ?, dispatch_lock_owner = NULL, dispatch_lock_expires_at = NULL
                     WHERE id = ?
                     """,
-                    (json.dumps({**payload, "dispatch_error": str(exc)}, ensure_ascii=False), row["id"]),
+                    (json.dumps({**payload, "dispatch_error": str(exc)}, ensure_ascii=False), next_attempt_at, row["id"]),
                 )
                 continue
             sent += 1
@@ -70,12 +102,13 @@ def dispatch_pending_alerts(
                 """
                 UPDATE alert_events
                 SET status = 'sent', sent_at = ?, channel_type = 'webhook',
-                    channel_target = ?, payload = ?
+                    channel_target = ?, payload = ?, dispatch_lock_owner = NULL,
+                    dispatch_lock_expires_at = NULL, next_attempt_at = NULL
                 WHERE id = ?
                 """,
                 (utcnow(), webhook_url, json.dumps(payload, ensure_ascii=False), row["id"]),
             )
-    return AlertDispatchResult(pending=len(rows), sent=sent, failed=failed, dry_run=False)
+    return AlertDispatchResult(pending=len(eligible_rows), claimed=len(rows), sent=sent, failed=failed, dry_run=False)
 
 
 def alert_payload(row) -> dict:
@@ -108,3 +141,15 @@ def send_webhook(webhook_url: str, payload: dict) -> None:
     with urlopen(request, timeout=10) as response:
         if response.status >= 400:
             raise RuntimeError(f"webhook returned HTTP {response.status}")
+
+
+def retry_delay_seconds(retry_count: int, base_seconds: int) -> int:
+    return max(1, base_seconds) * (2 ** min(retry_count, 5))
+
+
+def utcnow_after_seconds(seconds: int) -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+
+def default_lock_owner() -> str:
+    return f"alert-dispatch:{socket.gethostname()}:{uuid4()}"
