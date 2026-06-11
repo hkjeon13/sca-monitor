@@ -171,6 +171,18 @@ python3 scripts/database_env_dry_run_gate.py --database-env-file deploy/postgres
 
 첫 번째 명령은 synthetic split credential로 성공해야 한다.
 두 번째 명령은 placeholder template 검증 예시이며 `placeholder_values` blocker로 중단되는 것이 정상이다.
+원격 배포 자동화에서 같은 dry-run을 stop gate로 연결하려면 `.env` 병합 전에 다음 입력을 사용한다.
+
+```bash
+SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic scripts/deploy_remote.sh
+
+SCA_MONITOR_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided \
+scripts/deploy_remote.sh
+```
+
+`synthetic`은 실제 secret 없이 split credential 병합/준비도 흐름만 검증한다.
+`provided` 또는 `required`는 `SCA_MONITOR_DATABASE_ENV_FILE`이 지정된 경우에만 실행되며, 실제 secret 파일을 `.env`에 병합하기 전에 같은 파일을 dry-run gate로 먼저 검증한다.
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.

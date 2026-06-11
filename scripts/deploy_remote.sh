@@ -12,6 +12,7 @@ REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
 GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
+DATABASE_ENV_DRY_RUN="${SCA_MONITOR_DATABASE_ENV_DRY_RUN:-disabled}"
 ADVISORY_SOURCE_PREFLIGHT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT:-list}"
 ADVISORY_SOURCE_PREFLIGHT_TIMEOUT="${SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT:-8}"
 BOOTSTRAP_READINESS="${SCA_MONITOR_BOOTSTRAP_READINESS:-disabled}"
@@ -26,7 +27,27 @@ ssh "$REMOTE" "set -euo pipefail
   PUBLIC_URL_OVERRIDE='$PUBLIC_URL_OVERRIDE'
   GENERATE_SMOKE_TOKEN='$GENERATE_SMOKE_TOKEN'
   DATABASE_ENV_FILE='$DATABASE_ENV_FILE'
+  DATABASE_ENV_DRY_RUN='$DATABASE_ENV_DRY_RUN'
   runtime_input_args=''
+  case \"\$DATABASE_ENV_DRY_RUN\" in
+    disabled|skip|false|0|'')
+      echo 'database env dry-run gate skipped'
+      ;;
+    synthetic)
+      python3 scripts/database_env_dry_run_gate.py --json
+      ;;
+    provided|required)
+      if [ -z \"\$DATABASE_ENV_FILE\" ]; then
+        echo \"SCA_MONITOR_DATABASE_ENV_DRY_RUN=\$DATABASE_ENV_DRY_RUN requires SCA_MONITOR_DATABASE_ENV_FILE\" >&2
+        exit 2
+      fi
+      python3 scripts/database_env_dry_run_gate.py --database-env-file \"\$DATABASE_ENV_FILE\" --json
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_DATABASE_ENV_DRY_RUN: \$DATABASE_ENV_DRY_RUN\" >&2
+      exit 2
+      ;;
+  esac
   if [ -n \"\$PUBLIC_URL_OVERRIDE\" ]; then
     runtime_input_args=\"\$runtime_input_args --public-url \$PUBLIC_URL_OVERRIDE\"
   fi

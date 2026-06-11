@@ -1977,11 +1977,14 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/configure_runtime_inputs.py" in script
     assert "SCA_MONITOR_GENERATE_SMOKE_TOKEN" in script
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in script
+    assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "--database-env-file" in script
     assert "scripts/validate_database_env_file.py" in script
+    assert "scripts/database_env_dry_run_gate.py --json" in script
+    assert "scripts/database_env_dry_run_gate.py --database-env-file" in script
     assert "scripts/advisory_source_preflight.py --check" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
@@ -2010,6 +2013,9 @@ def test_harness_documents_deployment_input_readiness():
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
+    assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in database_doc
+    assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided" in database_doc
+    assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
 
 
 def test_harness_documents_advisory_source_preflight():

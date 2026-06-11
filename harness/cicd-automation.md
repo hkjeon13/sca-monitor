@@ -136,12 +136,15 @@ bootstrap 완료 또는 운영 승격 단계에서 advisory source 초기 동기
 원격 배포 중 bootstrap readiness를 stop gate로 연결하려면 `SCA_MONITOR_BOOTSTRAP_READINESS=advisory`를 먼저 사용한다.
 이 모드는 advisory/source/readiness 상태를 확인하되 alert dispatcher activation은 제외하므로, 실제 alert target 주입 전 승격 gate로 사용할 수 있다.
 alert target seed와 dispatcher activation checklist가 완료된 뒤에는 `SCA_MONITOR_BOOTSTRAP_READINESS=required`로 전환한다.
+PostgreSQL secret을 아직 주입하지 않는 배포에서도 split credential 병합 흐름을 검증하려면 `SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic`을 사용한다.
+실제 원격 secret 파일을 병합하는 승격 단계에서는 `SCA_MONITOR_DATABASE_ENV_DRY_RUN=provided`와 `SCA_MONITOR_DATABASE_ENV_FILE`을 함께 설정해 `.env` 변경 전에 같은 파일을 dry-run gate로 먼저 검증한다.
 원격 `.env`에 runtime input을 반영해야 하는 배포에서는 다음처럼 public URL을 주입하고, placeholder smoke token은 원격에서 생성한다.
 
 ```bash
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net \
 SCA_MONITOR_GENERATE_SMOKE_TOKEN=true \
 SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true \
+SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic \
 SCA_MONITOR_BOOTSTRAP_READINESS=advisory \
 scripts/deploy_remote.sh
 ```
