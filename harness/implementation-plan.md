@@ -84,10 +84,13 @@ Phase 0 착수 전 선행 조건:
 - `migrations/postgres/001_initial.sql` baseline 추가
 - `migrations/sqlite/002_advisory_sync_state.sql` 추가
 - `migrations/postgres/002_advisory_sync_state.sql` 추가
+- `migrations/sqlite/003_advisory_affected_ranges.sql` 추가
+- `migrations/postgres/003_advisory_affected_ranges.sql` 추가
 - `scripts/migrate.py` 추가
 - `/ready` migration 상태 노출 추가
 - SQLite fallback 유지
 - OSV 단건 import API와 advisory 조회 API 추가
+- OSV affected range version matcher 추가
 
 남은 작업:
 
@@ -97,7 +100,7 @@ Phase 0 착수 전 선행 조건:
 - API/worker DB 계정 분리
 - production migration tool 확정
 - OSV dump 기반 bulk feed-sync worker
-- OSV affected range version matcher
+- ecosystem별 정밀 version matcher와 pre-release 정책 보강
 
 ### Phase 2. API Server
 

@@ -191,8 +191,9 @@ references
 - `POST /api/v1/advisories/osv/import`는 `advisory_id`를 받아 `GET https://api.osv.dev/v1/vulns/{id}`로 단건 상세를 수집한다.
 - `GET /api/v1/advisories`는 저장된 advisory를 조회한다.
 - `advisory_sync_state`는 OSV 단건 import 성공/실패 상태를 기록한다.
-- 현재 matcher는 `affected[].versions`의 exact version 목록만 즉시 매칭한다.
-- OSV dump 기반 bulk feed-sync, alias canonical merge, affected range matcher, advisory 변경분 재매칭은 후속 구현 대상이다.
+- matcher는 `affected[].versions` exact version과 `affected[].ranges[].events`의 introduced/fixed/last_affected/limit 범위를 매칭한다.
+- 현재 range matcher는 SemVer-like 비교를 지원하는 MVP 구현이며, ecosystem별 세부 규칙과 pre-release 정책은 후속 보강 대상이다.
+- OSV dump 기반 bulk feed-sync, alias canonical merge, advisory 변경분 재매칭은 후속 구현 대상이다.
 
 ### 5.3 CISA KEV 수집 방식
 

@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from .config import Settings, load_settings
 from .db import Database, canonical_package_name, row_to_dict, utcnow
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
+from .versioning import version_is_affected
 
 
 class ScaMonitorApp:
@@ -244,7 +245,7 @@ class ScaMonitorApp:
             rows = conn.execute(
                 f"""
                 SELECT advisory_id, source, summary, severity, ecosystem, package_name,
-                       affected_versions, fixed_version, is_known_exploited,
+                       affected_versions, affected_ranges, fixed_version, is_known_exploited,
                        is_malicious_package, published_at, modified_at
                 FROM advisories
                 {sql_where}
@@ -257,6 +258,7 @@ class ScaMonitorApp:
         for row in rows:
             advisory = row_to_dict(row)
             advisory["affected_versions"] = json.loads(advisory["affected_versions"])
+            advisory["affected_ranges"] = json.loads(advisory["affected_ranges"])
             advisory["is_known_exploited"] = bool(advisory["is_known_exploited"])
             advisory["is_malicious_package"] = bool(advisory["is_malicious_package"])
             advisories.append(advisory)
@@ -286,9 +288,9 @@ class ScaMonitorApp:
             """
             INSERT INTO advisories (
                 id, advisory_id, source, summary, severity, ecosystem, package_name,
-                canonical_package_name, affected_versions, fixed_version,
+                canonical_package_name, affected_versions, affected_ranges, fixed_version,
                 is_known_exploited, is_malicious_package, published_at, modified_at, raw_payload
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(advisory_id) DO UPDATE SET
                 source=excluded.source,
                 summary=excluded.summary,
@@ -297,6 +299,7 @@ class ScaMonitorApp:
                 package_name=excluded.package_name,
                 canonical_package_name=excluded.canonical_package_name,
                 affected_versions=excluded.affected_versions,
+                affected_ranges=excluded.affected_ranges,
                 fixed_version=excluded.fixed_version,
                 is_known_exploited=excluded.is_known_exploited,
                 is_malicious_package=excluded.is_malicious_package,
@@ -314,6 +317,7 @@ class ScaMonitorApp:
                 advisory.package_name,
                 advisory.canonical_package_name,
                 json.dumps(advisory.affected_versions),
+                json.dumps(advisory.affected_ranges),
                 advisory.fixed_version,
                 int(advisory.is_known_exploited),
                 int(advisory.is_malicious_package),
@@ -475,8 +479,9 @@ class ScaMonitorApp:
                 (dep["ecosystem"], dep["canonical_package_name"]),
             ).fetchall()
             for adv in advisories:
-                affected_versions = set(json.loads(adv["affected_versions"]))
-                if dep["resolved_version"] not in affected_versions:
+                affected_versions = json.loads(adv["affected_versions"])
+                affected_ranges = json.loads(adv["affected_ranges"])
+                if not version_is_affected(dep["resolved_version"], affected_versions, affected_ranges):
                     continue
                 risk = "critical" if adv["is_malicious_package"] or adv["is_known_exploited"] or adv["severity"] == "critical" else adv["severity"]
                 identity = ":".join([service["service_id"], service["environment"], adv["advisory_id"], dep["canonical_package_name"]])

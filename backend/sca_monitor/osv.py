@@ -21,6 +21,7 @@ class AdvisoryImport:
     package_name: str
     canonical_package_name: str
     affected_versions: list[str]
+    affected_ranges: list[dict[str, Any]]
     fixed_version: str | None
     is_known_exploited: bool
     is_malicious_package: bool
@@ -72,6 +73,7 @@ def parse_osv_advisories(payload: dict[str, Any]) -> list[AdvisoryImport]:
                 package_name=package_name,
                 canonical_package_name=canonical_package_name(ecosystem, package_name),
                 affected_versions=sorted({str(version) for version in affected.get("versions") or []}),
+                affected_ranges=affected.get("ranges") or [],
                 fixed_version=first_fixed_version(affected),
                 is_known_exploited=False,
                 is_malicious_package=advisory_id.startswith("MAL-"),

@@ -3,6 +3,7 @@ from backend.sca_monitor.migrations import REQUIRED_MIGRATION_VERSION
 from backend.sca_monitor.app import ScaMonitorApp
 from backend.sca_monitor.config import Settings
 from backend.sca_monitor.osv import parse_osv_advisories
+from backend.sca_monitor.versioning import version_is_affected
 
 
 def test_pypi_canonical_name():
@@ -35,7 +36,16 @@ def test_parse_osv_advisory_fixture():
     assert advisory.ecosystem == "npm"
     assert advisory.package_name == "example-package"
     assert advisory.affected_versions == ["1.0.0", "1.0.1"]
+    assert advisory.affected_ranges == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
     assert advisory.fixed_version == "1.0.2"
+
+
+def test_version_is_affected_by_osv_range():
+    affected_ranges = [{"type": "SEMVER", "events": [{"introduced": "4.0.0"}, {"fixed": "4.17.21"}]}]
+
+    assert version_is_affected("4.17.20", [], affected_ranges) is True
+    assert version_is_affected("4.17.21", [], affected_ranges) is False
+    assert version_is_affected("3.10.0", [], affected_ranges) is False
 
 
 def test_parse_multi_package_osv_advisory_uses_package_scoped_ids():
@@ -75,6 +85,39 @@ def test_parse_osv_uses_payload_severity_when_affected_specific_has_no_severity(
 
 
 def test_import_osv_payload_updates_advisory_and_sync_state(tmp_path):
+    app = make_test_app(tmp_path)
+
+    imported = app.import_osv_payload(osv_fixture())
+
+    assert imported == 1
+    advisories = app.list_advisories({"source": ["OSV"]})
+    advisory = next(advisory for advisory in advisories if advisory["advisory_id"] == "OSV-TEST-0001")
+    assert advisory["affected_ranges"] == [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.2"}]}]
+    overview = app.overview()
+    assert overview["advisory_sync"]["OSV"] == "ok"
+
+
+def test_range_only_osv_advisory_matches_snapshot(tmp_path):
+    app = make_test_app(tmp_path)
+    payload = osv_fixture()
+    payload["affected"][0]["versions"] = []
+
+    app.import_osv_payload(payload)
+    result = app.push_snapshot(
+        {
+            "service_id": "range-service",
+            "environment": "prod",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+
+    assert result["impacts_created_or_updated"] == 1
+    impacts = app.list_impacts({})
+    assert len(impacts) == 1
+    assert impacts[0]["advisory_id"] == "OSV-TEST-0001"
+
+
+def make_test_app(tmp_path):
     settings = Settings(
         app_env="test",
         host="127.0.0.1",
@@ -85,15 +128,7 @@ def test_import_osv_payload_updates_advisory_and_sync_state(tmp_path):
         frontend_dir=tmp_path,
         smoke_token="test",
     )
-    app = ScaMonitorApp(settings)
-
-    imported = app.import_osv_payload(osv_fixture())
-
-    assert imported == 1
-    advisories = app.list_advisories({"source": ["OSV"]})
-    assert any(advisory["advisory_id"] == "OSV-TEST-0001" for advisory in advisories)
-    overview = app.overview()
-    assert overview["advisory_sync"]["OSV"] == "ok"
+    return ScaMonitorApp(settings)
 
 
 def osv_fixture():

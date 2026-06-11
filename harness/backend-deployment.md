@@ -53,8 +53,8 @@ rolling deployment와 image-only rollback 중 구버전 인스턴스가 새 sche
   "database": "ok",
   "database_backend": "sqlite",
   "migration": {
-    "current": 2,
-    "required": 2,
+    "current": 3,
+    "required": 3,
     "minimum_supported": 1,
     "compatible": true
   }
