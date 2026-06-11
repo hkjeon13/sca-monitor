@@ -16,6 +16,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from backend.sca_monitor.app import ScaMonitorApp
+from backend.sca_monitor.config import Settings
 from backend.sca_monitor.db import Database
 from scripts.db_smoke import run_smoke
 
@@ -84,6 +86,50 @@ def run_postgres_smoke(database_url: str) -> dict[str, Any]:
     return run_smoke(database)
 
 
+def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
+    app = ScaMonitorApp(
+        Settings(
+            app_env="postgres-smoke",
+            host="127.0.0.1",
+            port=0,
+            data_dir=REPO_ROOT / ".data",
+            database_url=database_url,
+            database_path=REPO_ROOT / ".data" / "postgres-smoke.sqlite3",
+            frontend_dir=REPO_ROOT / "frontend",
+            smoke_token="postgres-smoke",
+        )
+    )
+    service_id = f"pg-smoke-{uuid.uuid4().hex[:12]}"
+    before = app.overview()
+    service = app.create_service(
+        {
+            "service_id": service_id,
+            "environment": "prod",
+            "owner_team": "platform",
+            "collection_mode": "push",
+        }
+    )
+    snapshot = app.push_snapshot(
+        {
+            "service_id": service_id,
+            "environment": "prod",
+            "snapshot_id": "postgres-smoke",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    after = app.overview()
+    if after["service_count"] < before["service_count"] + 1:
+        raise RuntimeError("API workflow smoke did not increase service_count")
+    if snapshot["idempotency_status"] != "created":
+        raise RuntimeError("API workflow smoke snapshot was not created")
+    return {
+        "service_id": service["service"]["service_id"],
+        "snapshot_id": snapshot["snapshot_id"],
+        "service_count_before": before["service_count"],
+        "service_count_after": after["service_count"],
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run PostgreSQL migration and DB smoke against a real PostgreSQL database.")
     parser.add_argument("--database-url", help="Existing PostgreSQL database URL.")
@@ -96,6 +142,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database", default="sca_monitor")
     parser.add_argument("--timeout-seconds", type=int, default=45)
     parser.add_argument("--keep-container", action="store_true")
+    parser.add_argument("--with-api-workflow", action="store_true", help="Run a service registration and snapshot push workflow through ScaMonitorApp.")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
 
@@ -115,6 +162,8 @@ def main() -> int:
                 return 0
             container_name, database_url = start_postgres_container(args)
         result = run_postgres_smoke(database_url)
+        if result["status"] == "ok" and args.with_api_workflow:
+            result["api_workflow"] = run_api_workflow_smoke(database_url)
         result["database_url_source"] = "docker" if container_name else "provided"
     except Exception as exc:  # noqa: BLE001 - smoke output should expose exact integration blocker.
         result = {"status": "failed", "error": exc.__class__.__name__, "detail": str(exc)}

@@ -118,12 +118,14 @@ python3 scripts/db_smoke.py --json
 
 ```bash
 python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
-python3 scripts/postgres_integration_smoke.py --use-docker --json
+python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
+python3 scripts/postgres_integration_smoke.py --use-docker --with-api-workflow --json
 bash scripts/deploy_db_gate.sh
 ```
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.
+`--with-api-workflow`는 synthetic service 등록과 snapshot push까지 실행하므로 CI 또는 stage DB에서 사용하고, 운영 DB에서는 승인된 synthetic service 정책이 있을 때만 사용한다.
 `deploy_db_gate.sh`는 배포 자동화에서 `db_smoke.py`를 항상 실행하고, PostgreSQL URL이면 integration smoke를 추가 실행한다.
 
 SQLite fallback과 PostgreSQL adapter에서 공통 검증하는 항목:

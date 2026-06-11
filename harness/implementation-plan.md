@@ -90,7 +90,7 @@ Phase 0 착수 전 선행 조건:
 - `migrations/postgres/004_advisory_sync_lock.sql` 추가
 - `scripts/migrate.py` 추가
 - `scripts/db_smoke.py` 기반 DB read/write rollback smoke gate 추가
-- `scripts/postgres_integration_smoke.py` 기반 실제 PostgreSQL migration/smoke gate 추가
+- `scripts/postgres_integration_smoke.py` 기반 실제 PostgreSQL migration/db smoke/API workflow gate 추가
 - `scripts/deploy_db_gate.sh` 기반 배포 시 PostgreSQL URL 자동 integration smoke gate 추가
 - `/ready` migration 상태 노출 추가
 - SQLite fallback 유지

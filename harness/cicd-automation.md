@@ -80,7 +80,7 @@ SMOKE_TEST_PUSH_TOKEN
 GET /health
 GET /ready
 python3 scripts/db_smoke.py --json
-python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --json
+python3 scripts/postgres_integration_smoke.py --database-url "$SCA_MONITOR_DATABASE_URL" --with-api-workflow --json
 python3 scripts/systemd_scheduler_status.py --json
 GET /api/v1/overview
 GET frontend /

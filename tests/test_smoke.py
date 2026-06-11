@@ -345,6 +345,18 @@ def test_postgres_integration_smoke_helpers():
     assert docker_database_url(55432, "user", "pass", "db") == "postgresql://user:pass@127.0.0.1:55432/db"
 
 
+def test_postgres_integration_api_workflow_smoke_uses_app_flow(tmp_path):
+    from scripts.postgres_integration_smoke import run_api_workflow_smoke
+
+    database_url = f"sqlite:///{tmp_path / 'workflow.sqlite3'}"
+
+    result = run_api_workflow_smoke(database_url)
+
+    assert result["service_id"].startswith("pg-smoke-")
+    assert result["snapshot_id"] == "postgres-smoke"
+    assert result["service_count_after"] == result["service_count_before"] + 1
+
+
 def test_postgres_integration_smoke_skips_without_database_url_or_docker():
     result = subprocess.run(
         ["python3", "scripts/postgres_integration_smoke.py", "--json"],
