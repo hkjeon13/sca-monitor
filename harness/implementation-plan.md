@@ -93,6 +93,7 @@ Phase 0 착수 전 선행 조건:
 - `scripts/postgres_integration_smoke.py` 기반 실제 PostgreSQL migration/db smoke/API workflow gate 추가
 - `scripts/deploy_db_gate.sh` 기반 배포 시 PostgreSQL URL 자동 integration smoke gate 추가
 - `scripts/ci_smoke.sh` 기반 pytest/static check/DB gate/systemd gate/PostgreSQL Docker smoke 통합 CI entrypoint 추가
+- `.github/workflows/ci.yml` 기반 PR/main push GitHub Actions smoke workflow 추가
 - `API_DATABASE_URL`/`WORKER_DATABASE_URL` 기반 API/worker DB URL 분리와 worker read-only smoke gate 추가
 - `MIGRATION_DATABASE_URL` 기반 migration owner credential과 API/worker runtime credential smoke 분리 추가
 - `SCA_MONITOR_AUTO_MIGRATE`/컴포넌트별 auto-migrate flag 기반 runtime migration 비활성화 지원
