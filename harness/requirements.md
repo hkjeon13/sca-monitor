@@ -81,7 +81,7 @@
 |---|---|---|---|
 | REQ-ALERT-001 | Slack workspace | REQUIRED | webhook 방식 기본 channel 등록/API/UI는 구현됨. Slack app 방식은 후속 결정 필요 |
 | REQ-ALERT-002 | webhook 대상 | PARTIAL | 기본 webhook channel 등록과 dispatcher 기본 target 사용은 구현됨. 운영 alert router/Jira/Teams 실제 URL과 secret 보관 방식 결정 필요 |
-| REQ-ALERT-003 | Daily Digest 채널 | REQUIRED | 팀별 digest 또는 중앙 digest |
+| REQ-ALERT-003 | Daily Digest 채널 | PARTIAL | 중앙 digest와 `owner_team`별 digest outbox/preview scope는 구현됨. 실제 운영 channel을 중앙 단일 채널로 둘지, 팀별 channel mapping을 둘지 결정 필요 |
 | REQ-ALERT-004 | escalation 채널 | REQUIRED | SLA 초과 시 순차 알림 대상 |
 | REQ-ALERT-005 | Daily Digest 시각 | REQUIRED | 발송 시각과 timezone. 예: 매일 09:00 Asia/Seoul |
 | REQ-ALERT-006 | SLA calendar | REQUIRED | SLA 계산에 영업일/휴일을 반영할지 결정 |

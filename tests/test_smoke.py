@@ -5048,6 +5048,49 @@ def test_daily_digest_includes_non_production_high_impact(tmp_path):
     assert result["items"][0]["environment"] == "stage"
 
 
+def test_daily_digest_can_scope_to_owner_team(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "platform-service",
+            "service_name": "Platform Service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    app.push_snapshot(
+        {
+            "service_id": "billing-service",
+            "service_name": "Billing Service",
+            "environment": "prod",
+            "owner_team": "billing",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    with app.db.connect() as conn:
+        conn.execute("UPDATE impacts SET risk_level = 'medium', status = 'open'")
+
+    result = app.enqueue_daily_digest_alert(
+        now="2026-01-03T00:00:00+00:00",
+        owner_team="platform",
+        actor="digest-scheduler",
+    )
+
+    assert result["matched"] == 1
+    assert result["enqueued"] == 1
+    assert result["owner_team"] == "platform"
+    assert result["alert_suppression_key"] == "daily_digest:2026-01-03:team:platform"
+    assert result["items"][0]["service_id"] == "platform-service"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT payload FROM alert_events WHERE reason = 'daily_digest'").fetchone()
+    payload = json.loads(row["payload"])
+    assert payload["digest"]["scope"] == "owner_team"
+    assert payload["digest"]["owner_team"] == "platform"
+    assert [item["service_id"] for item in payload["items"]] == ["platform-service"]
+
+
 def test_create_daily_digest_cli(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

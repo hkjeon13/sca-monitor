@@ -3050,13 +3050,21 @@ class ScaMonitorApp:
         digest_date: str | None = None,
         timezone_name: str = "Asia/Seoul",
         limit: int = 100,
+        owner_team: str | None = None,
         dry_run: bool = False,
         actor: str = "system",
     ) -> dict:
         checked_at = now or utcnow()
         limit = bounded_int(limit, default=100, minimum=1, maximum=1000)
         digest_date = digest_date or local_date_for_timestamp(checked_at, timezone_name)
-        suppression_key = f"daily_digest:{digest_date}:all"
+        owner_team = normalize_optional(owner_team)
+        scope = "owner_team" if owner_team else "all"
+        suppression_key = f"daily_digest:{digest_date}:team:{owner_team}" if owner_team else f"daily_digest:{digest_date}:all"
+        owner_team_clause = " AND s.owner_team = ?" if owner_team else ""
+        query_params = [*ACTIVE_IMPACT_STATUSES]
+        if owner_team:
+            query_params.append(owner_team)
+        query_params.append(limit)
         with self.db.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -3074,6 +3082,7 @@ class ScaMonitorApp:
                     i.risk_level IN ('medium', 'low', 'info')
                     OR LOWER(s.environment) NOT IN ('prod', 'production')
                   )
+                  {owner_team_clause}
                 ORDER BY
                   CASE i.risk_level
                     WHEN 'critical' THEN 1
@@ -3085,7 +3094,7 @@ class ScaMonitorApp:
                   i.first_detected_at ASC
                 LIMIT ?
                 """,
-                (*ACTIVE_IMPACT_STATUSES, limit),
+                tuple(query_params),
             ).fetchall()
             existing = conn.execute(
                 """
@@ -3105,6 +3114,8 @@ class ScaMonitorApp:
                 "matched": len(rows),
                 "enqueued": 0,
                 "dry_run": dry_run,
+                "scope": scope,
+                "owner_team": owner_team,
                 "alert_suppression_key": suppression_key,
                 "existing_alert_event_id": existing["id"] if existing else None,
                 "existing_alert_event_status": existing["status"] if existing else None,
@@ -3116,7 +3127,8 @@ class ScaMonitorApp:
                 "digest": {
                     "date": digest_date,
                     "timezone": timezone_name,
-                    "scope": "all",
+                    "scope": scope,
+                    "owner_team": owner_team,
                     "matched": len(items),
                     "criteria": "active medium-or-lower impacts plus active non-production impacts",
                 },
@@ -3152,6 +3164,7 @@ class ScaMonitorApp:
             digest_date=normalize_optional(body.get("date")),
             timezone_name=normalize_optional(body.get("timezone")) or "Asia/Seoul",
             limit=bounded_int(body.get("limit"), default=100, minimum=1, maximum=1000),
+            owner_team=normalize_optional(body.get("owner_team")),
             dry_run=True,
             actor=body.get("actor", "web-console"),
         )

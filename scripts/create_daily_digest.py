@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--now", default=None, help="Override current time for testing, as ISO-8601")
     parser.add_argument("--date", default=None, help="Digest date in YYYY-MM-DD. Defaults to --now converted to --timezone.")
     parser.add_argument("--timezone", default="Asia/Seoul", help="Timezone used to derive the digest date")
+    parser.add_argument("--owner-team", default=None, help="Limit the digest to one service owner team")
     args = parser.parse_args()
 
     app = ScaMonitorApp(load_settings(component="worker"))
@@ -30,6 +31,7 @@ def main() -> None:
         digest_date=args.date,
         timezone_name=args.timezone,
         limit=args.limit,
+        owner_team=args.owner_team,
         dry_run=args.dry_run,
         actor=args.actor,
     )
