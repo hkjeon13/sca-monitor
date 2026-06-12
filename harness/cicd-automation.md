@@ -178,6 +178,16 @@ SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
 scripts/deploy_remote.sh
 ```
 
+GitHub malware advisory까지 FR-016 malicious package risk 산정 경로에 반영하려면 별도 bootstrap을 명시한다.
+
+```bash
+SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP=required \
+SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP_LIMIT=1 \
+SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok,NVD=ok,GHSA=ok \
+SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
+scripts/deploy_remote.sh
+```
+
 `SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
 원격 VM 배포에서 systemd unit 설치 단계까지 검증하려면 다음처럼 명시한다.
