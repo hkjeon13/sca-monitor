@@ -40,6 +40,7 @@ PostgreSQL 전환 시 REQUIRED 입력값:
 | SSL mode | REQUIRED |
 | backup/PITR 정책 | REQUIRED |
 | migration dry-run 환경 | REQUIRED |
+| PostgreSQL env file mode `0600` | REQUIRED |
 
 ## Manual Follow-up Required
 

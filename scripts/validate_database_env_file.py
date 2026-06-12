@@ -36,10 +36,22 @@ def has_placeholder(value: str) -> bool:
     return any(marker in lowered for marker in PLACEHOLDER_MARKERS)
 
 
+def file_permission_check(path: Path) -> dict[str, str]:
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o077:
+        return check(
+            "blocker",
+            "file_permissions",
+            f"database env file must not grant group/other permissions; current mode is {oct(mode)}",
+        )
+    return check("ok", "file_permissions", f"database env file mode is {oct(mode)}")
+
+
 def validate(path: Path) -> dict[str, Any]:
     values = parse_env_lines(path.read_text(encoding="utf-8").splitlines())
     allowed_values = {key: values[key] for key in DATABASE_INPUT_KEYS if key in values}
     checks: list[dict[str, str]] = []
+    checks.append(file_permission_check(path))
 
     missing = [key for key in REQUIRED_SPLIT_KEYS if key not in allowed_values]
     if missing:

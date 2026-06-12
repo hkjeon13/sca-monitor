@@ -66,6 +66,7 @@ def dry_run(database_env_file: Path | None) -> dict[str, Any]:
         db_env_file = database_env_file or tmp_path / "postgres.env"
         if database_env_file is None:
             db_env_file.write_text(SYNTHETIC_DATABASE_ENV, encoding="utf-8")
+            db_env_file.chmod(0o600)
 
         validator = validate(db_env_file)
         result: dict[str, Any] = {

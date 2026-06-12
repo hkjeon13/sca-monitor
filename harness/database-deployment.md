@@ -203,7 +203,7 @@ scripts/deploy_remote.sh
 배포 로그에는 DB URL 원문을 출력하지 않는다.
 `scripts/prepare_database_env_file.py`는 `deploy/postgres.env.example`을 mode `0600`의 protected file로 생성하고, 기본값으로 기존 secret 파일을 덮어쓰지 않는다.
 생성 직후 validator 결과는 placeholder 때문에 `blocked`가 정상이며, 운영자가 실제 값을 입력한 뒤 `validate_database_env_file.py`가 `ok`가 되어야 배포 병합을 진행한다.
-`scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
+`scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일과 group/other 권한이 남은 secret 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정된 `scripts/deploy_remote.sh` 실행은 `.env` 병합 전에 이 validator를 stop gate로 먼저 실행한다.
 `SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required`는 worker stop 및 backup gate 이후, 일반 migration 실행 전에 `scripts/postgres_integration_smoke.py --production-preflight --json`을 실행한다.
 이 gate는 migration credential로 migration/write-rollback smoke를 수행하고 API/worker credential은 read-only smoke로 확인한다.
@@ -290,6 +290,7 @@ PostgreSQL split credential cutover ready 조건:
 
 - `SCA_MONITOR_DATABASE_URL`은 비워 둔다.
 - `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`은 모두 `postgresql://` 또는 `postgres://` URL이어야 한다.
+- PostgreSQL env file은 mode `0600` 또는 그보다 엄격해야 하며 group/other read/write/execute 권한이 없어야 한다.
 - `SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE`는 `auto` 또는 `required`이어야 한다. 운영 전환 gate에서는 `required`를 권장한다.
 - 운영 split credential 전환 gate에서는 `SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true`를 설정한다.
 - `SCA_MONITOR_AUTO_MIGRATE=false` 또는 `SCA_MONITOR_API_AUTO_MIGRATE=false`와 `SCA_MONITOR_WORKER_AUTO_MIGRATE=false`를 설정해 runtime DDL을 비활성화한다.

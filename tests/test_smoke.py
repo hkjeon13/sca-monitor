@@ -2030,6 +2030,7 @@ def test_validate_database_env_file_accepts_split_postgres_without_leaking_urls(
         + "\n",
         encoding="utf-8",
     )
+    database_env_file.chmod(0o600)
 
     result = subprocess.run(
         ["python3", "scripts/validate_database_env_file.py", "--database-env-file", str(database_env_file), "--json"],
@@ -2043,6 +2044,42 @@ def test_validate_database_env_file_accepts_split_postgres_without_leaking_urls(
     assert payload["status"] == "ok"
     assert payload["cutover"]["status"] == "ready"
     assert payload["summary"]["allowed_keys"] == 7
+    assert "postgresql://migration:secret" not in result.stdout
+    assert "postgresql://api:secret" not in result.stdout
+    assert "postgresql://worker:secret" not in result.stdout
+
+
+def test_validate_database_env_file_rejects_group_readable_secret_file_without_leaking_urls(tmp_path):
+    database_env_file = tmp_path / "postgres.env"
+    database_env_file.write_text(
+        "\n".join(
+            [
+                "MIGRATION_DATABASE_URL=postgresql://migration:secret@db.internal:5432/sca",
+                "API_DATABASE_URL=postgresql://api:secret@db.internal:5432/sca",
+                "WORKER_DATABASE_URL=postgresql://worker:secret@db.internal:5432/sca",
+                "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required",
+                "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true",
+                "SCA_MONITOR_API_AUTO_MIGRATE=false",
+                "SCA_MONITOR_WORKER_AUTO_MIGRATE=false",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    database_env_file.chmod(0o640)
+
+    result = subprocess.run(
+        ["python3", "scripts/validate_database_env_file.py", "--database-env-file", str(database_env_file), "--json"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert any(check["id"] == "file_permissions" and check["status"] == "blocker" for check in payload["checks"])
     assert "postgresql://migration:secret" not in result.stdout
     assert "postgresql://api:secret" not in result.stdout
     assert "postgresql://worker:secret" not in result.stdout
@@ -2085,6 +2122,7 @@ def test_cutover_readiness_report_combines_inputs_without_leaking_secrets(tmp_pa
         + "\n",
         encoding="utf-8",
     )
+    database_env_file.chmod(0o600)
     subprocess.run(
         ["python3", "scripts/migrate.py"],
         cwd=REPO_ROOT,
