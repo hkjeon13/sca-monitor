@@ -3364,6 +3364,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "enable-advisory-sync-dry-run" in operations_doc
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in backend_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in backend_doc
+    assert "alert_channel_readiness" in backend_doc
+    assert "`channel_type`이 의도한 `webhook` 또는 `slack_webhook`" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in operations_doc
     assert "--expect-database-backend sqlite" in operations_doc
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in operations_doc
@@ -8006,11 +8008,25 @@ def test_alert_dispatcher_go_live_gate_blocks_placeholder_channel(tmp_path):
     assert payload["systemd"]["status"] == "ok"
     assert "activation_check_ready" in payload["blocking_failures"]
     assert "default_alert_channel_not_placeholder" in payload["activation_check"]["blocking_failures"]
+    assert payload["alert_channel_readiness"] == {
+        "configured": True,
+        "ready": False,
+        "channel_type": "webhook",
+        "target_url_masked": "https://alerts.example.test/...",
+        "placeholder_target": True,
+    }
 
 
 def test_alert_dispatcher_go_live_gate_ready_with_real_channel_and_valid_units(tmp_path):
     app = make_test_app(tmp_path)
-    app.create_alert_channel({"name": "default", "target_url": "https://alerts.internal/default-secret", "is_default": True})
+    app.create_alert_channel(
+        {
+            "name": "default-slack",
+            "channel_type": "slack_webhook",
+            "target_url": "https://hooks.slack.com/services/T000/B000/secret",
+            "is_default": True,
+        }
+    )
     unit_dir = tmp_path / "systemd"
     subprocess.run(
         [
@@ -8051,6 +8067,13 @@ def test_alert_dispatcher_go_live_gate_ready_with_real_channel_and_valid_units(t
     assert payload["blocking_failures"] == []
     assert payload["activation_check"]["status"] == "ready"
     assert payload["systemd"]["status"] == "ok"
+    assert payload["alert_channel_readiness"] == {
+        "configured": True,
+        "ready": True,
+        "channel_type": "slack_webhook",
+        "target_url_masked": "https://hooks.slack.com/...",
+        "placeholder_target": False,
+    }
     assert "SCA_MONITOR_SYSTEMD_MODE=enable" in payload["go_live_command"]
 
 

@@ -281,6 +281,7 @@ python3 scripts/seed_default_alert_channel.py --json
 ```
 
 live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activation checklist와 systemd go-live gate를 통과해야 한다.
+자동화는 `alert_dispatcher_go_live_gate.py --json`의 `alert_channel_readiness.ready=true`와 `channel_type`이 의도한 `webhook` 또는 `slack_webhook`인지 확인한 뒤 live dispatcher enable을 진행한다.
 
 ```bash
 python3 scripts/alert_dispatcher_activation_check.py --json

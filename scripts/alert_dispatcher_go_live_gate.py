@@ -17,6 +17,19 @@ from backend.sca_monitor.config import load_settings
 from scripts.systemd_scheduler_status import build_status, default_unit_dir
 
 
+def alert_channel_readiness(activation: dict[str, Any]) -> dict[str, Any]:
+    channel = activation.get("preflight", {}).get("default_alert_channel", {})
+    configured = bool(channel.get("configured"))
+    placeholder = bool(channel.get("placeholder_target", True))
+    return {
+        "configured": configured,
+        "ready": configured and not placeholder,
+        "channel_type": channel.get("channel_type"),
+        "target_url_masked": channel.get("target_url_masked"),
+        "placeholder_target": placeholder,
+    }
+
+
 def build_go_live_gate(
     app: ScaMonitorApp,
     *,
@@ -69,6 +82,7 @@ def build_go_live_gate(
         "status": "ready" if not blocking_failures else "blocked",
         "blocking_failures": blocking_failures,
         "items": items,
+        "alert_channel_readiness": alert_channel_readiness(activation),
         "activation_check": activation,
         "systemd": systemd,
         "go_live_command": (
