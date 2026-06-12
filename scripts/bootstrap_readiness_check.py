@@ -16,7 +16,13 @@ from backend.sca_monitor.app import ScaMonitorApp
 from backend.sca_monitor.config import load_settings
 
 
-def build_bootstrap_readiness(app: ScaMonitorApp, *, alert_limit: int, include_alert_activation: bool) -> dict[str, Any]:
+def build_bootstrap_readiness(
+    app: ScaMonitorApp,
+    *,
+    alert_limit: int,
+    include_alert_activation: bool,
+    require_advisory_freshness: bool = False,
+) -> dict[str, Any]:
     db_readiness = app.db.readiness()
     overview = app.overview()
     advisory_readiness = overview["advisory_sync_readiness"]
@@ -34,6 +40,16 @@ def build_bootstrap_readiness(app: ScaMonitorApp, *, alert_limit: int, include_a
             "reason": f"advisory sync readiness is {advisory_readiness['status']}",
         },
     ]
+    if require_advisory_freshness:
+        freshness_status = advisory_readiness["freshness"]["status"]
+        items.append(
+            {
+                "name": "advisory_freshness_ready",
+                "status": "passed" if freshness_status == "fresh" else "failed",
+                "blocking": True,
+                "reason": f"advisory sync freshness is {freshness_status}",
+            }
+        )
     result: dict[str, Any] = {
         "database": db_readiness,
         "advisory_sync_readiness": advisory_readiness,
@@ -70,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Check DB and advisory initial sync readiness without requiring a live alert target.",
     )
+    parser.add_argument(
+        "--require-advisory-freshness",
+        action="store_true",
+        help="Block when any required advisory source is stale, partial, failed, or pending.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -81,6 +102,7 @@ def main() -> int:
         app,
         alert_limit=args.alert_limit,
         include_alert_activation=not args.skip_alert_activation,
+        require_advisory_freshness=args.require_advisory_freshness,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

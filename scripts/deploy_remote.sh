@@ -454,6 +454,9 @@ PY
     advisory|advisory-only|skip-alert-activation)
       python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation
       ;;
+    advisory-freshness|freshness|advisory-freshness-only)
+      python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation --require-advisory-freshness
+      ;;
     required|full)
       python3 scripts/bootstrap_readiness_check.py --json
       ;;

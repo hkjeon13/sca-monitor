@@ -3028,7 +3028,9 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "database env preflight completed; deployment stopped before runtime changes" in script
     assert "scripts/advisory_source_preflight.py --check" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
+    assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation --require-advisory-freshness" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
+    assert "advisory-freshness|freshness|advisory-freshness-only" in script
     assert "scripts/http_smoke.py" in script
     assert "scripts/backup_database.py --json" in script
     assert "scripts/verify_backup_restore.py --backup-path" in script
@@ -3138,8 +3140,11 @@ def test_harness_documents_bootstrap_readiness_deploy_gate():
     cicd_doc = (REPO_ROOT / "harness" / "cicd-automation.md").read_text(encoding="utf-8")
 
     assert "SCA_MONITOR_BOOTSTRAP_READINESS=advisory" in bootstrap_doc
+    assert "SCA_MONITOR_BOOTSTRAP_READINESS=advisory-freshness" in bootstrap_doc
+    assert "--require-advisory-freshness" in bootstrap_doc
     assert "SCA_MONITOR_BOOTSTRAP_READINESS=required" in bootstrap_doc
     assert "SCA_MONITOR_BOOTSTRAP_READINESS=advisory" in cicd_doc
+    assert "SCA_MONITOR_BOOTSTRAP_READINESS=advisory-freshness" in cicd_doc
 
 
 def test_ci_smoke_requires_base_url_when_http_smoke_required(tmp_path):
@@ -4960,6 +4965,36 @@ def test_bootstrap_readiness_check_cli_can_skip_alert_activation(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["status"] == "ready"
     assert "alert_dispatcher_activation" not in payload
+
+
+def test_bootstrap_readiness_check_cli_blocks_stale_advisory_freshness_when_required(tmp_path):
+    app = make_test_app(tmp_path, advisory_sync_stale_after_seconds=30)
+    app.record_advisory_sync("OSV", "ok", "npm:dump", None, imported_count=1)
+    app.record_advisory_sync("CISA_KEV", "ok", "catalog:test", None, imported_count=1)
+    app.record_advisory_sync("OpenSSF", "ok", "npm:dump", None, imported_count=1)
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisory_sync_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE source = 'OSV'")
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": app.settings.database_url,
+        "SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS": "30",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/bootstrap_readiness_check.py", "--json", "--skip-alert-activation", "--require-advisory-freshness"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert payload["status"] == "blocked"
+    assert payload["blocking_failures"] == ["advisory_freshness_ready"]
+    assert payload["advisory_sync_readiness"]["freshness"]["status"] == "stale"
 
 
 def test_bootstrap_advisory_sync_cli_initializes_required_sources(tmp_path):

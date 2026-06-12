@@ -125,11 +125,19 @@ python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation
 ```
 
 원격 배포 자동화에서 같은 gate를 강제하려면 `SCA_MONITOR_BOOTSTRAP_READINESS`를 설정한다.
-`advisory`는 alert dispatcher activation을 제외한 bootstrap readiness만 확인하고, `required`는 alert activation까지 포함한 full readiness를 요구한다.
+`advisory`는 alert dispatcher activation을 제외한 bootstrap readiness만 확인하고, `advisory-freshness`는 여기에 advisory source freshness까지 stop gate로 추가한다.
+`required`는 alert activation까지 포함한 full readiness를 요구한다.
 
 ```bash
 SCA_MONITOR_BOOTSTRAP_READINESS=advisory scripts/deploy_remote.sh
+SCA_MONITOR_BOOTSTRAP_READINESS=advisory-freshness scripts/deploy_remote.sh
 SCA_MONITOR_BOOTSTRAP_READINESS=required scripts/deploy_remote.sh
+```
+
+`advisory-freshness` 모드는 내부적으로 다음 검증을 수행한다.
+
+```bash
+python3 scripts/bootstrap_readiness_check.py --json --skip-alert-activation --require-advisory-freshness
 ```
 
 ## 8. Bootstrap 완료 기준
