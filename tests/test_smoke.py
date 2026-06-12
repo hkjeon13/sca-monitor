@@ -2575,6 +2575,32 @@ def test_prepare_database_env_file_creates_protected_placeholder_without_overwri
     assert any(check["id"] == "existing_file" and check["status"] == "blocker" for check in second_payload["checks"])
 
 
+def test_postgres_prepare_rehearsal_creates_expected_blocked_report_without_runtime_changes():
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/postgres_prepare_rehearsal.py",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["mode"] == "temporary"
+    assert payload["database_env_file"] == "temporary"
+    assert payload["cutover_report"]["expected_status"] == "blocked"
+    assert payload["cutover_report"]["expectation_met"] is True
+    assert payload["database_env_file_mode"] == "0o600"
+    assert payload["cutover_report_mode"] == "0o600"
+    assert "postgresql://<migration_user>" not in result.stdout
+    assert "<password>" not in result.stdout
+    assert "/tmp/" not in result.stdout
+
+
 def test_postgres_env_example_is_placeholder_and_blocked_by_validator():
     example = (REPO_ROOT / "deploy" / "postgres.env.example").read_text(encoding="utf-8")
     assert "MIGRATION_DATABASE_URL=postgresql://<migration_user>:<password>@<host>:5432/<database>" in example
@@ -3252,6 +3278,7 @@ def test_ci_smoke_runs_core_gates():
     assert "scripts/deployment_input_readiness.py" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/prepare_database_env_file.py" in script
+    assert "scripts/postgres_prepare_rehearsal.py --json" in script
     assert "scripts/database_env_dry_run_gate.py" in script
     assert "scripts/backup_database.py" in script
     assert "scripts/verify_backup_restore.py" in script
@@ -3407,6 +3434,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT=expected-blocked" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/prepare_database_env_file.py" in database_doc
+    assert "scripts/postgres_prepare_rehearsal.py --json" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
     assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "scripts/verify_backup_restore.py" in database_doc

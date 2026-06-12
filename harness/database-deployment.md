@@ -215,6 +215,13 @@ scripts/deploy_remote.sh
 `scripts/prepare_database_env_file.py`는 `deploy/postgres.env.example`을 mode `0600`의 protected file로 생성하고, 기본값으로 기존 secret 파일을 덮어쓰지 않는다.
 생성 직후 validator 결과는 placeholder 때문에 `blocked`가 정상이며, 운영자가 실제 값을 입력한 뒤 `validate_database_env_file.py`가 `ok`가 되어야 배포 병합을 진행한다.
 `SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT=expected-blocked`는 같은 placeholder 파일로 `cutover_readiness_report.py --expect-status blocked`를 실행해 sanitized report artifact를 mode `0600`으로 남기고, `.env` 병합, migration, runtime restart는 수행하지 않는다.
+운영 파일을 만들기 전 전체 prepare/report 흐름만 임시 workspace에서 리허설하려면 다음 read-only gate를 실행한다.
+
+```bash
+python3 scripts/postgres_prepare_rehearsal.py --json
+```
+
+이 rehearsal은 임시 runtime env, 임시 protected PostgreSQL env file, 임시 cutover readiness report만 만들고 삭제하며, 운영 `.env`, `.secrets`, `.data`, systemd runtime은 변경하지 않는다.
 `scripts/validate_database_env_file.py`는 `deploy/postgres.env.example` 같은 placeholder 파일과 group/other 권한이 남은 secret 파일을 차단하고, 검증 출력에 DB URL 원문을 포함하지 않는다.
 `SCA_MONITOR_DATABASE_ENV_FILE`이 설정된 `scripts/deploy_remote.sh` 실행은 `.env` 병합 전에 이 validator를 stop gate로 먼저 실행한다.
 `SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required`는 worker stop 및 backup gate 이후, 일반 migration 실행 전에 `scripts/postgres_integration_smoke.py --production-preflight --json`을 실행한다.

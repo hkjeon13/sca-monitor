@@ -20,7 +20,7 @@ if [ "$RUN_HTTP_SMOKE" = "required" ] && [ -z "$BASE_URL" ]; then
 fi
 
 python3 -m pytest tests
-python3 -m py_compile backend/sca_monitor/app.py backend/sca_monitor/db.py backend/sca_monitor/postgres_cutover.py scripts/configure_runtime_inputs.py scripts/postgres_integration_smoke.py scripts/validate_database_env_file.py scripts/prepare_database_env_file.py scripts/database_env_dry_run_gate.py scripts/backup_database.py scripts/verify_backup_restore.py scripts/cutover_readiness_report.py scripts/advisory_source_preflight.py
+python3 -m py_compile backend/sca_monitor/app.py backend/sca_monitor/db.py backend/sca_monitor/postgres_cutover.py scripts/configure_runtime_inputs.py scripts/postgres_integration_smoke.py scripts/validate_database_env_file.py scripts/prepare_database_env_file.py scripts/postgres_prepare_rehearsal.py scripts/database_env_dry_run_gate.py scripts/backup_database.py scripts/verify_backup_restore.py scripts/cutover_readiness_report.py scripts/advisory_source_preflight.py
 deployment_readiness_args=(--env-file "$DEPLOYMENT_ENV_FILE" --json)
 case "$REQUIRE_RUNTIME_INPUTS" in
   true|1|yes|on)
@@ -34,6 +34,7 @@ case "$REQUIRE_RUNTIME_INPUTS" in
     ;;
 esac
 python3 scripts/deployment_input_readiness.py "${deployment_readiness_args[@]}"
+python3 scripts/postgres_prepare_rehearsal.py --json
 python3 scripts/database_env_dry_run_gate.py --json
 python3 scripts/advisory_source_preflight.py --list-only --json
 node --check frontend/app.js
