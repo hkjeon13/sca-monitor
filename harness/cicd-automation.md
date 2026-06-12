@@ -282,11 +282,20 @@ python3 scripts/seed_default_alert_channel.py --json
 
 live dispatcher enable 전에는 DB/default channel/dry-run dispatcher activation checklist와 systemd go-live gate를 통과해야 한다.
 자동화는 `alert_dispatcher_go_live_gate.py --json`의 `alert_channel_readiness.ready=true`와 `channel_type`이 의도한 `webhook` 또는 `slack_webhook`인지 확인한 뒤 live dispatcher enable을 진행한다.
+원격 배포 자동화에서 live dispatcher를 켤 때는 go-live gate를 명시적으로 required로 둔다.
 
 ```bash
 python3 scripts/alert_dispatcher_activation_check.py --json
 python3 scripts/alert_dispatcher_go_live_gate.py --json
 python3 scripts/bootstrap_readiness_check.py --json
+```
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable \
+SCA_MONITOR_ALERT_GO_LIVE_GATE=required \
+SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE=slack_webhook \
+SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
+scripts/deploy_remote.sh
 ```
 
 운영 환경에서는 destructive test를 실행하지 않는다.

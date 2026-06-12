@@ -266,6 +266,7 @@ journalctl --user -u sca-monitor-alert-dispatcher.service -n 100
 이미 active 상태인 unit도 새 코드와 unit 파일을 반영하도록 `enable --now` 이후 대상 service/timer를 명시적으로 restart한다.
 live dispatcher를 포함하는 `enable` 전환 전에는 `python3 scripts/alert_dispatcher_go_live_gate.py --json`으로 default webhook/Slack channel, placeholder target, dry-run dispatcher, dead-letter blocking condition, systemd unit 상태를 확인한다.
 go-live gate의 `alert_channel_readiness`는 `configured`, `ready`, `channel_type`, `target_url_masked`, `placeholder_target`을 top-level로 제공해 배포 자동화가 Slack/Webhook 준비 상태를 직접 판단할 수 있게 한다.
+원격 배포 스크립트는 `SCA_MONITOR_ALERT_GO_LIVE_GATE=required`가 설정된 경우 `SCA_MONITOR_SYSTEMD_MODE=enable` 전에 이 gate를 실행하며, `SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE`으로 의도한 `webhook` 또는 `slack_webhook` channel type을 강제할 수 있다.
 `off`, `validate`, `install` 모드에서는 기존 nohup API runtime을 유지한다.
 `enable-api`, `enable-poller`, `enable-dispatcher-dry-run`, `enable` 모드는 `systemctl` 명령 존재와 `systemctl --user list-unit-files` 접근성을 preflight로 확인한 뒤 진행하며, 성공 결과에는 `systemctl is-enabled/is-active` 상태가 포함된다.
 systemd deploy gate가 실패하면 원격 배포 스크립트는 legacy nohup API runtime을 다시 시작하고 실패를 반환한다.

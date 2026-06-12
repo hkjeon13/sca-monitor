@@ -9,6 +9,8 @@ SYSTEMD_SCOPE_OVERRIDE="${SCA_MONITOR_SYSTEMD_SCOPE:-}"
 SYSTEMD_PREFIX_OVERRIDE="${SCA_MONITOR_SYSTEMD_PREFIX:-}"
 SYSTEMD_PYTHON_OVERRIDE="${SCA_MONITOR_SYSTEMD_PYTHON:-}"
 SYSTEMD_REQUIRE_ACTIVE_UNITS_OVERRIDE="${SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS:-}"
+ALERT_GO_LIVE_GATE="${SCA_MONITOR_ALERT_GO_LIVE_GATE:-auto}"
+EXPECT_ALERT_CHANNEL_TYPE="${SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE:-}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 PUBLIC_URL_OVERRIDE="${SCA_MONITOR_PUBLIC_URL:-}"
 GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
@@ -188,6 +190,8 @@ ssh "$REMOTE" "set -euo pipefail
   SYSTEMD_PREFIX_OVERRIDE='$SYSTEMD_PREFIX_OVERRIDE'
   SYSTEMD_PYTHON_OVERRIDE='$SYSTEMD_PYTHON_OVERRIDE'
   SYSTEMD_REQUIRE_ACTIVE_UNITS_OVERRIDE='$SYSTEMD_REQUIRE_ACTIVE_UNITS_OVERRIDE'
+  ALERT_GO_LIVE_GATE='$ALERT_GO_LIVE_GATE'
+  EXPECT_ALERT_CHANNEL_TYPE='$EXPECT_ALERT_CHANNEL_TYPE'
   REQUIRE_RUNTIME_INPUTS='$REQUIRE_RUNTIME_INPUTS'
   ADVISORY_SOURCE_PREFLIGHT='$ADVISORY_SOURCE_PREFLIGHT'
   ADVISORY_SOURCE_PREFLIGHT_TIMEOUT='$ADVISORY_SOURCE_PREFLIGHT_TIMEOUT'
@@ -543,6 +547,47 @@ PY
       sleep 1
     fi
   fi
+  run_alert_go_live_gate() {
+    gate_json=\$(python3 scripts/alert_dispatcher_go_live_gate.py --json --skip-systemctl-state)
+    printf '%s\n' \"\$gate_json\"
+    if [ -n \"\$EXPECT_ALERT_CHANNEL_TYPE\" ]; then
+      GATE_JSON=\"\$gate_json\" EXPECT_ALERT_CHANNEL_TYPE=\"\$EXPECT_ALERT_CHANNEL_TYPE\" python3 - <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["GATE_JSON"])
+expected = os.environ["EXPECT_ALERT_CHANNEL_TYPE"]
+actual = (payload.get("alert_channel_readiness") or {}).get("channel_type")
+if actual != expected:
+    print(f"alert go-live gate channel_type mismatch: expected={expected} actual={actual}", file=sys.stderr)
+    raise SystemExit(2)
+PY
+    fi
+  }
+  case \"\$ALERT_GO_LIVE_GATE\" in
+    disabled|skip|false|0|'')
+      echo 'alert go-live gate skipped'
+      ;;
+    auto)
+      if [ \"\$SYSTEMD_MODE\" = 'enable' ]; then
+        run_alert_go_live_gate
+      else
+        echo 'alert go-live gate skipped for non-enable systemd mode'
+      fi
+      ;;
+    required|true|1|yes|on)
+      if [ \"\$SYSTEMD_MODE\" != 'enable' ]; then
+        echo 'SCA_MONITOR_ALERT_GO_LIVE_GATE=required only supports SCA_MONITOR_SYSTEMD_MODE=enable' >&2
+        exit 2
+      fi
+      run_alert_go_live_gate
+      ;;
+    *)
+      echo \"invalid SCA_MONITOR_ALERT_GO_LIVE_GATE: \$ALERT_GO_LIVE_GATE\" >&2
+      exit 2
+      ;;
+  esac
   if ! SCA_MONITOR_SYSTEMD_MODE=\"\$SYSTEMD_MODE\" \
     SCA_MONITOR_SYSTEMD_SCOPE=\"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\" \
     SCA_MONITOR_SYSTEMD_PREFIX=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\" \

@@ -3223,6 +3223,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in script
+    assert "SCA_MONITOR_ALERT_GO_LIVE_GATE" in script
+    assert "SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE" in script
     assert "SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
@@ -3255,6 +3257,10 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation" in script
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation --require-advisory-freshness" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
+    assert "scripts/alert_dispatcher_go_live_gate.py --json" in script
+    assert "--skip-systemctl-state" in script
+    assert "SCA_MONITOR_ALERT_GO_LIVE_GATE=required" in script
+    assert "SCA_MONITOR_ALERT_GO_LIVE_GATE=required only supports SCA_MONITOR_SYSTEMD_MODE=enable" in script
     assert "advisory-freshness|freshness|advisory-freshness-only" in script
     assert "--expect-advisory-source-status" in script
     assert "scripts/http_smoke.py" in script
@@ -3295,6 +3301,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("scripts/merge_canonical_advisories.py --limit") < script.index("bash scripts/deploy_systemd_gate.sh")
     assert script.index("scripts/cutover_readiness_report.py") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
+    assert script.index("scripts/alert_dispatcher_go_live_gate.py --json") < script.index("bash scripts/deploy_systemd_gate.sh")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
 
 
@@ -3365,6 +3372,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in backend_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in backend_doc
     assert "alert_channel_readiness" in backend_doc
+    assert "SCA_MONITOR_ALERT_GO_LIVE_GATE=required" in backend_doc
+    assert "SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE" in backend_doc
+    assert "SCA_MONITOR_ALERT_GO_LIVE_GATE=required" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE=slack_webhook" in cicd_doc
     assert "`channel_type`이 의도한 `webhook` 또는 `slack_webhook`" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in operations_doc
     assert "--expect-database-backend sqlite" in operations_doc
