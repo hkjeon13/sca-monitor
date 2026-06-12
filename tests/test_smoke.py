@@ -3242,6 +3242,20 @@ def test_web_console_renders_database_readiness_panel():
     assert "Passing checks" in script
 
 
+def test_web_console_guides_service_scoped_snapshot_push():
+    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert "POST /api/v1/services/{service_id}/status" in html
+    assert "Authorization: Bearer ${PUSH_TOKEN}" in html
+    assert "Idempotency-Key" in html
+    assert "generated_at" in html
+    assert "dependencies" in html
+    assert "/api/v1/snapshots" not in html
+    assert "/api/v1/snapshots" not in script
+    assert "/api/v1/services/${encodeURIComponent(form.service_id)}/status" in script
+
+
 def test_web_console_gates_impact_status_options_by_role():
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 

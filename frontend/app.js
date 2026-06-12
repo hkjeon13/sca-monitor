@@ -908,7 +908,7 @@ document.querySelector("#snapshot-form").addEventListener("submit", async (event
   event.preventDefault();
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
   const headers = form.token ? {"Authorization": `Bearer ${form.token}`} : {};
-  await api.send("/api/v1/snapshots", "POST", {
+  await api.send(`/api/v1/services/${encodeURIComponent(form.service_id)}/status`, "POST", {
     schema_version: "1.0",
     service_id: form.service_id,
     environment: "prod",
