@@ -7104,6 +7104,47 @@ def test_dispatch_pending_alerts_uses_default_channel(tmp_path):
         assert row["channel_target"] == "https://alerts.example.test/default"
 
 
+def test_dispatch_pending_alerts_routes_daily_digest_to_owner_team_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "platform-service",
+            "service_name": "Platform Service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    with app.db.connect() as conn:
+        conn.execute("UPDATE impacts SET risk_level = 'medium', status = 'open'")
+        conn.execute("DELETE FROM alert_events")
+    app.enqueue_daily_digest_alert(
+        now="2026-01-03T00:00:00+00:00",
+        owner_team="platform",
+        actor="digest-scheduler",
+    )
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default", "is_default": True})
+    app.create_alert_channel(
+        {
+            "name": "platform",
+            "target_url": "https://alerts.internal/platform",
+            "is_default": False,
+            "owner_team": "platform",
+        }
+    )
+    delivered = []
+
+    result = dispatch_pending_alerts(app, webhook_url=None, sender=lambda url, payload: delivered.append((url, payload)))
+
+    assert result.sent == 1
+    assert delivered[0][0] == "https://alerts.internal/platform"
+    assert delivered[0][1]["digest"]["owner_team"] == "platform"
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT channel_target FROM alert_events WHERE reason = 'daily_digest'").fetchone()
+        assert row["channel_target"] == "https://alerts.internal/platform"
+
+
 def test_dispatch_pending_alerts_ignores_disabled_default_channel(tmp_path):
     app = make_test_app(tmp_path)
     create_alerting_impact(app)

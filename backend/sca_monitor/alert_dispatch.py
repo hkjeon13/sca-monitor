@@ -36,8 +36,6 @@ def dispatch_pending_alerts(
 ) -> AlertDispatchResult:
     now = utcnow()
     owner = lock_owner or default_lock_owner()
-    if not dry_run:
-        webhook_url = webhook_url or app.default_alert_webhook_url()
     with app.db.connect() as conn:
         eligible_rows = conn.execute(
             """
@@ -59,7 +57,12 @@ def dispatch_pending_alerts(
 
         if dry_run:
             return AlertDispatchResult(pending=len(eligible_rows), claimed=0, sent=0, failed=0, dry_run=True)
-        if eligible_rows and not webhook_url:
+        default_webhook_url = None if webhook_url else app.default_alert_webhook_url()
+        target_by_event_id = {
+            row["id"]: resolve_alert_webhook_url(conn, row, explicit_webhook_url=webhook_url, default_webhook_url=default_webhook_url)
+            for row in eligible_rows
+        }
+        if eligible_rows and any(target is None for target in target_by_event_id.values()):
             raise ValueError("webhook_url required when pending alerts exist")
 
         rows = []
@@ -87,8 +90,9 @@ def dispatch_pending_alerts(
         for row in rows:
             payload = alert_payload(row)
             headers = alert_headers(row)
+            target_url = target_by_event_id[row["id"]]
             try:
-                call_sender(send, webhook_url or "", payload, headers)
+                call_sender(send, target_url or "", payload, headers)
             except Exception as exc:
                 failed += 1
                 retry_count = int(row["retry_count"] or 0) + 1
@@ -120,7 +124,7 @@ def dispatch_pending_alerts(
                     dispatch_lock_expires_at = NULL, next_attempt_at = NULL
                 WHERE id = ?
                 """,
-                (utcnow(), webhook_url, json.dumps(payload, ensure_ascii=False), row["id"]),
+                (utcnow(), target_url, json.dumps(payload, ensure_ascii=False), row["id"]),
             )
     return AlertDispatchResult(pending=len(eligible_rows), claimed=len(rows), sent=sent, failed=failed, dry_run=False)
 
@@ -187,6 +191,34 @@ def alert_headers(row) -> dict[str, str]:
         "X-SCA-Alert-Event-Id": row["id"],
         "X-SCA-Alert-Suppression-Key": row["alert_suppression_key"],
     }
+
+
+def resolve_alert_webhook_url(conn, row, *, explicit_webhook_url: str | None, default_webhook_url: str | None) -> str | None:
+    if explicit_webhook_url:
+        return explicit_webhook_url
+    owner_team = alert_owner_team(row)
+    if owner_team:
+        channel = conn.execute(
+            """
+            SELECT target_url
+            FROM alert_channels
+            WHERE enabled AND channel_type = 'webhook' AND owner_team = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (owner_team,),
+        ).fetchone()
+        if channel and channel["target_url"]:
+            return channel["target_url"]
+    return default_webhook_url
+
+
+def alert_owner_team(row) -> str | None:
+    payload = json_column(row["payload"], {})
+    digest = payload.get("digest") if isinstance(payload, dict) else None
+    if isinstance(digest, dict) and digest.get("owner_team"):
+        return str(digest["owner_team"])
+    return None
 
 
 def call_sender(sender: Callable, webhook_url: str, payload: dict, headers: dict[str, str]) -> None:
