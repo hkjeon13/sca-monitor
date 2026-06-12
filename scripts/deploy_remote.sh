@@ -17,6 +17,7 @@ GENERATE_SMOKE_TOKEN="${SCA_MONITOR_GENERATE_SMOKE_TOKEN:-false}"
 DATABASE_ENV_FILE="${SCA_MONITOR_DATABASE_ENV_FILE:-}"
 PREPARE_DATABASE_ENV_FILE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FILE:-}"
 PREPARE_DATABASE_ENV_FORCE="${SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE:-false}"
+PREPARE_DATABASE_ENV_REPORT="${SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT:-disabled}"
 DATABASE_ENV_DRY_RUN="${SCA_MONITOR_DATABASE_ENV_DRY_RUN:-disabled}"
 DATABASE_ENV_PREFLIGHT_ONLY="${SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY:-false}"
 DATABASE_ENV_PREFLIGHT_EXPECT="${SCA_MONITOR_DATABASE_ENV_PREFLIGHT_EXPECT:-ok}"
@@ -61,6 +62,7 @@ ssh "$REMOTE" "set -euo pipefail
   DATABASE_ENV_FILE='$DATABASE_ENV_FILE'
   PREPARE_DATABASE_ENV_FILE='$PREPARE_DATABASE_ENV_FILE'
   PREPARE_DATABASE_ENV_FORCE='$PREPARE_DATABASE_ENV_FORCE'
+  PREPARE_DATABASE_ENV_REPORT='$PREPARE_DATABASE_ENV_REPORT'
   DATABASE_ENV_DRY_RUN='$DATABASE_ENV_DRY_RUN'
   DATABASE_ENV_PREFLIGHT_ONLY='$DATABASE_ENV_PREFLIGHT_ONLY'
   DATABASE_ENV_PREFLIGHT_EXPECT='$DATABASE_ENV_PREFLIGHT_EXPECT'
@@ -80,6 +82,28 @@ ssh "$REMOTE" "set -euo pipefail
         ;;
       *)
         echo \"invalid SCA_MONITOR_PREPARE_DATABASE_ENV_FORCE: \$PREPARE_DATABASE_ENV_FORCE\" >&2
+        exit 2
+        ;;
+    esac
+    case \"\$PREPARE_DATABASE_ENV_REPORT\" in
+      disabled|skip|false|0|'')
+        echo 'prepare database env report skipped'
+        ;;
+      expected-blocked|blocked)
+        echo 'SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT=expected-blocked'
+        python3 scripts/cutover_readiness_report.py \
+          --env-file .env \
+          --database-env-file \"\$PREPARE_DATABASE_ENV_FILE\" \
+          --require-postgres \
+          --require-split \
+          --require-runtime-inputs \
+          --expect-status blocked \
+          --output \"\$CUTOVER_READINESS_REPORT_PATH\" \
+          --json
+        echo \"prepare database env report written: \$CUTOVER_READINESS_REPORT_PATH\"
+        ;;
+      *)
+        echo \"invalid SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT: \$PREPARE_DATABASE_ENV_REPORT\" >&2
         exit 2
         ;;
     esac

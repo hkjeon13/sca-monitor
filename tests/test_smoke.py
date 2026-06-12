@@ -3294,6 +3294,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN" in script
     assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY" in script
     assert "SCA_MONITOR_DATABASE_ENV_PREFLIGHT_EXPECT" in script
+    assert "SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT" in script
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
@@ -3322,6 +3323,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH" in script
     assert "--database-env-file" in script
     assert "scripts/prepare_database_env_file.py --database-env-file" in script
+    assert "prepare database env report written" in script
+    assert "SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT=expected-blocked" in script
     assert "database env file prepared; edit it before enabling PostgreSQL cutover" in script
     assert "scripts/validate_database_env_file.py" in script
     assert "scripts/database_env_dry_run_gate.py --json" in script
@@ -3401,6 +3404,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "`database_env_file`" in database_doc
     assert "파일 경로, DB URL 원문, host, username, password는 표시하지 않는다" in database_doc
     assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in database_doc
+    assert "SCA_MONITOR_PREPARE_DATABASE_ENV_REPORT=expected-blocked" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/prepare_database_env_file.py" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
