@@ -502,6 +502,12 @@ elif [[ "$ENABLE_ADVISORY_SYNC_DRY_RUN" == "1" ]]; then
     "${PREFIX}-nvd-cve-sync.service" \
     "${PREFIX}-osv-npm-sync.service" \
     "${PREFIX}-openssf-malicious-sync.service" 2>/dev/null || true
+  "${SYSTEMCTL[@]}" reset-failed \
+    "${PREFIX}-cisa-kev-sync.service" \
+    "${PREFIX}-ghsa-sync.service" \
+    "${PREFIX}-nvd-cve-sync.service" \
+    "${PREFIX}-osv-npm-sync.service" \
+    "${PREFIX}-openssf-malicious-sync.service" 2>/dev/null || true
 elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)

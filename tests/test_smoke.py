@@ -1537,6 +1537,7 @@ exit 0
     assert "sca-monitor-cisa-kev-sync.service" in stopped_lines
     assert "sca-monitor-ghsa-sync.service" in stopped_lines
     assert "sca-monitor-nvd-cve-sync.service" in stopped_lines
+    assert "reset-failed sca-monitor-cisa-kev-sync.service sca-monitor-ghsa-sync.service sca-monitor-nvd-cve-sync.service sca-monitor-osv-npm-sync.service sca-monitor-openssf-malicious-sync.service" in log_text
 
 
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
