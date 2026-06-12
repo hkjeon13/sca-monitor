@@ -111,6 +111,7 @@ python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-pos
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-advisory-sync-ready true --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-cutover-report-status ok --json
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-cutover-report-status blocked --expect-cutover-report-expected-status blocked --require-cutover-report-expectation-met --json
 python3 scripts/deployment_input_readiness.py --env-file .env --json
 python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres --require-split --json
 python3 scripts/db_smoke.py --json

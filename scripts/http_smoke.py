@@ -218,24 +218,45 @@ def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready:
         }
 
 
-def check_cutover_report_status(base_url: str, timeout: float, expected_status: str) -> dict[str, Any]:
+def check_cutover_report_status(
+    base_url: str,
+    timeout: float,
+    expected_status: str,
+    *,
+    expected_report_expected_status: str | None = None,
+    require_expectation_met: bool = False,
+) -> dict[str, Any]:
     try:
         status, payload = fetch_json(base_url, "/api/v1/operations/cutover-readiness-report", timeout)
         artifact = payload.get("artifact") or {}
         report = payload.get("report") or {}
         artifact_status = artifact.get("status")
         report_status = report.get("status")
+        report_expected_status = report.get("expected_status")
+        report_expectation_met = report.get("expectation_met")
+        expected_status_ok = expected_report_expected_status is None or report_expected_status == expected_report_expected_status
+        expectation_met_ok = not require_expectation_met or report_expectation_met is True
         return {
             "expected_status": expected_status,
             "artifact_status": artifact_status,
             "report_status": report_status,
-            "ok": status == 200 and artifact_status == "available" and report_status == expected_status,
+            "report_expected_status": report_expected_status,
+            "report_expectation_met": report_expectation_met,
+            "required_expectation_met": require_expectation_met,
+            "ok": status == 200
+            and artifact_status == "available"
+            and report_status == expected_status
+            and expected_status_ok
+            and expectation_met_ok,
         }
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         return {
             "expected_status": expected_status,
             "artifact_status": None,
             "report_status": None,
+            "report_expected_status": None,
+            "report_expectation_met": None,
+            "required_expectation_met": require_expectation_met,
             "ok": False,
             "error": str(exc),
         }
@@ -251,6 +272,8 @@ def run_smoke(
     expect_database_backend: str | None = None,
     expect_advisory_sync_ready: bool | None = None,
     expect_cutover_report_status: str | None = None,
+    expect_cutover_report_expected_status: str | None = None,
+    require_cutover_report_expectation_met: bool = False,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
         paths = [*paths, "/metrics"]
@@ -310,11 +333,20 @@ def run_smoke(
                 result["advisory_sync_readiness"]["error"] = readiness["error"]
             result["status"] = "failed"
     if expect_cutover_report_status is not None:
-        cutover_report = check_cutover_report_status(base_url, timeout, expect_cutover_report_status)
+        cutover_report = check_cutover_report_status(
+            base_url,
+            timeout,
+            expect_cutover_report_status,
+            expected_report_expected_status=expect_cutover_report_expected_status,
+            require_expectation_met=require_cutover_report_expectation_met,
+        )
         result["cutover_readiness_report"] = {
             "expected_status": cutover_report["expected_status"],
             "artifact_status": cutover_report["artifact_status"],
             "report_status": cutover_report["report_status"],
+            "report_expected_status": cutover_report["report_expected_status"],
+            "report_expectation_met": cutover_report["report_expectation_met"],
+            "required_expectation_met": cutover_report["required_expectation_met"],
             "ok": cutover_report["ok"],
         }
         if not cutover_report["ok"]:
@@ -338,6 +370,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
     parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
     parser.add_argument("--expect-cutover-report-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report artifact has the expected report status.")
+    parser.add_argument("--expect-cutover-report-expected-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report expected_status matches this value.")
+    parser.add_argument("--require-cutover-report-expectation-met", action="store_true", help="Fail unless cutover readiness report expectation_met is true.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -354,6 +388,8 @@ def main() -> int:
         expect_database_backend=args.expect_database_backend,
         expect_advisory_sync_ready=args.expect_advisory_sync_ready,
         expect_cutover_report_status=args.expect_cutover_report_status,
+        expect_cutover_report_expected_status=args.expect_cutover_report_expected_status,
+        require_cutover_report_expectation_met=args.require_cutover_report_expectation_met,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

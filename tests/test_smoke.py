@@ -933,138 +933,113 @@ def test_http_smoke_can_expect_advisory_sync_ready():
     }
 
 
-def test_http_smoke_can_expect_cutover_report_status():
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/api/v1/operations/cutover-readiness-report":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(
-                    json.dumps(
-                        {
-                            "artifact": {"status": "available", "path": "configured"},
-                            "report": {"status": "ok", "summary": {"ok": 2, "blockers": 0}},
-                        }
-                    ).encode("utf-8")
-                )
-                return
-            if self.path in {"/health", "/ready", "/api/v1/overview"}:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
-                return
-            if self.path == "/":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<html>SCA Monitor</html>")
-                return
-            self.send_response(404)
-            self.end_headers()
+def test_http_smoke_can_expect_cutover_report_status(monkeypatch):
+    import scripts.http_smoke as http_smoke
 
-        def log_message(self, *args):
-            return
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        result = subprocess.run(
-            [
-                "python3",
-                "scripts/http_smoke.py",
-                "--base-url",
-                f"http://127.0.0.1:{server.server_port}",
-                "--expect-cutover-report-status",
-                "ok",
-                "--json",
-            ],
-            cwd=REPO_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/operations/cutover-readiness-report"
+        return 200, {
+            "artifact": {"status": "available", "path": "configured"},
+            "report": {"status": "ok", "summary": {"ok": 2, "blockers": 0}},
+        }
 
-    payload = json.loads(result.stdout)
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_cutover_report_status="ok",
+    )
     assert payload["status"] == "ok"
     assert payload["cutover_readiness_report"] == {
         "expected_status": "ok",
         "artifact_status": "available",
         "report_status": "ok",
+        "report_expected_status": None,
+        "report_expectation_met": None,
+        "required_expectation_met": False,
         "ok": True,
     }
 
 
-def test_http_smoke_fails_when_cutover_report_status_differs():
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/api/v1/operations/cutover-readiness-report":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(
-                    json.dumps(
-                        {
-                            "artifact": {"status": "available", "path": "configured"},
-                            "report": {"status": "blocked", "summary": {"blockers": 1}},
-                        }
-                    ).encode("utf-8")
-                )
-                return
-            if self.path in {"/health", "/ready", "/api/v1/overview"}:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
-                return
-            if self.path == "/":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<html>SCA Monitor</html>")
-                return
-            self.send_response(404)
-            self.end_headers()
+def test_http_smoke_fails_when_cutover_report_status_differs(monkeypatch):
+    import scripts.http_smoke as http_smoke
 
-        def log_message(self, *args):
-            return
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        result = subprocess.run(
-            [
-                "python3",
-                "scripts/http_smoke.py",
-                "--base-url",
-                f"http://127.0.0.1:{server.server_port}",
-                "--expect-cutover-report-status",
-                "ok",
-                "--json",
-            ],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/operations/cutover-readiness-report"
+        return 200, {
+            "artifact": {"status": "available", "path": "configured"},
+            "report": {"status": "blocked", "summary": {"blockers": 1}},
+        }
 
-    payload = json.loads(result.stdout)
-    assert result.returncode == 2
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_cutover_report_status="ok",
+    )
     assert payload["status"] == "failed"
     assert payload["cutover_readiness_report"] == {
         "expected_status": "ok",
         "artifact_status": "available",
         "report_status": "blocked",
+        "report_expected_status": None,
+        "report_expectation_met": None,
+        "required_expectation_met": False,
         "ok": False,
+    }
+
+
+def test_http_smoke_can_expect_cutover_report_expectation_met(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/operations/cutover-readiness-report"
+        return 200, {
+            "artifact": {"status": "available", "path": "configured"},
+            "report": {
+                "status": "blocked",
+                "expected_status": "blocked",
+                "expectation_met": True,
+                "summary": {"blockers": 1},
+            },
+        }
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_cutover_report_status="blocked",
+        expect_cutover_report_expected_status="blocked",
+        require_cutover_report_expectation_met=True,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["cutover_readiness_report"] == {
+        "expected_status": "blocked",
+        "artifact_status": "available",
+        "report_status": "blocked",
+        "report_expected_status": "blocked",
+        "report_expectation_met": True,
+        "required_expectation_met": True,
+        "ok": True,
     }
 
 
@@ -3030,6 +3005,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
+    assert "SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
@@ -3059,6 +3036,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "cutover report with SCA_MONITOR_DATABASE_ENV_FILE requires PostgreSQL split readiness" in script
     assert "--expect-database-backend" in script
     assert "--expect-cutover-report-status" in script
+    assert "--expect-cutover-report-expected-status" in script
+    assert "--require-cutover-report-expectation-met" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
@@ -3115,6 +3094,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
+    assert "--expect-cutover-report-expected-status blocked" in cicd_doc
+    assert "--require-cutover-report-expectation-met" in cicd_doc
+    assert "--expect-cutover-report-expected-status" in operations_doc
+    assert "--require-cutover-report-expectation-met" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "--expect-cutover-report-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
