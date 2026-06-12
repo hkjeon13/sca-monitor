@@ -252,6 +252,7 @@ scripts/deploy_remote.sh
 ```
 
 이 모드는 `database_env_dry_run_gate.py --expect-status blocked`가 기대한 차단을 확인하면 0으로 종료하고 runtime에는 아무 변경도 하지 않는다.
+또한 같은 입력으로 `cutover_readiness_report.py --expect-status blocked`를 실행해 sanitized report artifact를 `SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH`에 mode `0600`으로 남긴다.
 
 `--database-url`은 stage/운영 PostgreSQL에 대해 migration과 DB smoke를 직접 실행한다.
 `--use-docker`는 CI 또는 개발 환경에서 임시 PostgreSQL 16 container를 띄워 같은 검증을 수행한다.

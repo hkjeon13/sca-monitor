@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
         help="Run live PostgreSQL production preflight against configured split credentials.",
     )
     parser.add_argument("--output", help="Optional path to write the sanitized JSON report with mode 0600.")
+    parser.add_argument(
+        "--expect-status",
+        choices=("ok", "action_required", "blocked"),
+        help="Return success only when the report status matches this value.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
 
@@ -135,6 +140,9 @@ def main() -> int:
         require_runtime_inputs=args.require_runtime_inputs,
         run_live_preflight=args.run_production_preflight,
     )
+    if args.expect_status:
+        result["expected_status"] = args.expect_status
+        result["expectation_met"] = result["status"] == args.expect_status
     if args.output:
         write_report(Path(args.output), result)
     if args.json:
@@ -147,6 +155,8 @@ def main() -> int:
             f"action_required={result['summary']['action_required']} "
             f"blockers={result['summary']['blockers']}"
         )
+    if args.expect_status:
+        return 0 if result["expectation_met"] else 2
     return 2 if result["status"] == "blocked" else 0
 
 

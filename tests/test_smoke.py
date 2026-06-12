@@ -2209,6 +2209,78 @@ def test_cutover_readiness_report_combines_inputs_without_leaking_secrets(tmp_pa
     assert str(backup_path) not in output_path.read_text(encoding="utf-8")
 
 
+def test_cutover_readiness_report_can_expect_blocked_and_write_sanitized_artifact(tmp_path):
+    env_file = tmp_path / "runtime.env"
+    database_env_file = tmp_path / "postgres.env"
+    output_path = tmp_path / "blocked-cutover-report.json"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-dispatcher-dry-run",
+                "SMOKE_TEST_TOKEN=stage-smoke-token",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    database_env_file.write_text(
+        "\n".join(
+            [
+                "MIGRATION_DATABASE_URL=postgresql://<migration_user>:<password>@<host>:5432/<database>",
+                "API_DATABASE_URL=postgresql://<api_user>:<password>@<host>:5432/<database>",
+                "WORKER_DATABASE_URL=postgresql://<worker_user>:<password>@<host>:5432/<database>",
+                "SCA_MONITOR_POSTGRES_INTEGRATION_SMOKE=required",
+                "SCA_MONITOR_POSTGRES_REQUIRE_SPLIT=true",
+                "SCA_MONITOR_AUTO_MIGRATE=false",
+                "SCA_MONITOR_API_AUTO_MIGRATE=false",
+                "SCA_MONITOR_WORKER_AUTO_MIGRATE=false",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    database_env_file.chmod(0o600)
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/cutover_readiness_report.py",
+            "--env-file",
+            str(env_file),
+            "--database-env-file",
+            str(database_env_file),
+            "--require-postgres",
+            "--require-split",
+            "--require-runtime-inputs",
+            "--expect-status",
+            "blocked",
+            "--output",
+            str(output_path),
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    written_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "blocked"
+    assert payload["expected_status"] == "blocked"
+    assert payload["expectation_met"] is True
+    assert written_payload == payload
+    assert output_path.stat().st_mode & 0o777 == 0o600
+    assert "postgresql://<migration_user>" not in result.stdout
+    assert "<password>" not in result.stdout
+    assert "postgresql://<migration_user>" not in output_path.read_text(encoding="utf-8")
+    assert "<password>" not in output_path.read_text(encoding="utf-8")
+
+
 def test_prepare_database_env_file_creates_protected_placeholder_without_overwrite(tmp_path):
     target = tmp_path / ".secrets" / "postgres.env"
 
@@ -2970,6 +3042,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/database_env_dry_run_gate.py --json" in script
     assert "scripts/database_env_dry_run_gate.py --database-env-file" in script
     assert "--expect-status" in script
+    assert "--expect-status blocked" in script
     assert "database env preflight matched expected status: blocked" in script
     assert "database env preflight completed; deployment stopped before runtime changes" in script
     assert "scripts/advisory_source_preflight.py --check" in script

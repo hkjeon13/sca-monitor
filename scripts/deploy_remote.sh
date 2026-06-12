@@ -108,6 +108,15 @@ ssh "$REMOTE" "set -euo pipefail
         esac
         python3 scripts/database_env_dry_run_gate.py --database-env-file \"\$DATABASE_ENV_FILE\" --expect-status \"\$DATABASE_ENV_PREFLIGHT_EXPECT\" --json
         if [ \"\$DATABASE_ENV_PREFLIGHT_EXPECT\" = 'blocked' ]; then
+          python3 scripts/cutover_readiness_report.py \
+            --env-file .env \
+            --database-env-file \"\$DATABASE_ENV_FILE\" \
+            --require-postgres \
+            --require-split \
+            --require-runtime-inputs \
+            --expect-status blocked \
+            --output \"\$CUTOVER_READINESS_REPORT_PATH\" \
+            --json
           echo 'database env preflight matched expected status: blocked'
           echo 'database env preflight completed; deployment stopped before runtime changes'
           exit 0
