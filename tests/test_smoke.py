@@ -1513,6 +1513,7 @@ exit 0
     log_text = log_path.read_text(encoding="utf-8")
     enabled_lines = enabled_now_lines(log_text)
     restarted_lines = restart_lines(log_text)
+    stopped_lines = stop_lines(log_text)
     assert payload["status"] == "ok"
     assert payload["systemctl"]["sca-monitor-alert-dispatcher-dry-run.service"] == {
         "enabled": "enabled",
@@ -1531,6 +1532,11 @@ exit 0
     assert "sca-monitor-alert-dispatcher.service" not in restarted_lines
     assert "sca-monitor-advisory-freshness.timer" in restarted_lines
     assert "sca-monitor-osv-npm-sync.timer" in restarted_lines
+    assert "sca-monitor-osv-npm-sync.service" in stopped_lines
+    assert "sca-monitor-openssf-malicious-sync.service" in stopped_lines
+    assert "sca-monitor-cisa-kev-sync.service" in stopped_lines
+    assert "sca-monitor-ghsa-sync.service" in stopped_lines
+    assert "sca-monitor-nvd-cve-sync.service" in stopped_lines
 
 
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
@@ -3408,6 +3414,10 @@ def enabled_now_lines(text: str) -> str:
 
 def restart_lines(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if " restart " in line)
+
+
+def stop_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if " stop " in line)
 
 
 def test_postgres_sql_translates_placeholders_outside_string_literals():
