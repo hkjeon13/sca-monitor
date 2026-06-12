@@ -517,6 +517,13 @@ input[readonly] {
   gap: 8px;
 }
 
+.credential-snippet {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .inline-actions {
   display: flex;
   flex-wrap: wrap;

@@ -842,11 +842,7 @@ document.querySelector("#credential-form").addEventListener("submit", async (eve
     environment: form.environment,
     ttl_days: form.ttl_days,
   });
-  document.querySelector("#credential-result").innerHTML = `
-    <p><strong>Token issued for ${escapeHtml(data.credential.service_id)} / ${escapeHtml(data.credential.environment)}</strong></p>
-    <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
-    <p>Prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
-  `;
+  renderPushCredentialResult(data, "Token issued");
   await loadPushCredentials(form.service_id, form.environment);
 });
 
@@ -887,11 +883,7 @@ async function loadPushCredentials(serviceId, environment) {
         environment,
         reason: "web console credential rotation",
       });
-      document.querySelector("#credential-result").innerHTML = `
-        <p><strong>Token rotated for ${escapeHtml(data.credential.service_id)} / ${escapeHtml(data.credential.environment)}</strong></p>
-        <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
-        <p>New prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
-      `;
+      renderPushCredentialResult(data, "Token rotated");
       await loadPushCredentials(serviceId, environment);
     });
   });
@@ -902,6 +894,50 @@ async function loadPushCredentials(serviceId, environment) {
       await loadPushCredentials(serviceId, environment);
     });
   });
+}
+
+function renderPushCredentialResult(data, actionLabel) {
+  document.querySelector("#credential-result").innerHTML = `
+    <p><strong>${escapeHtml(actionLabel)} for ${escapeHtml(data.credential.service_id)} / ${escapeHtml(data.credential.environment)}</strong></p>
+    <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
+    <p>Prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
+    <pre class="credential-snippet"><code>${escapeHtml(snapshotPushCurlSnippet(data))}</code></pre>
+  `;
+}
+
+function snapshotPushCurlSnippet(data) {
+  const statusUrl = `${window.location.origin}/api/v1/services/${encodeURIComponent(data.credential.service_id)}/status`;
+  const idempotencyKey = `${data.credential.service_id}-${data.credential.environment}-SNAPSHOT_ID`;
+  const body = JSON.stringify({
+    schema_version: "1.0",
+    service_id: data.credential.service_id,
+    environment: data.credential.environment,
+    generated_at: "2026-06-12T00:00:00Z",
+    artifact: {
+      type: "container_image",
+      name: data.credential.service_id,
+      digest: "sha256:..."
+    },
+    dependencies: [
+      {
+        ecosystem: "npm",
+        name: "lodash",
+        version: "4.17.20",
+        scope: "production",
+        direct: false
+      }
+    ]
+  }, null, 2);
+
+  return `curl -sS -X POST ${shellQuote(statusUrl)} \\
+  -H ${shellQuote(`Authorization: Bearer ${data.token}`)} \\
+  -H ${shellQuote(`Idempotency-Key: ${idempotencyKey}`)} \\
+  -H ${shellQuote("Content-Type: application/json")} \\
+  --data-binary ${shellQuote(body)}`;
+}
+
+function shellQuote(value) {
+  return `'${String(value ?? "").replace(/'/g, `'\\''`)}'`;
 }
 
 document.querySelector("#snapshot-form").addEventListener("submit", async (event) => {

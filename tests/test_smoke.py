@@ -3257,6 +3257,23 @@ def test_web_console_guides_service_scoped_snapshot_push():
     assert "/api/v1/services/${encodeURIComponent(form.service_id)}/status" in script
 
 
+def test_web_console_push_credential_result_includes_ready_to_copy_curl():
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    styles = (REPO_ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function renderPushCredentialResult(data, actionLabel)" in script
+    assert "snapshotPushCurlSnippet(data)" in script
+    assert "curl -sS -X POST" in script
+    assert "/api/v1/services/${encodeURIComponent(data.credential.service_id)}/status" in script
+    assert "shellQuote(`Authorization: Bearer ${data.token}`)" in script
+    assert "shellQuote(`Idempotency-Key: ${idempotencyKey}`)" in script
+    assert "generated_at" in script
+    assert "service_id" in script
+    assert "environment" in script
+    assert "credential-snippet" in script
+    assert ".credential-snippet" in styles
+
+
 def test_web_console_gates_impact_status_options_by_role():
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
