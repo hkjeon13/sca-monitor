@@ -76,6 +76,20 @@ def parse_bool(value: str) -> bool:
     raise argparse.ArgumentTypeError("expected one of true/false/1/0/yes/no/on/off")
 
 
+def parse_expected_source_statuses(values: list[str]) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise SystemExit(f"invalid --expect-advisory-source-status value: {value}; expected SOURCE=STATUS")
+        source, status = value.split("=", 1)
+        source = source.strip()
+        status = status.strip()
+        if not source or not status:
+            raise SystemExit(f"invalid --expect-advisory-source-status value: {value}; expected SOURCE=STATUS")
+        expected[source] = status
+    return expected
+
+
 def smoke_url(base_url: str, path: str, timeout: float) -> CheckResult:
     url = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
     started = time.monotonic()
@@ -218,6 +232,25 @@ def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready:
         }
 
 
+def check_advisory_source_statuses(base_url: str, timeout: float, expected_statuses: dict[str, str]) -> dict[str, Any]:
+    try:
+        status, overview = fetch_json(base_url, "/api/v1/overview", timeout)
+        advisory_sync = overview.get("advisory_sync") or {}
+        actual = {source: advisory_sync.get(source) for source in expected_statuses}
+        return {
+            "expected": expected_statuses,
+            "actual": actual,
+            "ok": status == 200 and actual == expected_statuses,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "expected": expected_statuses,
+            "actual": {source: None for source in expected_statuses},
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def check_cutover_report_status(
     base_url: str,
     timeout: float,
@@ -271,6 +304,7 @@ def run_smoke(
     expect_postgres_split_required: bool | None = None,
     expect_database_backend: str | None = None,
     expect_advisory_sync_ready: bool | None = None,
+    expect_advisory_source_statuses: dict[str, str] | None = None,
     expect_cutover_report_status: str | None = None,
     expect_cutover_report_expected_status: str | None = None,
     require_cutover_report_expectation_met: bool = False,
@@ -332,6 +366,17 @@ def run_smoke(
             if readiness.get("error"):
                 result["advisory_sync_readiness"]["error"] = readiness["error"]
             result["status"] = "failed"
+    if expect_advisory_source_statuses:
+        source_statuses = check_advisory_source_statuses(base_url, timeout, expect_advisory_source_statuses)
+        result["advisory_source_statuses"] = {
+            "expected": source_statuses["expected"],
+            "actual": source_statuses["actual"],
+            "ok": source_statuses["ok"],
+        }
+        if not source_statuses["ok"]:
+            if source_statuses.get("error"):
+                result["advisory_source_statuses"]["error"] = source_statuses["error"]
+            result["status"] = "failed"
     if expect_cutover_report_status is not None:
         cutover_report = check_cutover_report_status(
             base_url,
@@ -369,6 +414,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
     parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
     parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
+    parser.add_argument(
+        "--expect-advisory-source-status",
+        action="append",
+        default=[],
+        metavar="SOURCE=STATUS",
+        help="Fail unless /api/v1/overview advisory_sync has SOURCE with STATUS. May be repeated.",
+    )
     parser.add_argument("--expect-cutover-report-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report artifact has the expected report status.")
     parser.add_argument("--expect-cutover-report-expected-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report expected_status matches this value.")
     parser.add_argument("--require-cutover-report-expectation-met", action="store_true", help="Fail unless cutover readiness report expectation_met is true.")
@@ -379,6 +431,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     paths = args.paths or list(DEFAULT_PATHS)
+    expected_source_statuses = parse_expected_source_statuses(args.expect_advisory_source_status)
     result = run_smoke(
         args.base_url,
         paths,
@@ -387,6 +440,7 @@ def main() -> int:
         expect_postgres_split_required=args.expect_postgres_split_required,
         expect_database_backend=args.expect_database_backend,
         expect_advisory_sync_ready=args.expect_advisory_sync_ready,
+        expect_advisory_source_statuses=expected_source_statuses,
         expect_cutover_report_status=args.expect_cutover_report_status,
         expect_cutover_report_expected_status=args.expect_cutover_report_expected_status,
         require_cutover_report_expectation_met=args.require_cutover_report_expectation_met,

@@ -110,6 +110,7 @@ python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --require-postgres-split-metrics --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-postgres-split-required "$SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-advisory-sync-ready true --json
+python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-advisory-source-status OSV=ok --expect-advisory-source-status CISA_KEV=ok --expect-advisory-source-status OpenSSF=ok --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-cutover-report-status ok --json
 python3 scripts/http_smoke.py --base-url "$SCA_MONITOR_PUBLIC_URL" --expect-cutover-report-status blocked --expect-cutover-report-expected-status blocked --require-cutover-report-expectation-met --json
 python3 scripts/deployment_input_readiness.py --env-file .env --json
@@ -136,6 +137,8 @@ GET /api/v1/impacts
 bootstrap 완료 또는 운영 승격 단계에서 advisory source 초기 동기화까지 강제하려면
 `SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY=true`를 설정한다.
 초기 bootstrap 중에는 이 값을 설정하지 않아 기본 health/readiness smoke만 수행한다.
+특정 source별 상태까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok`처럼 comma-separated `SOURCE=STATUS` 목록을 설정한다.
+GHSA/NVD를 운영 required source로 승격하는 단계에서는 같은 값에 `GHSA=ok,NVD=ok`를 추가한다.
 현재 runtime DB backend까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite` 또는 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres`를 설정한다.
 현재 SQLite fallback 운영 검증은 `sqlite`, PostgreSQL cutover stage 검증은 `postgres`를 사용한다.
 cutover readiness report artifact 상태까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok` 또는 stage 의도에 맞는 `action_required`/`blocked`를 설정한다.
@@ -154,6 +157,7 @@ SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net \
 SCA_MONITOR_GENERATE_SMOKE_TOKEN=true \
 SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true \
 SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite \
+SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok \
 SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok \
 SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok \
 SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \

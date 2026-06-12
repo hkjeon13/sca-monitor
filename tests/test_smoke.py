@@ -933,6 +933,69 @@ def test_http_smoke_can_expect_advisory_sync_ready():
     }
 
 
+def test_http_smoke_can_expect_advisory_source_statuses(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/overview"
+        return 200, {
+            "advisory_sync": {
+                "OSV": "ok",
+                "CISA_KEV": "ok",
+                "OpenSSF": "ok",
+                "GHSA": "pending",
+            }
+        }
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_advisory_source_statuses={"OSV": "ok", "CISA_KEV": "ok", "OpenSSF": "ok"},
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["advisory_source_statuses"] == {
+        "expected": {"OSV": "ok", "CISA_KEV": "ok", "OpenSSF": "ok"},
+        "actual": {"OSV": "ok", "CISA_KEV": "ok", "OpenSSF": "ok"},
+        "ok": True,
+    }
+
+
+def test_http_smoke_fails_when_advisory_source_status_differs(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/overview"
+        return 200, {"advisory_sync": {"OSV": "ok", "NVD": "pending"}}
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_advisory_source_statuses={"OSV": "ok", "NVD": "ok"},
+    )
+
+    assert payload["status"] == "failed"
+    assert payload["advisory_source_statuses"] == {
+        "expected": {"OSV": "ok", "NVD": "ok"},
+        "actual": {"OSV": "ok", "NVD": "pending"},
+        "ok": False,
+    }
+
+
 def test_http_smoke_can_expect_cutover_report_status(monkeypatch):
     import scripts.http_smoke as http_smoke
 
@@ -3112,6 +3175,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in script
+    assert "SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
@@ -3136,6 +3200,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/bootstrap_readiness_check.py --json --skip-alert-activation --require-advisory-freshness" in script
     assert "scripts/bootstrap_readiness_check.py --json" in script
     assert "advisory-freshness|freshness|advisory-freshness-only" in script
+    assert "--expect-advisory-source-status" in script
     assert "scripts/http_smoke.py" in script
     assert "scripts/backup_database.py --json" in script
     assert "scripts/verify_backup_restore.py --backup-path" in script
@@ -3203,6 +3268,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "자동으로 `--require-postgres --require-split`" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok" in cicd_doc
+    assert "--expect-advisory-source-status OSV=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
     assert "--expect-cutover-report-expected-status blocked" in cicd_doc
