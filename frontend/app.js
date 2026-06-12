@@ -937,7 +937,8 @@ document.querySelector("#alert-channel-form").addEventListener("submit", async (
     name: form.name,
     channel_type: "webhook",
     target_url: form.target_url,
-    is_default: form.is_default === "on",
+    owner_team: form.owner_team,
+    is_default: form.is_default === "on" && !form.owner_team?.trim(),
   });
   event.currentTarget.reset();
   await loadAlertChannels();
@@ -958,12 +959,13 @@ async function loadAlertChannels() {
         <strong>${escapeHtml(channel.name)}</strong>
         <span>${escapeHtml(channel.channel_type)} · ${escapeHtml(channel.enabled ? "enabled" : "disabled")} · ${escapeHtml(channel.is_default ? "default" : "secondary")} · ${escapeHtml(channel.target_url_masked || "-")}</span>
         <div class="badge-row">
+          ${channel.owner_team ? `<span class="badge">team ${escapeHtml(channel.owner_team)}</span>` : `<span class="badge">global</span>`}
           ${channel.placeholder_target ? `<span class="badge danger">placeholder target</span>` : `<span class="badge">target ready</span>`}
           ${channel.is_default && channel.placeholder_target ? `<span class="badge danger">live dispatcher blocked</span>` : ""}
         </div>
       </div>
       <button type="button" class="secondary" data-channel-test="${escapeHtml(channel.id)}" ${!channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Test</button>
-      <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.is_default || !channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Make Default</button>
+      <button type="button" class="secondary" data-channel-default="${escapeHtml(channel.id)}" ${channel.owner_team || channel.is_default || !channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Make Default</button>
       <button type="button" class="secondary" data-channel-disable="${escapeHtml(channel.id)}" ${!channel.enabled || !canManageAlertChannels ? "disabled" : ""}>Disable</button>
     </div>
   `).join("");

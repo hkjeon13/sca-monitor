@@ -845,9 +845,9 @@ class ScaMonitorApp:
         with self.db.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, name, channel_type, target_url, enabled, is_default, created_at, updated_at
+                SELECT id, name, channel_type, target_url, enabled, is_default, owner_team, created_at, updated_at
                 FROM alert_channels
-                ORDER BY is_default DESC, updated_at DESC
+                ORDER BY is_default DESC, owner_team IS NOT NULL DESC, updated_at DESC
                 """
             ).fetchall()
         return [sanitize_alert_channel(row_to_dict(row)) for row in rows]
@@ -862,6 +862,9 @@ class ScaMonitorApp:
             raise ValueError("target_url must be http or https")
         enabled = parse_bool(body.get("enabled", True))
         is_default = parse_bool(body.get("is_default", True))
+        owner_team = normalize_optional(body.get("owner_team"))
+        if owner_team and is_default:
+            raise ValueError("owner_team alert channels cannot be default")
         channel_id = str(uuid.uuid4())
         now = utcnow()
         with self.db.connect() as conn:
@@ -870,16 +873,17 @@ class ScaMonitorApp:
             conn.execute(
                 """
                 INSERT INTO alert_channels (
-                    id, name, channel_type, target_url, enabled, is_default, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, name, channel_type, target_url, enabled, is_default, owner_team, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     channel_type=excluded.channel_type,
                     target_url=excluded.target_url,
                     enabled=excluded.enabled,
                     is_default=excluded.is_default,
+                    owner_team=excluded.owner_team,
                     updated_at=excluded.updated_at
                 """,
-                (channel_id, name, channel_type, target_url, enabled, is_default, now, now),
+                (channel_id, name, channel_type, target_url, enabled, is_default, owner_team, now, now),
             )
             row = conn.execute("SELECT * FROM alert_channels WHERE name = ?", (name,)).fetchone()
             self.write_audit_log(
@@ -911,6 +915,9 @@ class ScaMonitorApp:
                 raise ValueError("target_url must be http or https")
             enabled = parse_bool(body.get("enabled", current["enabled"]))
             is_default = parse_bool(body.get("is_default", current["is_default"]))
+            owner_team = normalize_optional(body.get("owner_team", current["owner_team"] if "owner_team" in current.keys() else None))
+            if owner_team and is_default:
+                raise ValueError("owner_team alert channels cannot be default")
             if is_default and enabled:
                 conn.execute("UPDATE alert_channels SET is_default = ?, updated_at = ? WHERE id != ?", (False, now, channel_id))
             if not enabled:
@@ -918,10 +925,10 @@ class ScaMonitorApp:
             conn.execute(
                 """
                 UPDATE alert_channels
-                SET name = ?, channel_type = ?, target_url = ?, enabled = ?, is_default = ?, updated_at = ?
+                SET name = ?, channel_type = ?, target_url = ?, enabled = ?, is_default = ?, owner_team = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (name, channel_type, target_url, enabled, is_default, now, channel_id),
+                (name, channel_type, target_url, enabled, is_default, owner_team, now, channel_id),
             )
             row = conn.execute("SELECT * FROM alert_channels WHERE id = ?", (channel_id,)).fetchone()
             self.write_audit_log(
@@ -3494,6 +3501,8 @@ def sanitize_alert_channel(channel: dict | None) -> dict | None:
     sanitized["placeholder_target"] = is_placeholder_url(target_url)
     sanitized["enabled"] = bool(sanitized.get("enabled"))
     sanitized["is_default"] = bool(sanitized.get("is_default"))
+    sanitized["owner_team"] = normalize_optional(sanitized.get("owner_team"))
+    sanitized["routing_scope"] = "owner_team" if sanitized["owner_team"] else "global"
     return sanitized
 
 

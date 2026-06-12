@@ -3926,6 +3926,32 @@ def test_alert_channel_marks_non_placeholder_target_ready(tmp_path):
     assert created["channel"]["placeholder_target"] is False
 
 
+def test_alert_channel_can_target_owner_team(tmp_path):
+    app = make_test_app(tmp_path)
+
+    created = app.create_alert_channel(
+        {
+            "name": "platform-router",
+            "channel_type": "webhook",
+            "target_url": "https://alerts.internal/hooks/platform-secret",
+            "is_default": False,
+            "owner_team": "platform",
+            "actor": "security-admin",
+        }
+    )
+
+    assert created["channel"]["owner_team"] == "platform"
+    assert created["channel"]["routing_scope"] == "owner_team"
+    assert created["channel"]["is_default"] is False
+    channels = app.list_alert_channels()
+    assert channels[0]["owner_team"] == "platform"
+    assert channels[0]["routing_scope"] == "owner_team"
+    audit = app.search_audit_logs({"action": ["alert_channel.upsert"], "target_id": [created["channel"]["id"]]})
+    assert audit["audit_logs"][0]["after"]["owner_team"] == "platform"
+    assert "platform-secret" not in json.dumps(created)
+    assert "platform-secret" not in json.dumps(channels)
+
+
 def test_seed_default_alert_channel_cli_creates_real_default(tmp_path):
     env = {
         **os.environ,
