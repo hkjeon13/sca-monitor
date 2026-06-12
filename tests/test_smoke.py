@@ -7296,6 +7296,41 @@ def test_nvd_cve_sync_cli_stores_modified_window_end_cursor(tmp_path):
     assert state["last_advisory_id"] == "CVE-2026-0001"
 
 
+def test_nvd_cve_sync_cli_records_ok_when_modified_window_has_no_candidates(tmp_path):
+    modified_path = tmp_path / "nvd-modified-empty.json"
+    modified_path.write_text(json.dumps({"vulnerabilities": []}), encoding="utf-8")
+    database_url = f"sqlite:///{tmp_path / 'nvd-empty-modified-cli.sqlite3'}"
+
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/nvd_cve_sync.py",
+            "--last-mod-start",
+            "2026-06-01T00:00:00.000",
+            "--last-mod-end",
+            "2026-06-02T00:00:00.000",
+            "--modified-json-path",
+            str(modified_path),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "SCA_MONITOR_DATABASE_URL": database_url, "SCA_MONITOR_DATA_DIR": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "NVD"
+    assert payload["processed"] == 0
+    assert payload["imported_rows"] == 0
+    database = Database(database_url)
+    with database.connect() as conn:
+        state = conn.execute("SELECT status, cursor, records_processed FROM advisory_sync_state WHERE source = 'NVD'").fetchone()
+    assert state["status"] == "ok"
+    assert state["cursor"] == "2026-06-02T00:00:00.000"
+    assert state["records_processed"] == 0
+
+
 def test_nvd_cve_sync_use_cursor_falls_back_from_invalid_timestamp(tmp_path):
     app = make_test_app(tmp_path)
     app.record_advisory_sync("NVD", "ok", "CVE-2026-0001", None, cursor="badTcursor", records_processed=1)

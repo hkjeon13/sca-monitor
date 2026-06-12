@@ -82,7 +82,8 @@ def main() -> None:
             lock_ttl_seconds=args.lock_ttl_seconds,
         )
     else:
-        if not cve_ids:
+        modified_window_requested = bool(args.last_mod_start or args.modified_json_path)
+        if not cve_ids and not modified_window_requested:
             raise SystemExit("at least one CVE id or --cve-list-path is required")
         result = sync_nvd_cves(
             app,

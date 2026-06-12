@@ -608,6 +608,27 @@ def sync_nvd_cves(
         unique_cve_ids = unique_cve_ids[:limit]
 
     last_successful_cve_id: str | None = None
+    if not unique_cve_ids:
+        app.record_advisory_sync(
+            "NVD",
+            "ok",
+            None,
+            None,
+            imported_count=0,
+            cursor=success_cursor,
+            records_processed=0,
+        )
+        return NvdCveBatchSyncResult(
+            source="NVD",
+            processed=0,
+            imported_rows=0,
+            rematched_impacts=0,
+            failed=0,
+            results=[],
+            api_url=api_url,
+            request_delay_seconds=delay_seconds,
+        )
+
     for index, cve_id in enumerate(unique_cve_ids):
         if limit is not None and processed >= limit:
             break
