@@ -22,6 +22,12 @@ class AlertDispatchResult:
     dry_run: bool
 
 
+@dataclass(frozen=True)
+class AlertTarget:
+    target_url: str
+    channel_type: str
+
+
 def dispatch_pending_alerts(
     app: ScaMonitorApp,
     *,
@@ -57,9 +63,9 @@ def dispatch_pending_alerts(
 
         if dry_run:
             return AlertDispatchResult(pending=len(eligible_rows), claimed=0, sent=0, failed=0, dry_run=True)
-        default_webhook_url = None if webhook_url else app.default_alert_webhook_url()
+        default_target = None if webhook_url else app.default_alert_channel_target()
         target_by_event_id = {
-            row["id"]: resolve_alert_webhook_url(conn, row, explicit_webhook_url=webhook_url, default_webhook_url=default_webhook_url)
+            row["id"]: resolve_alert_target(conn, row, explicit_webhook_url=webhook_url, default_target=default_target)
             for row in eligible_rows
         }
         if eligible_rows and any(target is None for target in target_by_event_id.values()):
@@ -90,9 +96,9 @@ def dispatch_pending_alerts(
         for row in rows:
             payload = alert_payload(row)
             headers = alert_headers(row)
-            target_url = target_by_event_id[row["id"]]
+            target = target_by_event_id[row["id"]]
             try:
-                call_sender(send, target_url or "", payload, headers)
+                call_sender(send, target.target_url, format_alert_for_channel(payload, target.channel_type), headers)
             except Exception as exc:
                 failed += 1
                 retry_count = int(row["retry_count"] or 0) + 1
@@ -119,12 +125,18 @@ def dispatch_pending_alerts(
             conn.execute(
                 """
                 UPDATE alert_events
-                SET status = 'sent', sent_at = ?, channel_type = 'webhook',
+                SET status = 'sent', sent_at = ?, channel_type = ?,
                     channel_target = ?, payload = ?, dispatch_lock_owner = NULL,
                     dispatch_lock_expires_at = NULL, next_attempt_at = NULL
                 WHERE id = ?
                 """,
-                (utcnow(), target_url, json.dumps(payload, ensure_ascii=False), row["id"]),
+                (
+                    utcnow(),
+                    target.channel_type,
+                    target.target_url,
+                    json.dumps(format_alert_for_channel(payload, target.channel_type), ensure_ascii=False),
+                    row["id"],
+                ),
             )
     return AlertDispatchResult(pending=len(eligible_rows), claimed=len(rows), sent=sent, failed=failed, dry_run=False)
 
@@ -193,24 +205,26 @@ def alert_headers(row) -> dict[str, str]:
     }
 
 
-def resolve_alert_webhook_url(conn, row, *, explicit_webhook_url: str | None, default_webhook_url: str | None) -> str | None:
+def resolve_alert_target(conn, row, *, explicit_webhook_url: str | None, default_target: dict | None) -> AlertTarget | None:
     if explicit_webhook_url:
-        return explicit_webhook_url
+        return AlertTarget(target_url=explicit_webhook_url, channel_type="webhook")
     owner_team = alert_owner_team(row)
     if owner_team:
         channel = conn.execute(
             """
-            SELECT target_url
+            SELECT target_url, channel_type
             FROM alert_channels
-            WHERE enabled AND channel_type = 'webhook' AND owner_team = ?
+            WHERE enabled AND channel_type IN ('webhook', 'slack_webhook') AND owner_team = ?
             ORDER BY updated_at DESC
             LIMIT 1
             """,
             (owner_team,),
         ).fetchone()
         if channel and channel["target_url"]:
-            return channel["target_url"]
-    return default_webhook_url
+            return AlertTarget(target_url=channel["target_url"], channel_type=channel["channel_type"])
+    if default_target:
+        return AlertTarget(target_url=default_target["target_url"], channel_type=default_target["channel_type"])
+    return None
 
 
 def alert_owner_team(row) -> str | None:
@@ -229,6 +243,48 @@ def call_sender(sender: Callable, webhook_url: str, payload: dict, headers: dict
             sender(webhook_url, payload)
         except TypeError:
             raise exc
+
+
+def format_alert_for_channel(payload: dict, channel_type: str) -> dict:
+    if channel_type == "slack_webhook":
+        return slack_webhook_payload(payload)
+    return payload
+
+
+def slack_webhook_payload(payload: dict) -> dict:
+    if payload.get("reason") == "daily_digest" and isinstance(payload.get("digest"), dict):
+        digest = payload["digest"]
+        owner_team = digest.get("owner_team") or "all"
+        matched = digest.get("matched")
+        if matched is None:
+            matched = len(payload.get("items") or [])
+        title = f"[Daily Digest] {owner_team} - {matched} impacts"
+        detail = f"*Date:* {digest.get('date', '-')}\n*Scope:* {owner_team}\n*Impacts:* {matched} impacts"
+    elif payload.get("smoke"):
+        title = payload.get("summary") or "SCA Monitor alert channel test"
+        detail = f"*Channel:* {payload.get('channel_name', '-')}\n*Source:* {payload.get('source', '-')}\n*Generated:* {payload.get('generated_at', '-')}"
+    else:
+        risk = str(payload.get("risk_level") or "info")
+        service = payload.get("service_name") or payload.get("service_id") or "Unknown service"
+        advisory = payload.get("advisory_id") or "Unknown advisory"
+        package = payload.get("package_name") or "unknown package"
+        version = payload.get("resolved_version") or "unknown version"
+        title = f"[{risk}] {service} - {advisory}"
+        detail = f"*Advisory:* {advisory}\n*Package:* `{package}` `{version}`\n*Reason:* {payload.get('reason', '-')}"
+    return {
+        "text": title if not payload.get("smoke") else payload.get("summary", title),
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": title[:150]}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": detail[:3000]}},
+        ],
+        "metadata": {
+            "event_type": "sca_monitor_alert",
+            "event_payload": {
+                "alert_event_id": payload.get("alert_event_id") or payload.get("smoke_id"),
+                "alert_suppression_key": payload.get("alert_suppression_key"),
+            },
+        },
+    }
 
 
 def send_webhook(webhook_url: str, payload: dict, extra_headers: dict[str, str] | None = None) -> None:

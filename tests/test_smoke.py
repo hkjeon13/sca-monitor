@@ -3349,6 +3349,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "--expect-cutover-report-expected-status" in operations_doc
     assert "--expect-cutover-report-production-preflight-status" in operations_doc
     assert "--require-cutover-report-expectation-met" in operations_doc
+    assert "Slack incoming webhook은 Settings에서 `slack_webhook` type" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS=ok" in cicd_doc
@@ -3367,6 +3368,9 @@ def test_harness_documents_deployment_input_readiness():
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in operations_doc
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in env_example
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in secrets_doc
+    assert "channel_type=slack_webhook" in secrets_doc
+    assert "Slack `text`/`blocks` payload" in secrets_doc
+    assert "Slack incoming webhook channel type 등록/API/UI/test/dispatcher payload 변환은 구현됨" in requirements_doc
     assert "X-SCA-Proxy-Secret" in secrets_doc
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in requirements_doc
     assert "viewer" in requirements_doc
@@ -4512,6 +4516,34 @@ def test_alert_channel_test_sends_synthetic_payload_and_audits(tmp_path):
     assert [item["action"] for item in page["audit_logs"]] == ["alert_channel.test", "alert_channel.upsert"]
     assert page["audit_logs"][0]["actor"] == "security-admin"
     assert "sensitive-token" not in json.dumps(page)
+
+
+def test_slack_webhook_channel_test_sends_slack_payload(tmp_path):
+    app = make_test_app(tmp_path)
+    delivered = []
+    channel = app.create_alert_channel(
+        {
+            "name": "slack-security",
+            "channel_type": "slack_webhook",
+            "target_url": "https://hooks.slack.com/services/T000/B000/secret",
+            "is_default": True,
+        }
+    )["channel"]
+
+    result = app.test_alert_channel(
+        channel["id"],
+        {"actor": "security-admin", "reason": "slack smoke"},
+        sender=lambda url, payload, headers: delivered.append((url, payload, headers)),
+    )
+
+    assert result["status"] == "ok"
+    assert result["channel"]["channel_type"] == "slack_webhook"
+    assert delivered[0][0] == "https://hooks.slack.com/services/T000/B000/secret"
+    assert delivered[0][1]["text"] == "SCA Monitor alert channel test"
+    assert delivered[0][1]["blocks"][0]["type"] == "header"
+    assert "slack-security" in delivered[0][1]["blocks"][1]["text"]["text"]
+    assert delivered[0][2]["X-SCA-Alert-Channel-Test"] == "true"
+    assert "secret" not in json.dumps(result)
 
 
 def test_alert_channel_test_rejects_disabled_channel(tmp_path):
@@ -7572,6 +7604,34 @@ def test_dispatch_pending_alerts_uses_default_channel(tmp_path):
         assert row["channel_target"] == "https://alerts.example.test/default"
 
 
+def test_dispatch_pending_alerts_uses_default_slack_webhook_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    create_alerting_impact(app)
+    app.create_alert_channel(
+        {
+            "name": "default-slack",
+            "channel_type": "slack_webhook",
+            "target_url": "https://hooks.slack.com/services/T000/B000/default-secret",
+            "is_default": True,
+        }
+    )
+    delivered = []
+
+    result = dispatch_pending_alerts(app, webhook_url=None, sender=lambda url, payload, headers: delivered.append((url, payload, headers)))
+
+    assert result.sent == 1
+    assert delivered[0][0] == "https://hooks.slack.com/services/T000/B000/default-secret"
+    assert delivered[0][1]["text"].startswith("[high] Alert Service")
+    assert delivered[0][1]["blocks"][0]["type"] == "header"
+    assert "OSV-TEST-0001" in delivered[0][1]["blocks"][1]["text"]["text"]
+    assert delivered[0][2]["X-SCA-Alert-Event-Id"] == delivered[0][1]["metadata"]["event_payload"]["alert_event_id"]
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT channel_type, channel_target, payload FROM alert_events").fetchone()
+        assert row["channel_type"] == "slack_webhook"
+        assert row["channel_target"] == "https://hooks.slack.com/services/T000/B000/default-secret"
+        assert json_column(row["payload"], {})["text"].startswith("[high] Alert Service")
+
+
 def test_dispatch_pending_alerts_routes_daily_digest_to_owner_team_channel(tmp_path):
     app = make_test_app(tmp_path)
     app.import_osv_payload(osv_fixture())
@@ -7611,6 +7671,50 @@ def test_dispatch_pending_alerts_routes_daily_digest_to_owner_team_channel(tmp_p
     with app.db.connect() as conn:
         row = conn.execute("SELECT channel_target FROM alert_events WHERE reason = 'daily_digest'").fetchone()
         assert row["channel_target"] == "https://alerts.internal/platform"
+
+
+def test_dispatch_pending_alerts_routes_daily_digest_to_owner_team_slack_channel(tmp_path):
+    app = make_test_app(tmp_path)
+    app.import_osv_payload(osv_fixture())
+    app.push_snapshot(
+        {
+            "service_id": "platform-service",
+            "service_name": "Platform Service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "dependencies": [{"ecosystem": "npm", "name": "example-package", "version": "1.0.1"}],
+        }
+    )
+    with app.db.connect() as conn:
+        conn.execute("UPDATE impacts SET risk_level = 'medium', status = 'open'")
+        conn.execute("DELETE FROM alert_events")
+    app.enqueue_daily_digest_alert(
+        now="2026-01-03T00:00:00+00:00",
+        owner_team="platform",
+        actor="digest-scheduler",
+    )
+    app.create_alert_channel({"name": "default", "target_url": "https://alerts.example.test/default", "is_default": True})
+    app.create_alert_channel(
+        {
+            "name": "platform-slack",
+            "channel_type": "slack_webhook",
+            "target_url": "https://hooks.slack.com/services/T000/B000/platform-secret",
+            "is_default": False,
+            "owner_team": "platform",
+        }
+    )
+    delivered = []
+
+    result = dispatch_pending_alerts(app, webhook_url=None, sender=lambda url, payload: delivered.append((url, payload)))
+
+    assert result.sent == 1
+    assert delivered[0][0] == "https://hooks.slack.com/services/T000/B000/platform-secret"
+    assert delivered[0][1]["text"].startswith("[Daily Digest] platform")
+    assert "1 impacts" in delivered[0][1]["blocks"][1]["text"]["text"]
+    with app.db.connect() as conn:
+        row = conn.execute("SELECT channel_type, channel_target FROM alert_events WHERE reason = 'daily_digest'").fetchone()
+        assert row["channel_type"] == "slack_webhook"
+        assert row["channel_target"] == "https://hooks.slack.com/services/T000/B000/platform-secret"
 
 
 def test_dispatch_pending_alerts_ignores_disabled_default_channel(tmp_path):

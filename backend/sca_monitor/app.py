@@ -26,6 +26,7 @@ from .versioning import version_is_affected
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
+ALERT_CHANNEL_TYPES = {"webhook", "slack_webhook"}
 INITIAL_ADVISORY_SYNC_SOURCES = ("OSV", "CISA_KEV", "OpenSSF")
 RISK_RANK = {
     "critical": 0,
@@ -855,8 +856,8 @@ class ScaMonitorApp:
     def create_alert_channel(self, body: dict) -> dict:
         name = required(body, "name")
         channel_type = body.get("channel_type", "webhook")
-        if channel_type != "webhook":
-            raise ValueError("only webhook alert channels are supported")
+        if channel_type not in ALERT_CHANNEL_TYPES:
+            raise ValueError("channel_type must be webhook or slack_webhook")
         target_url = required(body, "target_url")
         if not target_url.startswith(("https://", "http://")):
             raise ValueError("target_url must be http or https")
@@ -908,8 +909,8 @@ class ScaMonitorApp:
             before = sanitize_alert_channel(row_to_dict(current))
             name = body.get("name", current["name"])
             channel_type = body.get("channel_type", current["channel_type"])
-            if channel_type != "webhook":
-                raise ValueError("only webhook alert channels are supported")
+            if channel_type not in ALERT_CHANNEL_TYPES:
+                raise ValueError("channel_type must be webhook or slack_webhook")
             target_url = body.get("target_url", current["target_url"])
             if target_url and not str(target_url).startswith(("https://", "http://")):
                 raise ValueError("target_url must be http or https")
@@ -945,7 +946,7 @@ class ScaMonitorApp:
         return {"channel": sanitize_alert_channel(row_to_dict(row))}
 
     def test_alert_channel(self, channel_id: str, body: dict, sender=None) -> dict:
-        from .alert_dispatch import send_webhook
+        from .alert_dispatch import format_alert_for_channel, send_webhook
 
         now = utcnow()
         with self.db.connect() as conn:
@@ -955,8 +956,6 @@ class ScaMonitorApp:
             before = sanitize_alert_channel(row_to_dict(row))
             if not row["enabled"]:
                 raise ValueError("alert channel is disabled")
-            if row["channel_type"] != "webhook":
-                raise ValueError("only webhook alert channels are supported")
             payload = {
                 "smoke": True,
                 "smoke_id": f"alert-channel-test:{channel_id}:{now}",
@@ -972,7 +971,7 @@ class ScaMonitorApp:
                 "X-SCA-Alert-Channel-Test": "true",
                 "X-SCA-Smoke": "true",
             }
-            (sender or send_webhook)(row["target_url"], payload, headers)
+            (sender or send_webhook)(row["target_url"], format_alert_for_channel(payload, row["channel_type"]), headers)
             self.write_audit_log(
                 conn,
                 actor=body.get("actor", "system"),
@@ -991,17 +990,21 @@ class ScaMonitorApp:
         }
 
     def default_alert_webhook_url(self) -> str | None:
+        target = self.default_alert_channel_target()
+        return target["target_url"] if target else None
+
+    def default_alert_channel_target(self) -> dict | None:
         with self.db.connect() as conn:
             row = conn.execute(
                 """
-                SELECT target_url
+                SELECT target_url, channel_type
                 FROM alert_channels
-                WHERE enabled AND is_default AND channel_type = 'webhook'
+                WHERE enabled AND is_default AND channel_type IN ('webhook', 'slack_webhook')
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """
             ).fetchone()
-        return row["target_url"] if row else None
+        return row_to_dict(row) if row else None
 
     def list_push_credentials(self, service_id: str, query: dict[str, list[str]]) -> list[dict]:
         environment = query.get("environment", ["prod"])[0]

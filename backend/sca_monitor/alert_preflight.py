@@ -25,7 +25,7 @@ def default_channel_summary(app) -> dict[str, Any]:
             """
             SELECT id, name, channel_type, target_url, enabled, is_default, updated_at
             FROM alert_channels
-            WHERE enabled AND is_default AND channel_type = 'webhook'
+            WHERE enabled AND is_default AND channel_type IN ('webhook', 'slack_webhook')
             ORDER BY updated_at DESC
             LIMIT 1
             """
@@ -107,7 +107,7 @@ def run_alert_dispatcher_activation_check(app, *, limit: int) -> dict[str, Any]:
             "name": "default_alert_channel_configured",
             "status": "passed" if preflight["checks"]["default_alert_channel_configured"] else "failed",
             "blocking": True,
-            "reason": "an enabled default webhook channel is required for live dispatch",
+            "reason": "an enabled default webhook or Slack webhook channel is required for live dispatch",
         },
         {
             "name": "default_alert_channel_not_placeholder",

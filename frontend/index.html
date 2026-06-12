@@ -284,7 +284,13 @@ Content-Type: application/json
             <h2>Alert Channel</h2>
             <form id="alert-channel-form">
               <label>Name<input name="name" value="default-webhook" required /></label>
-              <label>Webhook URL<input name="target_url" placeholder="https://alert-router.example/webhook" required /></label>
+              <label>Type
+                <select name="channel_type">
+                  <option value="webhook">Webhook JSON</option>
+                  <option value="slack_webhook">Slack Incoming Webhook</option>
+                </select>
+              </label>
+              <label>Target URL<input name="target_url" placeholder="https://alert-router.example/webhook" required /></label>
               <label>Owner Team<input name="owner_team" placeholder="optional team routing" /></label>
               <label><input name="is_default" type="checkbox" checked /> Default channel</label>
               <button type="submit">Save Channel</button>

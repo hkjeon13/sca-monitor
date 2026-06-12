@@ -989,7 +989,7 @@ document.querySelector("#alert-channel-form").addEventListener("submit", async (
   const form = Object.fromEntries(new FormData(event.currentTarget).entries());
   await api.send("/api/v1/settings/alert-channels", "POST", {
     name: form.name,
-    channel_type: "webhook",
+    channel_type: form.channel_type || "webhook",
     target_url: form.target_url,
     owner_team: form.owner_team,
     is_default: form.is_default === "on" && !form.owner_team?.trim(),
