@@ -276,7 +276,7 @@ scripts/deploy_remote.sh
 이 report는 DB URL 원문, password, backup 원본 경로를 출력하지 않는다.
 `GET /api/v1/operations/cutover-readiness-report`는 `SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH`의 sanitized report artifact를 조회한다.
 응답은 artifact path를 `configured` 또는 `not_configured`로만 표시하고 서버 파일 경로를 노출하지 않는다.
-Web Console Database Readiness 패널은 이 endpoint의 report status와 summary count를 표시한다.
+Web Console Database Readiness 패널은 이 endpoint의 report status, expected status, expectation met 여부, production preflight status, summary count를 표시한다.
 원격 배포 자동화에서 migration 직전 report artifact를 남기려면 다음 입력을 사용한다.
 
 ```bash

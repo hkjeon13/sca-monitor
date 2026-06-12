@@ -3411,6 +3411,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "scripts/verify_backup_restore.py" in database_doc
     assert "scripts/cutover_readiness_report.py" in database_doc
+    assert "expected status, expectation met 여부, production preflight status" in database_doc
     assert "stop gate로 먼저 실행" in database_doc
     assert "DB URL 원문을 출력하지" in database_doc
     assert "DB URL 원문이나 password를 포함하지" in values_doc
@@ -3595,6 +3596,10 @@ def test_web_console_renders_database_readiness_panel():
     assert "Worker Auto-Migrate" in script
     assert "Cutover Report" in script
     assert "renderCutoverReadinessReport" in script
+    assert "expected_status" in script
+    assert "expectation_met" in script
+    assert "expected:" in script
+    assert "met:" in script
     assert "Advisory Freshness" in script
     assert "Advisory Sources" in script
     assert "readiness.advisory_sync_readiness" in script

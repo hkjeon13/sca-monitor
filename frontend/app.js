@@ -241,7 +241,10 @@ function renderCutoverReadinessReport(cutoverReadinessReport) {
   if (artifact.status !== "available") return artifact.status || "not_configured";
   const report = cutoverReadinessReport.report || {};
   const summary = report.summary || {};
-  return `${report.status || "unknown"} · ${summary.ok ?? 0} ok / ${summary.action_required ?? 0} action / ${summary.blockers ?? 0} blockers / ${summary.skipped ?? 0} skipped`;
+  const expectedStatus = report.expected_status || "not set";
+  const expectationMet = report.expectation_met === true ? "yes" : report.expectation_met === false ? "no" : "n/a";
+  const productionPreflight = report.production_preflight?.status || "unknown";
+  return `${report.status || "unknown"} · expected: ${expectedStatus} · met: ${expectationMet} · production: ${productionPreflight} · ${summary.ok ?? 0} ok / ${summary.action_required ?? 0} action / ${summary.blockers ?? 0} blockers / ${summary.skipped ?? 0} skipped`;
 }
 
 function renderRuntimeAutoMigrate(runtimeMigration) {
