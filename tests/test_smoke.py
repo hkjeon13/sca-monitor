@@ -3305,6 +3305,7 @@ def test_harness_documents_deployment_input_readiness():
     operations_doc = (REPO_ROOT / "harness" / "operations-runbook.md").read_text(encoding="utf-8")
     requirements_doc = (REPO_ROOT / "harness" / "requirements.md").read_text(encoding="utf-8")
     secrets_doc = (REPO_ROOT / "harness" / "secrets-and-config.md").read_text(encoding="utf-8")
+    bootstrap_doc = (REPO_ROOT / "harness" / "bootstrap.md").read_text(encoding="utf-8")
     values_doc = (REPO_ROOT / "harness" / "values" / "deployment-inputs.md").read_text(encoding="utf-8")
     env_example = (REPO_ROOT / "deploy" / "sca-monitor.env.example").read_text(encoding="utf-8")
 
@@ -3370,6 +3371,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in secrets_doc
     assert "channel_type=slack_webhook" in secrets_doc
     assert "Slack `text`/`blocks` payload" in secrets_doc
+    assert "SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE=slack_webhook" in secrets_doc
+    assert "`SLACK_WEBHOOK_URL`만 설정된 경우" in secrets_doc
+    assert "`SLACK_WEBHOOK_URL`만 제공되는 환경" in bootstrap_doc
+    assert "seed 스크립트가 Slack channel type을 추론" in operations_doc
     assert "Slack incoming webhook channel type 등록/API/UI/test/dispatcher payload 변환은 구현됨" in requirements_doc
     assert "X-SCA-Proxy-Secret" in secrets_doc
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in requirements_doc
@@ -4385,6 +4390,58 @@ def test_seed_default_alert_channel_cli_creates_real_default(tmp_path):
     assert payload["after"]["placeholder_target"] is False
     assert payload["channel"]["name"] == "bootstrap-router"
     assert "secret-token" not in result.stdout
+
+
+def test_seed_default_alert_channel_cli_infers_slack_webhook_type(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+        "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T000/B000/secret-token",
+        "SCA_MONITOR_DEFAULT_ALERT_CHANNEL_NAME": "slack-bootstrap",
+    }
+    env.pop("SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL", None)
+    env.pop("DEFAULT_ALERT_CHANNEL_URL", None)
+    env.pop("ALERT_WEBHOOK_URL", None)
+
+    result = subprocess.run(
+        ["python3", "scripts/seed_default_alert_channel.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["after"]["channel_type"] == "slack_webhook"
+    assert payload["channel"]["channel_type"] == "slack_webhook"
+    assert payload["channel"]["name"] == "slack-bootstrap"
+    assert "secret-token" not in result.stdout
+
+
+def test_seed_default_alert_channel_cli_accepts_explicit_channel_type(tmp_path):
+    env = {
+        **os.environ,
+        "SCA_MONITOR_DATA_DIR": str(tmp_path),
+        "SCA_MONITOR_DATABASE_URL": f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}",
+        "SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL": "https://hooks.slack.com/services/T000/B000/secret-token",
+        "SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE": "slack_webhook",
+    }
+
+    result = subprocess.run(
+        ["python3", "scripts/seed_default_alert_channel.py", "--json"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["channel"]["channel_type"] == "slack_webhook"
 
 
 def test_seed_default_alert_channel_cli_rejects_placeholder_by_default(tmp_path):

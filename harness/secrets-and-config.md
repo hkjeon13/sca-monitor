@@ -154,13 +154,15 @@ SLACK_BOT_TOKEN
 SLACK_WEBHOOK_URL
 DEFAULT_ALERT_CHANNEL
 SCA_MONITOR_DEFAULT_ALERT_CHANNEL_NAME
+SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE
 SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL
 DEFAULT_DAILY_DIGEST_CHANNEL
 ```
 
 Slack app 방식을 선택하면 `SLACK_BOT_TOKEN`을 사용하고, incoming webhook 방식을 선택하면 `SLACK_WEBHOOK_URL`을 사용한다.
 Web Console과 alert channel API는 `channel_type=webhook` 또는 `channel_type=slack_webhook`을 저장할 수 있으며, dispatcher는 Slack incoming webhook channel에 Slack `text`/`blocks` payload를 전송한다.
-배포 bootstrap 자동화는 `SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL`을 우선 사용해 `scripts/seed_default_alert_channel.py`로 기본 webhook channel을 생성 또는 갱신한다.
+배포 bootstrap 자동화는 `SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL`을 우선 사용해 `scripts/seed_default_alert_channel.py`로 기본 alert channel을 생성 또는 갱신한다.
+`SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE=slack_webhook`을 명시하면 Slack incoming webhook channel로 저장하고, `SLACK_WEBHOOK_URL`만 설정된 경우에도 seed 스크립트는 `slack_webhook` type으로 추론한다.
 이 값은 secret으로 취급하며 git, 로그, 문서 예시에 실제 token path를 남기지 않는다.
 
 ### Frontend

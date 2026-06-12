@@ -106,6 +106,9 @@ SCA_MONITOR_DEFAULT_ALERT_WEBHOOK_URL=https://alert-router.example.internal/webh
 python3 scripts/seed_default_alert_channel.py --json
 ```
 
+Slack incoming webhook을 기본 channel로 bootstrap하려면 `SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE=slack_webhook`을 함께 지정한다.
+`SLACK_WEBHOOK_URL`만 제공되는 환경에서는 seed 스크립트가 channel type을 `slack_webhook`으로 추론한다.
+
 dev fixture에서만 placeholder URL이 필요하면 `--allow-placeholder`를 명시한다.
 seed 이후에는 live dispatcher enable 전 `python3 scripts/alert_dispatcher_activation_check.py --json`이 `ready`를 반환해야 한다.
 

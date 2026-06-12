@@ -247,6 +247,7 @@ python3 scripts/seed_default_alert_channel.py --json
 
 seed 스크립트는 webhook URL 원문을 출력하지 않고, placeholder/example target은 기본적으로 거부한다.
 Slack incoming webhook을 기본 채널로 사용하려면 Web Console 또는 `POST /api/v1/settings/alert-channels`에서 `channel_type=slack_webhook`으로 등록한다.
+배포 자동화에서는 `SCA_MONITOR_DEFAULT_ALERT_CHANNEL_TYPE=slack_webhook`을 명시하거나 `SLACK_WEBHOOK_URL`만 설정해 seed 스크립트가 Slack channel type을 추론하게 할 수 있다.
 
 Webhook 수동 발송:
 
