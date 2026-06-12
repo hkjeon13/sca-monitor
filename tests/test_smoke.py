@@ -2986,6 +2986,10 @@ def test_ci_smoke_runs_core_gates():
     assert "--expect-database-backend" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "--expect-cutover-report-status" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
+    assert "--expect-cutover-report-expected-status" in script
+    assert "SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in script
+    assert "--require-cutover-report-expectation-met" in script
 
 
 def test_deploy_remote_runs_deployment_input_readiness_before_migration():
@@ -3099,6 +3103,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "--expect-cutover-report-expected-status" in operations_doc
     assert "--require-cutover-report-expectation-met" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok" in cicd_doc
     assert "--expect-cutover-report-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer" in cicd_doc

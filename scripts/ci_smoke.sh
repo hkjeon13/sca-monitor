@@ -7,6 +7,8 @@ EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
 EXPECT_CUTOVER_REPORT_STATUS="${SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS:-}"
+EXPECT_CUTOVER_REPORT_EXPECTED_STATUS="${SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS:-}"
+REQUIRE_CUTOVER_REPORT_EXPECTATION_MET="${SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET:-false}"
 DEPLOYMENT_ENV_FILE="${SCA_MONITOR_DEPLOYMENT_ENV_FILE:-deploy/sca-monitor.env.example}"
 REQUIRE_RUNTIME_INPUTS="${SCA_MONITOR_REQUIRE_RUNTIME_INPUTS:-false}"
 
@@ -61,6 +63,20 @@ case "$RUN_HTTP_SMOKE" in
     if [ -n "$EXPECT_CUTOVER_REPORT_STATUS" ]; then
       http_smoke_args+=(--expect-cutover-report-status "$EXPECT_CUTOVER_REPORT_STATUS")
     fi
+    if [ -n "$EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" ]; then
+      http_smoke_args+=(--expect-cutover-report-expected-status "$EXPECT_CUTOVER_REPORT_EXPECTED_STATUS")
+    fi
+    case "$REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in
+      true|1|yes|on)
+        http_smoke_args+=(--require-cutover-report-expectation-met)
+        ;;
+      false|0|no|off|"")
+        ;;
+      *)
+        echo "invalid SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET: $REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" >&2
+        exit 2
+        ;;
+    esac
     python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     ;;
   auto|"")
@@ -78,6 +94,20 @@ case "$RUN_HTTP_SMOKE" in
       if [ -n "$EXPECT_CUTOVER_REPORT_STATUS" ]; then
         http_smoke_args+=(--expect-cutover-report-status "$EXPECT_CUTOVER_REPORT_STATUS")
       fi
+      if [ -n "$EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" ]; then
+        http_smoke_args+=(--expect-cutover-report-expected-status "$EXPECT_CUTOVER_REPORT_EXPECTED_STATUS")
+      fi
+      case "$REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in
+        true|1|yes|on)
+          http_smoke_args+=(--require-cutover-report-expectation-met)
+          ;;
+        false|0|no|off|"")
+          ;;
+        *)
+          echo "invalid SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET: $REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" >&2
+          exit 2
+          ;;
+      esac
       python3 scripts/http_smoke.py "${http_smoke_args[@]}" --json
     else
       echo "http smoke skipped: base URL not configured"
