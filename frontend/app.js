@@ -902,7 +902,9 @@ function renderPushCredentialResult(data, actionLabel) {
     <label>Token<input readonly value="${escapeHtml(data.token)}" /></label>
     <p>Prefix: ${escapeHtml(data.credential.token_prefix)} · Expires: ${escapeHtml(data.credential.expires_at)}</p>
     <pre class="credential-snippet"><code>${escapeHtml(snapshotPushCurlSnippet(data))}</code></pre>
+    <button type="button" class="secondary" data-copy-snippet>Copy curl</button>
   `;
+  attachCredentialSnippetCopyHandler();
 }
 
 function snapshotPushCurlSnippet(data) {
@@ -938,6 +940,22 @@ function snapshotPushCurlSnippet(data) {
 
 function shellQuote(value) {
   return `'${String(value ?? "").replace(/'/g, `'\\''`)}'`;
+}
+
+function attachCredentialSnippetCopyHandler() {
+  const result = document.querySelector("#credential-result");
+  const button = result?.querySelector("[data-copy-snippet]");
+  const code = result?.querySelector(".credential-snippet code");
+  if (!button || !code) return;
+  button.addEventListener("click", async () => {
+    const snippet = code.textContent || "";
+    try {
+      await navigator.clipboard.writeText(snippet);
+      button.textContent = "Copied";
+    } catch (error) {
+      button.textContent = "Copy failed";
+    }
+  });
 }
 
 document.querySelector("#snapshot-form").addEventListener("submit", async (event) => {

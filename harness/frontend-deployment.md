@@ -13,7 +13,7 @@
 - system alert pending 현황 모니터링
 - service impact 조회
 - service detail: MVP는 Services 화면에서 endpoint health, latest snapshot, dependency summary, service impact 조회 지원
-- integration guide: MVP는 `POST /api/v1/services/{service_id}/status` service-scoped snapshot push, bearer push token, idempotency header, schema v1.0 필수 필드 예시를 표시하고, push credential 발급/회전 직후 service/environment/token이 반영된 curl snippet을 제공
+- integration guide: MVP는 `POST /api/v1/services/{service_id}/status` service-scoped snapshot push, bearer push token, idempotency header, schema v1.0 필수 필드 예시를 표시하고, push credential 발급/회전 직후 service/environment/token이 반영된 curl snippet과 copy action을 제공
 - impact 상태 변경
 - accepted risk 요청/승인: MVP는 Impact Action Panel에서 `accepted_risk` 전환 시 reason과 expires_at 입력을 요구하고 승인 정보를 저장
 - alert channel 설정: MVP는 Settings 화면에서 default webhook channel 등록/조회/default 전환/disable 지원

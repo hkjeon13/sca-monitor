@@ -3274,6 +3274,18 @@ def test_web_console_push_credential_result_includes_ready_to_copy_curl():
     assert ".credential-snippet" in styles
 
 
+def test_web_console_push_credential_snippet_can_be_copied():
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert "data-copy-snippet" in script
+    assert "function attachCredentialSnippetCopyHandler()" in script
+    assert "navigator.clipboard.writeText(snippet)" in script
+    assert "Copy curl" in script
+    assert "Copied" in script
+    assert "Copy failed" in script
+    assert "attachCredentialSnippetCopyHandler();" in script
+
+
 def test_web_console_gates_impact_status_options_by_role():
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
