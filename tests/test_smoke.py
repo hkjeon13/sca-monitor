@@ -3143,6 +3143,17 @@ def test_web_console_renders_database_readiness_panel():
     assert "Passing checks" in script
 
 
+def test_web_console_gates_impact_status_options_by_role():
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert "function canImpactStatusTarget(status, impact)" in script
+    assert '["acknowledged", "in_progress", "fixed", "not_affected"].includes(status)' in script
+    assert "currentSession.owner_teams?.includes(impact.owner_team)" in script
+    assert "option.disabled = !canImpactStatusTarget(option.value, currentImpact)" in script
+    assert "statusButton.disabled = !can(\"update_impacts\") || !canImpactStatusTarget(statusSelect?.value, currentImpact)" in script
+    assert "!canImpactStatusTarget(body.status, currentImpact)" in script
+
+
 def enabled_now_lines(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if " enable --now " in line)
 

@@ -28,6 +28,7 @@ const impactStatuses = [
 let selectedImpactId = null;
 let selectedServiceId = null;
 let selectedAdvisoryId = null;
+let currentImpact = null;
 let currentSession = defaultSession();
 
 function defaultSession() {
@@ -65,6 +66,14 @@ function canBulkImpactTarget(status) {
   return Boolean(ownerTeam && currentSession.owner_teams?.includes(ownerTeam));
 }
 
+function canImpactStatusTarget(status, impact) {
+  if (!can("update_impacts")) return false;
+  if (hasRole("admin") || hasRole("security-approver") || currentSession.auth_mode === "disabled") return true;
+  if (status === "accepted_risk") return false;
+  if (!hasRole("service-owner") || !["acknowledged", "in_progress", "fixed", "not_affected"].includes(status)) return false;
+  return Boolean(impact?.owner_team && currentSession.owner_teams?.includes(impact.owner_team));
+}
+
 function setDisabled(selector, disabled) {
   document.querySelectorAll(selector).forEach((element) => {
     element.disabled = disabled;
@@ -98,9 +107,13 @@ function applyRoleControls() {
   document.querySelectorAll("#impact-bulk-action-form select[name='target_status'] option").forEach((option) => {
     option.disabled = !canBulkImpactTarget(option.value);
   });
+  document.querySelectorAll("#impact-status-form select[name='status'] option").forEach((option) => {
+    option.disabled = !canImpactStatusTarget(option.value, currentImpact);
+  });
+  const statusSelect = document.querySelector("#impact-status-form select[name='status']");
   const statusButton = document.querySelector("#impact-status-form button[type='submit']");
   if (statusButton) {
-    statusButton.disabled = !can("update_impacts");
+    statusButton.disabled = !can("update_impacts") || !canImpactStatusTarget(statusSelect?.value, currentImpact);
   }
 }
 
@@ -568,12 +581,14 @@ function detailRow(label, value) {
 }
 
 function renderImpactDetailEmpty(message) {
+  currentImpact = null;
   document.querySelector("#impact-detail").innerHTML = `<p>${escapeHtml(message)}</p>`;
 }
 
 async function loadImpactDetail(impactId) {
   const data = await api.get(`/api/v1/impacts/${encodeURIComponent(impactId)}`);
   const impact = data.impact;
+  currentImpact = impact;
   const affectedRanges = impact.affected_ranges ? JSON.stringify(impact.affected_ranges) : "-";
   const history = data.history.length
     ? data.history.map((item) => `
@@ -607,8 +622,7 @@ async function loadImpactDetail(impactId) {
       <label>Status
         <select name="status">
           ${impactStatuses.map((status) => {
-            const disableAcceptedRisk = status === "accepted_risk" && !can("accept_risk") && status !== impact.status;
-            return `<option value="${status}" ${status === impact.status ? "selected" : ""} ${disableAcceptedRisk ? "disabled" : ""}>${status}</option>`;
+            return `<option value="${status}" ${status === impact.status ? "selected" : ""}>${status}</option>`;
           }).join("")}
         </select>
       </label>
@@ -623,6 +637,7 @@ async function loadImpactDetail(impactId) {
     </div>
   `;
   document.querySelector("#impact-status-form").addEventListener("submit", updateImpactStatus);
+  document.querySelector("#impact-status-form select[name='status']").addEventListener("change", applyRoleControls);
   applyRoleControls();
 }
 
@@ -630,7 +645,7 @@ async function updateImpactStatus(event) {
   event.preventDefault();
   if (!selectedImpactId) return;
   const body = Object.fromEntries(new FormData(event.currentTarget).entries());
-  if (!can("update_impacts") || (body.status === "accepted_risk" && !can("accept_risk"))) {
+  if (!can("update_impacts") || !canImpactStatusTarget(body.status, currentImpact)) {
     return;
   }
   await api.send(`/api/v1/impacts/${encodeURIComponent(selectedImpactId)}/status`, "PATCH", body);
