@@ -205,6 +205,27 @@ def check_database_backend(base_url: str, timeout: float, expected_backend: str)
         }
 
 
+def check_database_env_file_configured(base_url: str, timeout: float, expected_configured: bool) -> dict[str, Any]:
+    try:
+        status, ready = fetch_json(base_url, "/ready", timeout)
+        database_env_file = ready.get("database_env_file") or {}
+        actual_configured = bool(database_env_file.get("configured"))
+        return {
+            "expected_configured": expected_configured,
+            "actual_configured": actual_configured,
+            "source": database_env_file.get("source"),
+            "ok": status == 200 and actual_configured == expected_configured,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "expected_configured": expected_configured,
+            "actual_configured": None,
+            "source": None,
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def check_advisory_sync_readiness(base_url: str, timeout: float, expected_ready: bool) -> dict[str, Any]:
     try:
         status, overview = fetch_json(base_url, "/api/v1/overview", timeout)
@@ -316,6 +337,7 @@ def run_smoke(
     require_postgres_split_metrics: bool = False,
     expect_postgres_split_required: bool | None = None,
     expect_database_backend: str | None = None,
+    expect_database_env_file_configured: bool | None = None,
     expect_advisory_sync_ready: bool | None = None,
     expect_advisory_source_statuses: dict[str, str] | None = None,
     expect_cutover_report_status: str | None = None,
@@ -365,6 +387,18 @@ def run_smoke(
         if not database_backend["ok"]:
             if database_backend.get("error"):
                 result["database_backend"]["error"] = database_backend["error"]
+            result["status"] = "failed"
+    if expect_database_env_file_configured is not None:
+        database_env_file = check_database_env_file_configured(base_url, timeout, expect_database_env_file_configured)
+        result["database_env_file"] = {
+            "expected_configured": database_env_file["expected_configured"],
+            "actual_configured": database_env_file["actual_configured"],
+            "source": database_env_file["source"],
+            "ok": database_env_file["ok"],
+        }
+        if not database_env_file["ok"]:
+            if database_env_file.get("error"):
+                result["database_env_file"]["error"] = database_env_file["error"]
             result["status"] = "failed"
     if expect_advisory_sync_ready is not None:
         readiness = check_advisory_sync_readiness(base_url, timeout, expect_advisory_sync_ready)
@@ -435,6 +469,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-postgres-split-metrics", action="store_true", help="Fail unless /metrics exposes PostgreSQL split cutover gauges.")
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
     parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
+    parser.add_argument("--expect-database-env-file-configured", type=parse_bool, help="Fail unless /ready reports the expected database_env_file.configured value.")
     parser.add_argument("--expect-advisory-sync-ready", type=parse_bool, help="Fail unless /api/v1/overview reports the expected advisory sync readiness.")
     parser.add_argument(
         "--expect-advisory-source-status",
@@ -466,6 +501,7 @@ def main() -> int:
         require_postgres_split_metrics=args.require_postgres_split_metrics,
         expect_postgres_split_required=args.expect_postgres_split_required,
         expect_database_backend=args.expect_database_backend,
+        expect_database_env_file_configured=args.expect_database_env_file_configured,
         expect_advisory_sync_ready=args.expect_advisory_sync_ready,
         expect_advisory_source_statuses=expected_source_statuses,
         expect_cutover_report_status=args.expect_cutover_report_status,

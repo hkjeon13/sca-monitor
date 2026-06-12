@@ -142,6 +142,8 @@ bootstrap 완료 또는 운영 승격 단계에서 advisory source 초기 동기
 GHSA/NVD를 운영 required source로 승격하는 단계에서는 같은 값에 `GHSA=ok,NVD=ok`를 추가한다.
 현재 runtime DB backend까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite` 또는 `SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres`를 설정한다.
 현재 SQLite fallback 운영 검증은 `sqlite`, PostgreSQL cutover stage 검증은 `postgres`를 사용한다.
+protected PostgreSQL env file 주입 여부까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=false` 또는 `true`를 설정한다.
+현재 SQLite fallback 운영 검증은 `false`, 실제 `SCA_MONITOR_DATABASE_ENV_FILE`을 병합하는 PostgreSQL cutover stage 검증은 `true`를 사용한다.
 cutover readiness report artifact 상태까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok` 또는 stage 의도에 맞는 `action_required`/`blocked`를 설정한다.
 실제 PostgreSQL split credential cutover stage에서 live production preflight 실행까지 승격 조건으로 고정하려면 `SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS=ok`를 함께 설정한다.
 원격 배포 스크립트 안에서 재시작 후 HTTP smoke를 stop gate로 강제하려면 `SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required`를 설정한다.
@@ -159,6 +161,7 @@ SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net \
 SCA_MONITOR_GENERATE_SMOKE_TOKEN=true \
 SCA_MONITOR_REQUIRE_RUNTIME_INPUTS=true \
 SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite \
+SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=false \
 SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok \
 SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok \
 SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok \
@@ -184,6 +187,16 @@ GitHub malware advisory까지 FR-016 malicious package risk 산정 경로에 반
 SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP=required \
 SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP_LIMIT=1 \
 SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok,NVD=ok,GHSA=ok \
+SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
+scripts/deploy_remote.sh
+```
+
+PostgreSQL protected env file을 실제로 주입하는 cutover stage에서는 다음 기대값을 함께 고정한다.
+
+```bash
+SCA_MONITOR_DATABASE_ENV_FILE=/data/psyche/Projects/sca-monitor/.secrets/postgres.env \
+SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres \
+SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=true \
 SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
 scripts/deploy_remote.sh
 ```

@@ -867,6 +867,64 @@ def test_http_smoke_fails_when_database_backend_differs():
     }
 
 
+def test_http_smoke_can_expect_database_env_file_configured(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/ready"
+        return 200, {"database_env_file": {"configured": True, "source": "SCA_MONITOR_DATABASE_ENV_FILE"}}
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_database_env_file_configured=True,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["database_env_file"] == {
+        "expected_configured": True,
+        "actual_configured": True,
+        "source": "SCA_MONITOR_DATABASE_ENV_FILE",
+        "ok": True,
+    }
+
+
+def test_http_smoke_fails_when_database_env_file_configured_differs(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/ready"
+        return 200, {"database_env_file": {"configured": False, "source": "not_configured"}}
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_database_env_file_configured=True,
+    )
+
+    assert payload["status"] == "failed"
+    assert payload["database_env_file"] == {
+        "expected_configured": True,
+        "actual_configured": False,
+        "source": "not_configured",
+        "ok": False,
+    }
+
+
 def test_http_smoke_can_expect_advisory_sync_ready():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -3214,6 +3272,8 @@ def test_ci_smoke_runs_core_gates():
     assert "--expect-advisory-sync-ready" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "--expect-database-backend" in script
+    assert "SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED" in script
+    assert "--expect-database-env-file-configured" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "--expect-cutover-report-status" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
@@ -3243,6 +3303,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE" in script
     assert "SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS" in script
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
+    assert "SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS" in script
@@ -3295,6 +3356,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "cutover_report_args+=(--require-postgres --require-split)" in script
     assert "cutover report with SCA_MONITOR_DATABASE_ENV_FILE requires PostgreSQL split readiness" in script
     assert "--expect-database-backend" in script
+    assert "--expect-database-env-file-configured" in script
     assert "--expect-cutover-report-status" in script
     assert "--expect-cutover-report-expected-status" in script
     assert "--expect-cutover-report-production-preflight-status" in script
@@ -3360,6 +3422,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "자동으로 `--require-postgres --require-split`" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=false" in cicd_doc
     assert "SCA_MONITOR_EXPECT_ADVISORY_SOURCE_STATUS=OSV=ok,CISA_KEV=ok,OpenSSF=ok" in cicd_doc
     assert "SCA_MONITOR_GHSA_BOOTSTRAP=required" in cicd_doc
     assert "SCA_MONITOR_GHSA_BOOTSTRAP_LIMIT=1" in cicd_doc
@@ -3369,6 +3432,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_CANONICAL_MERGE_DRY_RUN=true" in cicd_doc
     assert "--expect-advisory-source-status OSV=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=true" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
     assert "--expect-cutover-report-expected-status blocked" in cicd_doc
     assert "--require-cutover-report-expectation-met" in cicd_doc
@@ -3397,6 +3461,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "`channel_type`이 의도한 `webhook` 또는 `slack_webhook`" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in operations_doc
     assert "--expect-database-backend sqlite" in operations_doc
+    assert "--expect-database-env-file-configured false" in operations_doc
+    assert "--expect-database-env-file-configured true" in operations_doc
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in operations_doc
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in env_example
     assert "SCA_MONITOR_AUTH_PROXY_SHARED_SECRET" in secrets_doc
