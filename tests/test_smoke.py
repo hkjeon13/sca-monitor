@@ -3251,6 +3251,7 @@ def test_web_console_guides_service_scoped_snapshot_push():
     assert "Idempotency-Key" in html
     assert "generated_at" in html
     assert "dependencies" in html
+    assert "pkg:npm/lodash@4.17.20" not in html
     assert "/api/v1/snapshots" not in html
     assert "/api/v1/snapshots" not in script
     assert "/api/v1/services/${encodeURIComponent(form.service_id)}/status" in script
