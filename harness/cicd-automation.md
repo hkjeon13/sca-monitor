@@ -188,6 +188,18 @@ SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
 scripts/deploy_remote.sh
 ```
 
+OSV/GHSA/NVD/OpenSSF/CISA alias가 쌓인 뒤 FR-027 canonicalization drift를 배포 중 점검하려면 dry-run gate를 먼저 사용한다.
+
+```bash
+SCA_MONITOR_CANONICAL_MERGE=required \
+SCA_MONITOR_CANONICAL_MERGE_LIMIT=100 \
+SCA_MONITOR_CANONICAL_MERGE_DRY_RUN=true \
+SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required \
+scripts/deploy_remote.sh
+```
+
+운영자가 병합 후보와 영향도를 확인한 뒤 apply가 필요하면 `SCA_MONITOR_CANONICAL_MERGE_DRY_RUN=false`로 전환한다.
+
 `SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED`는 SQLite fallback/current production에서는 `false`, split credential cutover stage에서는 `true`로 설정한다.
 
 원격 VM 배포에서 systemd unit 설치 단계까지 검증하려면 다음처럼 명시한다.

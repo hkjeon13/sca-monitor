@@ -3233,6 +3233,9 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_GHSA_BOOTSTRAP_LIMIT" in script
     assert "SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP" in script
     assert "SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP_LIMIT" in script
+    assert "SCA_MONITOR_CANONICAL_MERGE" in script
+    assert "SCA_MONITOR_CANONICAL_MERGE_LIMIT" in script
+    assert "SCA_MONITOR_CANONICAL_MERGE_DRY_RUN" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT" in script
@@ -3260,6 +3263,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "scripts/postgres_integration_smoke.py --production-preflight --json" in script
     assert "scripts/ghsa_sync.py --limit" in script
     assert "scripts/ghsa_sync.py --type malware --limit" in script
+    assert "scripts/merge_canonical_advisories.py --limit" in script
+    assert "--actor deploy-canonical-merge" in script
     assert "--lock-owner deploy-ghsa-bootstrap" in script
     assert "--lock-owner deploy-ghsa-malware-bootstrap" in script
     assert "scripts/cutover_readiness_report.py" in script
@@ -3287,6 +3292,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("scripts/postgres_integration_smoke.py --production-preflight --json") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/ghsa_sync.py --limit") < script.index("bash scripts/deploy_systemd_gate.sh")
     assert script.index("scripts/ghsa_sync.py --type malware --limit") < script.index("bash scripts/deploy_systemd_gate.sh")
+    assert script.index("scripts/merge_canonical_advisories.py --limit") < script.index("bash scripts/deploy_systemd_gate.sh")
     assert script.index("scripts/cutover_readiness_report.py") < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("scripts/bootstrap_readiness_check.py --json")
     assert script.index("bash scripts/deploy_systemd_gate.sh") < script.index("scripts/http_smoke.py")
@@ -3333,6 +3339,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_GHSA_BOOTSTRAP_LIMIT=1" in cicd_doc
     assert "SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP=required" in cicd_doc
     assert "SCA_MONITOR_GHSA_MALWARE_BOOTSTRAP_LIMIT=1" in cicd_doc
+    assert "SCA_MONITOR_CANONICAL_MERGE=required" in cicd_doc
+    assert "SCA_MONITOR_CANONICAL_MERGE_DRY_RUN=true" in cicd_doc
     assert "--expect-advisory-source-status OSV=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
