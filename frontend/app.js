@@ -192,6 +192,7 @@ function renderDatabaseReadiness(readiness, cutoverReadinessReport) {
   const preflight = readiness.postgres_preflight || {};
   const runtimeUrls = readiness.runtime_database_urls || {};
   const runtimeMigration = readiness.runtime_auto_migrate || {};
+  const databaseEnvFile = readiness.database_env_file || {};
   const advisoryReadiness = readiness.advisory_sync_readiness || {};
   const advisoryFreshness = advisoryReadiness.freshness || {};
   document.querySelector("#database-readiness").innerHTML = `
@@ -203,6 +204,7 @@ function renderDatabaseReadiness(readiness, cutoverReadinessReport) {
     <div class="detail-grid readiness-grid">
       ${detailRow("Backend", readiness.database_backend)}
       ${detailRow("URL Source", readiness.database_url_source || "unknown")}
+      ${detailRow("Database Env File", renderDatabaseEnvFile(databaseEnvFile))}
       ${detailRow("Migration", `${migration.current ?? 0}/${migration.required ?? 0}`)}
       ${detailRow("Cutover Mode", cutover.mode || "unknown")}
       ${detailRow("Current Cutover", cutover.status || "unknown")}
@@ -226,6 +228,12 @@ function renderDatabaseReadiness(readiness, cutoverReadinessReport) {
       ${renderPostgresCutoverCheckGroups(required.checks || [])}
     </div>
   `;
+}
+
+function renderDatabaseEnvFile(databaseEnvFile) {
+  const status = databaseEnvFile.configured ? "configured" : "not configured";
+  const source = databaseEnvFile.source || "unknown";
+  return `${status} (${source})`;
 }
 
 function renderCutoverReadinessReport(cutoverReadinessReport) {

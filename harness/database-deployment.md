@@ -25,11 +25,12 @@ Target production: postgresql://...
 
 PostgreSQL URL을 배포 환경에 넣기 전에는 실제 PostgreSQL instance, credential, network access, migration dry-run이 먼저 완료되어야 한다.
 전환 직전에는 `scripts/postgres_cutover_readiness.py --require-postgres --json`을 실행해 DB URL 조합, PostgreSQL 여부, integration smoke 설정, runtime auto-migrate 비활성화 여부를 먼저 확인한다.
-운영자는 Web Console Overview, `/ready`, 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, DB URL source, migration version, cutover mode, require-postgres preflight 요약, split credential 준비 여부, 차단 사유를 확인할 수 있다.
+운영자는 Web Console Overview, `/ready`, 또는 `GET /api/v1/operations/database-readiness`에서 현재 DB backend, DB URL source, protected PostgreSQL env file 설정 여부, migration version, cutover mode, require-postgres preflight 요약, split credential 준비 여부, 차단 사유를 확인할 수 있다.
 Web Console Database Readiness 패널은 같은 응답의 `advisory_sync_readiness`를 함께 표시해 advisory freshness와 필수 source 초기화 상태도 전환 점검 화면에서 확인할 수 있게 한다.
 `database_url_source`는 `SCA_MONITOR_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL`, `SCA_MONITOR_DB`, `default_sqlite` 중 어떤 설정이 선택됐는지만 표시하며 URL 원문이나 credential은 노출하지 않는다.
 `runtime_database_urls`는 `api`, `worker`, `migration` role별 source/backend/configured 여부만 표시한다.
 `runtime_auto_migrate`는 `api`, `worker`별 runtime migration enabled 여부와 값을 결정한 env source만 표시한다.
+`database_env_file`은 `SCA_MONITOR_DATABASE_ENV_FILE` 설정 여부와 source 이름만 표시하며 파일 경로, DB URL 원문, host, username, password는 표시하지 않는다.
 `MIGRATION_DATABASE_URL`, `API_DATABASE_URL`, `WORKER_DATABASE_URL` 원문, host, username, password는 readiness와 Web Console에 노출하지 않는다.
 `postgres_preflight`는 blocker/warning/ok 개수와 다음 조치 문구를 제공해 배포 자동화와 운영자가 PostgreSQL 전환 준비 상태를 같은 기준으로 확인하게 한다.
 `SCA_MONITOR_POSTGRES_REQUIRE_SPLIT` 값이 잘못 설정되면 `/ready`와 database-readiness 응답의 `postgres_require_split_flag` blocker로 노출되며, 배포 gate는 같은 오류를 stop condition으로 처리한다.

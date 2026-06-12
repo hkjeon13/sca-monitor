@@ -140,6 +140,14 @@ def runtime_auto_migrate_summary(env: dict[str, str] | None = None) -> dict[str,
     }
 
 
+def database_env_file_summary(env: dict[str, str] | None = None) -> dict[str, object]:
+    env = os.environ if env is None else env
+    return {
+        "configured": bool(env.get("SCA_MONITOR_DATABASE_ENV_FILE")),
+        "source": "SCA_MONITOR_DATABASE_ENV_FILE" if env.get("SCA_MONITOR_DATABASE_ENV_FILE") else "not_configured",
+    }
+
+
 def env_flag(value: str | None, *, default: bool) -> bool:
     if value is None or value == "":
         return default

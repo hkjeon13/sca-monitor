@@ -2769,6 +2769,22 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
+def test_database_readiness_summary_exposes_database_env_file_without_path(monkeypatch, tmp_path):
+    secret_path = tmp_path / ".secrets" / "postgres.env"
+    secret_path.parent.mkdir()
+    secret_path.write_text("API_DATABASE_URL=postgresql://api:secret@db.example.com/sca\n", encoding="utf-8")
+    monkeypatch.setenv("SCA_MONITOR_DATABASE_ENV_FILE", str(secret_path))
+    app = make_test_app(tmp_path)
+
+    payload = app.database_readiness_summary()
+
+    assert payload["database_env_file"] == {"configured": True, "source": "SCA_MONITOR_DATABASE_ENV_FILE"}
+    serialized = json.dumps(payload)
+    assert str(secret_path) not in serialized
+    assert "db.example.com" not in serialized
+    assert "secret" not in serialized
+
+
 def test_cutover_readiness_report_endpoint_exposes_sanitized_artifact(monkeypatch, tmp_path):
     report_path = tmp_path / "cutover-readiness-report.json"
     report_path.write_text(
@@ -3320,6 +3336,8 @@ def test_harness_documents_deployment_input_readiness():
         assert "scripts/deployment_input_readiness.py" in text
     assert "--require-postgres --require-split" in values_doc
     assert "SCA_MONITOR_DATABASE_ENV_FILE" in database_doc
+    assert "`database_env_file`" in database_doc
+    assert "파일 경로, DB URL 원문, host, username, password는 표시하지 않는다" in database_doc
     assert "SCA_MONITOR_PREPARE_DATABASE_ENV_FILE" in database_doc
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/prepare_database_env_file.py" in database_doc
@@ -3493,6 +3511,9 @@ def test_web_console_renders_database_readiness_panel():
     assert "renderCanonicalizationStatus" in script
     assert "applyCanonicalization" in script
     assert "URL Source" in script
+    assert "Database Env File" in script
+    assert "renderDatabaseEnvFile" in script
+    assert "readiness.database_env_file" in script
     assert "Runtime URLs" in script
     assert "API DB" in script
     assert "Worker DB" in script
