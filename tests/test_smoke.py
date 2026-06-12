@@ -1473,6 +1473,66 @@ exit 0
     assert "sca-monitor-nvd-cve-sync.timer" not in restart_lines(log_text)
 
 
+def test_deploy_systemd_gate_enable_advisory_sync_dry_run_mode_keeps_live_dispatcher_disabled(tmp_path):
+    home_dir = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        f"""#!/bin/sh
+echo "$@" >> "{log_path}"
+case " $* " in
+  *" is-enabled "*) echo enabled ;;
+  *" is-active "*) echo active ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home_dir),
+        "SCA_MONITOR_SYSTEMD_MODE": "enable-advisory-sync-dry-run",
+        "SCA_MONITOR_SYSTEMD_REPO_DIR": str(REPO_ROOT),
+        "SCA_MONITOR_SYSTEMD_PYTHON": "/usr/bin/python3",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/deploy_systemd_gate.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    log_text = log_path.read_text(encoding="utf-8")
+    enabled_lines = enabled_now_lines(log_text)
+    restarted_lines = restart_lines(log_text)
+    assert payload["status"] == "ok"
+    assert payload["systemctl"]["sca-monitor-alert-dispatcher-dry-run.service"] == {
+        "enabled": "enabled",
+        "active": "active",
+    }
+    assert "sca-monitor-alert-dispatcher-dry-run.service" in enabled_lines
+    assert "sca-monitor-alert-dispatcher.service" not in enabled_lines
+    assert "sca-monitor-advisory-freshness.timer" in enabled_lines
+    assert "sca-monitor-osv-npm-sync.timer" in enabled_lines
+    assert "sca-monitor-cisa-kev-sync.timer" in enabled_lines
+    assert "sca-monitor-openssf-malicious-sync.timer" in enabled_lines
+    assert "sca-monitor-canonical-advisory-merge.timer" in enabled_lines
+    assert "sca-monitor-api.service" in restarted_lines
+    assert "sca-monitor-endpoint-poller.service" in restarted_lines
+    assert "sca-monitor-alert-dispatcher-dry-run.service" in restarted_lines
+    assert "sca-monitor-alert-dispatcher.service" not in restarted_lines
+    assert "sca-monitor-advisory-freshness.timer" in restarted_lines
+    assert "sca-monitor-osv-npm-sync.timer" in restarted_lines
+
+
 def test_db_smoke_cli_checks_sqlite_without_persisting_write(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     env = {
@@ -2794,6 +2854,7 @@ def test_remote_deploy_uses_db_gate():
     assert 'SYSTEMD_MODE=\\"\\${SCA_MONITOR_SYSTEMD_MODE:-validate}\\"' in script
     assert "stop_systemd_workers_for_migration() {" in script
     assert "restart_systemd_workers_after_migration() {" in script
+    assert "enable-dispatcher-dry-run|enable-advisory-sync-dry-run" in script
     assert "-endpoint-poller.service" in script
     assert "-alert-dispatcher-dry-run.service" in script
     stop_call = script.index("stop_systemd_workers_for_migration\n  trap")
@@ -3109,6 +3170,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "--expect-cutover-report-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer" in cicd_doc
+    assert "SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run" in backend_doc
+    assert "SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run" in cicd_doc
+    assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-osv-npm-sync.timer,sca-monitor-advisory-freshness.timer" in cicd_doc
+    assert "enable-advisory-sync-dry-run" in operations_doc
     assert "--require-active-unit sca-monitor-accepted-risk-expiry.timer" in backend_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in backend_doc
     assert "/api/v1/operations/cutover-readiness-report" in operations_doc

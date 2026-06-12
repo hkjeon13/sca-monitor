@@ -199,6 +199,16 @@ cd /data/psyche/Projects/sca-monitor
 scripts/install_systemd_units.sh --user --repo-dir /data/psyche/Projects/sca-monitor --python /usr/bin/python3 --enable
 ```
 
+Live alert dispatcher를 켜기 전 advisory 수집 scheduler만 운영화하려면 다음 중간 모드를 사용한다.
+이 모드는 API, endpoint poller, dry-run dispatcher, advisory freshness, CISA/GHSA/NVD/OSV/OpenSSF sync, canonical merge timer를 enable/restart하고 live dispatcher는 disable 상태로 유지한다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+bash scripts/deploy_systemd_gate.sh
+```
+
 생성되는 unit:
 
 | Unit | 역할 | 실행 방식 |

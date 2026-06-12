@@ -252,7 +252,7 @@ ssh "$REMOTE" "set -euo pipefail
       enable-poller)
         printf '%s' \"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-endpoint-poller.service\"
         ;;
-      enable-dispatcher-dry-run)
+      enable-dispatcher-dry-run|enable-advisory-sync-dry-run)
         printf '%s' \"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-endpoint-poller.service \${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}-alert-dispatcher-dry-run.service\"
         ;;
       enable)
@@ -485,7 +485,7 @@ PY
     SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=\"\${SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS:-}\" \
     SCA_MONITOR_SYSTEMD_REPO_DIR='$REMOTE_DIR' \
     bash scripts/deploy_systemd_gate.sh; then
-    if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
+    if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ] || [ \"\$SYSTEMD_MODE\" = 'enable-advisory-sync-dry-run' ]; then
       if curl -fsS http://127.0.0.1:$PORT/health >/dev/null 2>&1 &&
          curl -fsS http://127.0.0.1:$PORT/ready >/dev/null 2>&1; then
         echo \"systemd deploy gate failed but API health check passed; keeping systemd runtime\" >&2
@@ -500,7 +500,7 @@ PY
       exit 1
     fi
   fi
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ] || [ \"\$SYSTEMD_MODE\" = 'enable-advisory-sync-dry-run' ]; then
     rm -f .data/sca-monitor.pid
   else
     start_legacy_api
@@ -557,7 +557,7 @@ PY
     exit 0
   fi
   tail -80 logs/sca-monitor.log || true
-  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ]; then
+  if [ \"\$SYSTEMD_MODE\" = 'enable' ] || [ \"\$SYSTEMD_MODE\" = 'enable-api' ] || [ \"\$SYSTEMD_MODE\" = 'enable-poller' ] || [ \"\$SYSTEMD_MODE\" = 'enable-dispatcher-dry-run' ] || [ \"\$SYSTEMD_MODE\" = 'enable-advisory-sync-dry-run' ]; then
     systemctl --user status sca-monitor-api.service --no-pager || true
   fi
   exit 1

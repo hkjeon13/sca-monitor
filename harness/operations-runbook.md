@@ -70,6 +70,19 @@ python3 scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler
 
 VM systemd full `enable` 모드에서는 `sca-monitor-advisory-freshness.timer`가 같은 평가를 15분 주기로 실행한다.
 canary 배포용 `enable-dispatcher-dry-run` 모드는 API, endpoint poller, dry-run dispatcher만 활성화하므로 이 timer는 unit 파일 검증 대상이지만 자동 시작 대상은 아니다.
+live dispatcher 전환 전 advisory 동기화를 먼저 운영화하려면 `enable-advisory-sync-dry-run` 모드를 사용한다.
+이 모드는 dry-run dispatcher를 유지하면서 `sca-monitor-advisory-freshness.timer`, `sca-monitor-cisa-kev-sync.timer`, `sca-monitor-ghsa-sync.timer`, `sca-monitor-nvd-cve-sync.timer`, `sca-monitor-osv-npm-sync.timer`, `sca-monitor-openssf-malicious-sync.timer`, `sca-monitor-canonical-advisory-merge.timer`를 enable/restart한다.
+적용 후에는 다음을 확인한다.
+
+```bash
+systemctl --user is-active sca-monitor-alert-dispatcher-dry-run.service
+systemctl --user is-active sca-monitor-alert-dispatcher.service || true
+systemctl --user is-enabled sca-monitor-osv-npm-sync.timer
+systemctl --user is-active sca-monitor-osv-npm-sync.timer
+systemctl --user is-enabled sca-monitor-advisory-freshness.timer
+systemctl --user is-active sca-monitor-advisory-freshness.timer
+curl -fsS "$SCA_MONITOR_PUBLIC_URL/api/v1/overview"
+```
 
 ## 3. 장애 대응
 

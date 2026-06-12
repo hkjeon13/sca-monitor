@@ -204,6 +204,19 @@ SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
 scripts/deploy_remote.sh
 ```
 
+advisory 수집 scheduler를 live dispatcher보다 먼저 운영화하려면 다음 중간 단계를 사용한다.
+이 모드는 dry-run dispatcher를 유지하면서 advisory freshness, OSV, CISA KEV, GHSA, NVD, OpenSSF, canonical merge timer를 enable/restart한다.
+운영 stale 차단 gate까지 함께 쓰려면 OSV/freshness timer를 active unit으로 요구하고, 이후 `SCA_MONITOR_BOOTSTRAP_READINESS=advisory-freshness`로 freshness 상태를 별도 검증한다.
+
+```bash
+SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run \
+SCA_MONITOR_SYSTEMD_SCOPE=user \
+SCA_MONITOR_SYSTEMD_PYTHON=/usr/bin/python3 \
+SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-osv-npm-sync.timer,sca-monitor-advisory-freshness.timer \
+SCA_MONITOR_BOOTSTRAP_READINESS=advisory-freshness \
+scripts/deploy_remote.sh
+```
+
 full systemd 운영 전환에서 특정 운영 timer까지 실제 활성화되었는지 자동화 gate로 강제하려면 `SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS`를 함께 지정한다.
 accepted risk 만료 scheduler를 운영 전환 조건에 포함하는 예시는 다음과 같다.
 

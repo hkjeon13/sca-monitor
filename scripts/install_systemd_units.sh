@@ -10,6 +10,7 @@ ENABLE=0
 ENABLE_API_ONLY=0
 ENABLE_POLLER_ONLY=0
 ENABLE_DISPATCHER_DRY_RUN=0
+ENABLE_ADVISORY_SYNC_DRY_RUN=0
 DRY_RUN=0
 
 usage() {
@@ -28,6 +29,8 @@ Options:
   --enable-poller-only  Run daemon-reload and enable/restart API and endpoint poller services.
   --enable-dispatcher-dry-run
                         Run daemon-reload and enable/restart API, endpoint poller, and dry-run dispatcher services.
+  --enable-advisory-sync-dry-run
+                        Run daemon-reload and enable/restart API, endpoint poller, dry-run dispatcher, and advisory sync timers.
   --dry-run             Write unit files but do not call systemctl.
   -h, --help            Show this help.
 USAGE
@@ -73,6 +76,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --enable-dispatcher-dry-run)
       ENABLE_DISPATCHER_DRY_RUN=1
+      shift
+      ;;
+    --enable-advisory-sync-dry-run)
+      ENABLE_ADVISORY_SYNC_DRY_RUN=1
       shift
       ;;
     --dry-run)
@@ -459,6 +466,36 @@ elif [[ "$ENABLE_DISPATCHER_DRY_RUN" == "1" ]]; then
     "${PREFIX}-api.service" \
     "${PREFIX}-endpoint-poller.service" \
     "${PREFIX}-alert-dispatcher-dry-run.service"
+elif [[ "$ENABLE_ADVISORY_SYNC_DRY_RUN" == "1" ]]; then
+  if [[ "$UNIT_SCOPE" == "system" ]]; then
+    SYSTEMCTL=(systemctl)
+  else
+    SYSTEMCTL=(systemctl --user)
+  fi
+  "${SYSTEMCTL[@]}" daemon-reload
+  "${SYSTEMCTL[@]}" disable --now "${PREFIX}-alert-dispatcher.service" 2>/dev/null || true
+  "${SYSTEMCTL[@]}" enable --now \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service" \
+    "${PREFIX}-alert-dispatcher-dry-run.service" \
+    "${PREFIX}-advisory-freshness.timer" \
+    "${PREFIX}-cisa-kev-sync.timer" \
+    "${PREFIX}-ghsa-sync.timer" \
+    "${PREFIX}-nvd-cve-sync.timer" \
+    "${PREFIX}-osv-npm-sync.timer" \
+    "${PREFIX}-openssf-malicious-sync.timer" \
+    "${PREFIX}-canonical-advisory-merge.timer"
+  "${SYSTEMCTL[@]}" restart \
+    "${PREFIX}-api.service" \
+    "${PREFIX}-endpoint-poller.service" \
+    "${PREFIX}-alert-dispatcher-dry-run.service" \
+    "${PREFIX}-advisory-freshness.timer" \
+    "${PREFIX}-cisa-kev-sync.timer" \
+    "${PREFIX}-ghsa-sync.timer" \
+    "${PREFIX}-nvd-cve-sync.timer" \
+    "${PREFIX}-osv-npm-sync.timer" \
+    "${PREFIX}-openssf-malicious-sync.timer" \
+    "${PREFIX}-canonical-advisory-merge.timer"
 elif [[ "$ENABLE" == "1" ]]; then
   if [[ "$UNIT_SCOPE" == "system" ]]; then
     SYSTEMCTL=(systemctl)
