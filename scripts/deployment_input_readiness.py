@@ -15,7 +15,16 @@ if REPO_ROOT not in sys.path:
 from backend.sca_monitor.postgres_cutover import assess_cutover, summarize_preflight
 
 
-VALID_SYSTEMD_MODES = {"off", "validate", "install", "enable-api", "enable-poller", "enable-dispatcher-dry-run", "enable"}
+VALID_SYSTEMD_MODES = {
+    "off",
+    "validate",
+    "install",
+    "enable-api",
+    "enable-poller",
+    "enable-dispatcher-dry-run",
+    "enable-advisory-sync-dry-run",
+    "enable",
+}
 
 
 def parse_args() -> argparse.Namespace:

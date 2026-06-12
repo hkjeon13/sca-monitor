@@ -1841,6 +1841,41 @@ def test_deployment_input_readiness_allows_sqlite_fallback_env_file(tmp_path):
     assert "sqlite:////tmp" not in result.stdout
 
 
+def test_deployment_input_readiness_allows_advisory_sync_dry_run_mode(tmp_path):
+    env_file = tmp_path / "sca.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_ENV=prod",
+                "SCA_MONITOR_PORT=18780",
+                "SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net",
+                "SCA_MONITOR_DATABASE_URL=sqlite:////tmp/sca-monitor.sqlite3",
+                "SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run",
+                "SMOKE_TEST_TOKEN=dev-smoke-token",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", "scripts/deployment_input_readiness.py", "--env-file", str(env_file), "--json"],
+        cwd=REPO_ROOT,
+        env={"PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    systemd_check = next(check for check in payload["checks"] if check["id"] == "systemd_mode")
+    assert payload["status"] == "ok"
+    assert systemd_check == {
+        "id": "systemd_mode",
+        "status": "ok",
+        "detail": "SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run",
+    }
+
+
 def test_deployment_input_readiness_requires_split_postgres_inputs(tmp_path):
     env_file = tmp_path / "sca.env"
     env_file.write_text(
