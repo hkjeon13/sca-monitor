@@ -141,16 +141,22 @@ def test_load_settings_selects_component_database_urls(monkeypatch, tmp_path):
     monkeypatch.delenv("SCA_MONITOR_DATABASE_URL", raising=False)
     monkeypatch.setenv("API_DATABASE_URL", "sqlite:////tmp/sca-api.sqlite3")
     monkeypatch.setenv("WORKER_DATABASE_URL", "sqlite:////tmp/sca-worker.sqlite3")
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "sqlite:////tmp/sca-migration.sqlite3")
 
     assert load_settings(component="api").database_url == "sqlite:////tmp/sca-api.sqlite3"
     assert load_settings(component="api").database_url_source == "API_DATABASE_URL"
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-worker.sqlite3"
     assert load_settings(component="worker").database_url_source == "WORKER_DATABASE_URL"
+    assert load_settings(component="migration").database_url == "sqlite:////tmp/sca-migration.sqlite3"
+    assert load_settings(component="migration").database_url_source == "MIGRATION_DATABASE_URL"
 
     monkeypatch.delenv("WORKER_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
 
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-api.sqlite3"
     assert load_settings(component="worker").database_url_source == "API_DATABASE_URL"
+    assert load_settings(component="migration").database_url == "sqlite:////tmp/sca-api.sqlite3"
+    assert load_settings(component="migration").database_url_source == "API_DATABASE_URL"
 
 
 def test_load_settings_global_database_url_overrides_component_urls(monkeypatch, tmp_path):
@@ -163,6 +169,8 @@ def test_load_settings_global_database_url_overrides_component_urls(monkeypatch,
     assert load_settings(component="api").database_url_source == "SCA_MONITOR_DATABASE_URL"
     assert load_settings(component="worker").database_url == "sqlite:////tmp/sca-global.sqlite3"
     assert load_settings(component="worker").database_url_source == "SCA_MONITOR_DATABASE_URL"
+    assert load_settings(component="migration").database_url == "sqlite:////tmp/sca-global.sqlite3"
+    assert load_settings(component="migration").database_url_source == "SCA_MONITOR_DATABASE_URL"
 
 
 def test_load_settings_reports_legacy_or_default_database_url_source(monkeypatch, tmp_path):

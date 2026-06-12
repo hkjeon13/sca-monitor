@@ -13,7 +13,7 @@ Access: API/worker private network only
 ```
 
 현재 MVP 배포는 PostgreSQL 전환 전 단계로 SQLite fallback을 사용한다.
-애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 API runtime은 `API_DATABASE_URL`, worker/scheduler runtime은 `WORKER_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 DB URL을 구성한다.
+애플리케이션은 `SCA_MONITOR_DATABASE_URL`을 우선 사용하며, 값이 없으면 API runtime은 `API_DATABASE_URL`, worker/scheduler runtime은 `WORKER_DATABASE_URL`, migration gate는 `MIGRATION_DATABASE_URL`, 기존 `SCA_MONITOR_DB`, 마지막으로 `.data/sca-monitor.sqlite3` 순서로 DB URL을 구성한다.
 PostgreSQL 계정 분리를 활성화하려면 `SCA_MONITOR_DATABASE_URL`을 비우고 `API_DATABASE_URL`/`WORKER_DATABASE_URL`을 각각 설정한다.
 DDL 권한은 `MIGRATION_DATABASE_URL`에만 부여하는 것을 권장한다.
 배포 pipeline이 `scripts/migrate.py`와 `deploy_db_gate.sh`를 먼저 실행하는 운영 환경에서는 `SCA_MONITOR_AUTO_MIGRATE=false` 또는 컴포넌트별 `SCA_MONITOR_API_AUTO_MIGRATE=false`, `SCA_MONITOR_WORKER_AUTO_MIGRATE=false`로 runtime DDL을 비활성화할 수 있다.
@@ -45,6 +45,7 @@ scripts/migrate.py
 ```
 
 현재 구현은 SQLite와 PostgreSQL migration 실행, version 기록을 지원한다.
+`scripts/migrate.py`는 `load_settings(component="migration")`를 사용하므로 `SCA_MONITOR_DATABASE_URL`이 없을 때 `MIGRATION_DATABASE_URL`을 migration 전용 DB URL로 선택한다.
 `scripts/db_smoke.py`는 배포 후 DB smoke gate로 사용하며 SQLite fallback과 PostgreSQL runtime adapter에서 schema read와 `audit_logs` transactional write/rollback을 검증한다.
 PostgreSQL 운영 적용 전 실제 PostgreSQL instance, credential, network access, migration dry-run, API workflow별 integration test가 필요하다.
 

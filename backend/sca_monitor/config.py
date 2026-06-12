@@ -31,9 +31,14 @@ def load_settings(component: str = "api") -> Settings:
     data_dir = Path(os.getenv("SCA_MONITOR_DATA_DIR", ".data")).resolve()
     frontend_dir = Path(os.getenv("SCA_MONITOR_FRONTEND_DIR", "frontend")).resolve()
     legacy_database_path = Path(os.getenv("SCA_MONITOR_DB", str(data_dir / "sca-monitor.sqlite3"))).resolve()
-    if component not in {"api", "worker"}:
+    component_database_url_names = {
+        "api": "API_DATABASE_URL",
+        "worker": "WORKER_DATABASE_URL",
+        "migration": "MIGRATION_DATABASE_URL",
+    }
+    if component not in component_database_url_names:
         raise ValueError(f"unsupported settings component: {component}")
-    component_database_url_name = "WORKER_DATABASE_URL" if component == "worker" else "API_DATABASE_URL"
+    component_database_url_name = component_database_url_names[component]
     component_database_url = os.getenv(component_database_url_name)
     auto_migrate = env_flag(
         os.getenv(f"SCA_MONITOR_{component.upper()}_AUTO_MIGRATE")
