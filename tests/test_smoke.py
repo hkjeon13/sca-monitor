@@ -1033,6 +1033,8 @@ def test_http_smoke_can_expect_cutover_report_status(monkeypatch):
         "report_status": "ok",
         "report_expected_status": None,
         "report_expectation_met": None,
+        "expected_production_preflight_status": None,
+        "production_preflight_status": None,
         "required_expectation_met": False,
         "ok": True,
     }
@@ -1067,6 +1069,8 @@ def test_http_smoke_fails_when_cutover_report_status_differs(monkeypatch):
         "report_status": "blocked",
         "report_expected_status": None,
         "report_expectation_met": None,
+        "expected_production_preflight_status": None,
+        "production_preflight_status": None,
         "required_expectation_met": False,
         "ok": False,
     }
@@ -1109,9 +1113,43 @@ def test_http_smoke_can_expect_cutover_report_expectation_met(monkeypatch):
         "report_status": "blocked",
         "report_expected_status": "blocked",
         "report_expectation_met": True,
+        "expected_production_preflight_status": None,
+        "production_preflight_status": None,
         "required_expectation_met": True,
         "ok": True,
     }
+
+
+def test_http_smoke_can_expect_cutover_report_production_preflight_status(monkeypatch):
+    import scripts.http_smoke as http_smoke
+
+    def fake_smoke_url(base_url, path, timeout):
+        return http_smoke.CheckResult(path=path, url=f"{base_url}{path}", ok=True, status=200, elapsed_ms=1, json_ok=path in http_smoke.JSON_PATHS)
+
+    def fake_fetch_json(base_url, path, timeout):
+        assert path == "/api/v1/operations/cutover-readiness-report"
+        return 200, {
+            "artifact": {"status": "available", "path": "configured"},
+            "report": {
+                "status": "ok",
+                "production_preflight": {"status": "ok", "checks": {"migration": {"status": "ok"}}},
+            },
+        }
+
+    monkeypatch.setattr(http_smoke, "smoke_url", fake_smoke_url)
+    monkeypatch.setattr(http_smoke, "fetch_json", fake_fetch_json)
+
+    payload = http_smoke.run_smoke(
+        "http://example.test",
+        list(http_smoke.DEFAULT_PATHS),
+        1.0,
+        expect_cutover_report_status="ok",
+        expect_cutover_report_production_preflight_status="ok",
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["cutover_readiness_report"]["production_preflight_status"] == "ok"
+    assert payload["cutover_readiness_report"]["expected_production_preflight_status"] == "ok"
 
 
 def test_http_smoke_fails_when_advisory_sync_not_ready_but_expected():
@@ -3164,6 +3202,8 @@ def test_ci_smoke_runs_core_gates():
     assert "--expect-cutover-report-status" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
     assert "--expect-cutover-report-expected-status" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS" in script
+    assert "--expect-cutover-report-production-preflight-status" in script
     assert "SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in script
     assert "--require-cutover-report-expectation-met" in script
 
@@ -3187,6 +3227,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS" in script
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS" in script
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS" in script
     assert "SCA_MONITOR_REQUIRE_CUTOVER_REPORT_EXPECTATION_MET" in script
     assert "SCA_MONITOR_BACKUP_BEFORE_MIGRATION" in script
     assert "SCA_MONITOR_VERIFY_BACKUP_RESTORE" in script
@@ -3221,6 +3262,7 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "--expect-database-backend" in script
     assert "--expect-cutover-report-status" in script
     assert "--expect-cutover-report-expected-status" in script
+    assert "--expect-cutover-report-production-preflight-status" in script
     assert "--require-cutover-report-expectation-met" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
@@ -3283,10 +3325,13 @@ def test_harness_documents_deployment_input_readiness():
     assert "--expect-cutover-report-expected-status blocked" in cicd_doc
     assert "--require-cutover-report-expectation-met" in cicd_doc
     assert "--expect-cutover-report-expected-status" in operations_doc
+    assert "--expect-cutover-report-production-preflight-status" in operations_doc
     assert "--require-cutover-report-expectation-met" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok" in cicd_doc
+    assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_PRODUCTION_PREFLIGHT_STATUS=ok" in cicd_doc
     assert "--expect-cutover-report-status ok" in cicd_doc
+    assert "--expect-cutover-report-production-preflight-status ok" in cicd_doc
     assert "/api/v1/operations/cutover-readiness-report" in cicd_doc
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS=sca-monitor-accepted-risk-expiry.timer" in cicd_doc
     assert "SCA_MONITOR_SYSTEMD_MODE=enable-advisory-sync-dry-run" in backend_doc

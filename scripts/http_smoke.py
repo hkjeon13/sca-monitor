@@ -254,9 +254,10 @@ def check_advisory_source_statuses(base_url: str, timeout: float, expected_statu
 def check_cutover_report_status(
     base_url: str,
     timeout: float,
-    expected_status: str,
+    expected_status: str | None,
     *,
     expected_report_expected_status: str | None = None,
+    expected_production_preflight_status: str | None = None,
     require_expectation_met: bool = False,
 ) -> dict[str, Any]:
     try:
@@ -267,7 +268,14 @@ def check_cutover_report_status(
         report_status = report.get("status")
         report_expected_status = report.get("expected_status")
         report_expectation_met = report.get("expectation_met")
+        production_preflight = report.get("production_preflight") or {}
+        production_preflight_status = production_preflight.get("status")
+        report_status_ok = expected_status is None or report_status == expected_status
         expected_status_ok = expected_report_expected_status is None or report_expected_status == expected_report_expected_status
+        production_preflight_ok = (
+            expected_production_preflight_status is None
+            or production_preflight_status == expected_production_preflight_status
+        )
         expectation_met_ok = not require_expectation_met or report_expectation_met is True
         return {
             "expected_status": expected_status,
@@ -275,11 +283,14 @@ def check_cutover_report_status(
             "report_status": report_status,
             "report_expected_status": report_expected_status,
             "report_expectation_met": report_expectation_met,
+            "expected_production_preflight_status": expected_production_preflight_status,
+            "production_preflight_status": production_preflight_status,
             "required_expectation_met": require_expectation_met,
             "ok": status == 200
             and artifact_status == "available"
-            and report_status == expected_status
+            and report_status_ok
             and expected_status_ok
+            and production_preflight_ok
             and expectation_met_ok,
         }
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
@@ -289,6 +300,8 @@ def check_cutover_report_status(
             "report_status": None,
             "report_expected_status": None,
             "report_expectation_met": None,
+            "expected_production_preflight_status": expected_production_preflight_status,
+            "production_preflight_status": None,
             "required_expectation_met": require_expectation_met,
             "ok": False,
             "error": str(exc),
@@ -307,6 +320,7 @@ def run_smoke(
     expect_advisory_source_statuses: dict[str, str] | None = None,
     expect_cutover_report_status: str | None = None,
     expect_cutover_report_expected_status: str | None = None,
+    expect_cutover_report_production_preflight_status: str | None = None,
     require_cutover_report_expectation_met: bool = False,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
@@ -377,12 +391,18 @@ def run_smoke(
             if source_statuses.get("error"):
                 result["advisory_source_statuses"]["error"] = source_statuses["error"]
             result["status"] = "failed"
-    if expect_cutover_report_status is not None:
+    if (
+        expect_cutover_report_status is not None
+        or expect_cutover_report_expected_status is not None
+        or expect_cutover_report_production_preflight_status is not None
+        or require_cutover_report_expectation_met
+    ):
         cutover_report = check_cutover_report_status(
             base_url,
             timeout,
             expect_cutover_report_status,
             expected_report_expected_status=expect_cutover_report_expected_status,
+            expected_production_preflight_status=expect_cutover_report_production_preflight_status,
             require_expectation_met=require_cutover_report_expectation_met,
         )
         result["cutover_readiness_report"] = {
@@ -391,6 +411,8 @@ def run_smoke(
             "report_status": cutover_report["report_status"],
             "report_expected_status": cutover_report["report_expected_status"],
             "report_expectation_met": cutover_report["report_expectation_met"],
+            "expected_production_preflight_status": cutover_report["expected_production_preflight_status"],
+            "production_preflight_status": cutover_report["production_preflight_status"],
             "required_expectation_met": cutover_report["required_expectation_met"],
             "ok": cutover_report["ok"],
         }
@@ -423,6 +445,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--expect-cutover-report-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report artifact has the expected report status.")
     parser.add_argument("--expect-cutover-report-expected-status", choices=("ok", "action_required", "blocked"), help="Fail unless cutover readiness report expected_status matches this value.")
+    parser.add_argument(
+        "--expect-cutover-report-production-preflight-status",
+        choices=("ok", "failed", "skipped"),
+        help="Fail unless cutover readiness report production_preflight.status matches this value.",
+    )
     parser.add_argument("--require-cutover-report-expectation-met", action="store_true", help="Fail unless cutover readiness report expectation_met is true.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args()
@@ -443,6 +470,7 @@ def main() -> int:
         expect_advisory_source_statuses=expected_source_statuses,
         expect_cutover_report_status=args.expect_cutover_report_status,
         expect_cutover_report_expected_status=args.expect_cutover_report_expected_status,
+        expect_cutover_report_production_preflight_status=args.expect_cutover_report_production_preflight_status,
         require_cutover_report_expectation_met=args.require_cutover_report_expectation_met,
     )
     if args.json:
