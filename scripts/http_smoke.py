@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -27,6 +28,7 @@ class CheckResult:
     elapsed_ms: int
     json_ok: bool | None = None
     error: str | None = None
+    attempts: int = 1
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +39,7 @@ class CheckResult:
             "elapsed_ms": self.elapsed_ms,
             "json_ok": self.json_ok,
             "error": self.error,
+            "attempts": self.attempts,
         }
 
 
@@ -124,8 +127,24 @@ def smoke_url(base_url: str, path: str, timeout: float) -> CheckResult:
         error = f"URL error: {exc.reason}"
     except TimeoutError:
         error = "request timed out"
+    except http.client.RemoteDisconnected:
+        error = "remote disconnected before response"
     elapsed_ms = int((time.monotonic() - started) * 1000)
     return CheckResult(path=path, url=url, ok=ok, status=status, elapsed_ms=elapsed_ms, json_ok=json_ok, error=error)
+
+
+def smoke_url_with_retries(base_url: str, path: str, timeout: float, attempts: int, retry_delay_seconds: float) -> CheckResult:
+    attempts = max(1, attempts)
+    last_result: CheckResult | None = None
+    for attempt in range(1, attempts + 1):
+        result = smoke_url(base_url, path, timeout)
+        result.attempts = attempt
+        if result.ok:
+            return result
+        last_result = result
+        if attempt < attempts and retry_delay_seconds > 0:
+            time.sleep(retry_delay_seconds)
+    return last_result or smoke_url(base_url, path, timeout)
 
 
 def fetch_text(base_url: str, path: str, timeout: float) -> tuple[int, str]:
@@ -344,10 +363,15 @@ def run_smoke(
     expect_cutover_report_expected_status: str | None = None,
     expect_cutover_report_production_preflight_status: str | None = None,
     require_cutover_report_expectation_met: bool = False,
+    attempts: int = 1,
+    retry_delay_seconds: float = 1.0,
 ) -> dict[str, Any]:
     if (require_postgres_split_metrics or expect_postgres_split_required is not None) and "/metrics" not in paths:
         paths = [*paths, "/metrics"]
-    checks = [smoke_url(base_url, path, timeout) for path in paths]
+    if attempts > 1:
+        checks = [smoke_url_with_retries(base_url, path, timeout, attempts, retry_delay_seconds) for path in paths]
+    else:
+        checks = [smoke_url(base_url, path, timeout) for path in paths]
     ok = all(check.ok for check in checks)
     result = {
         "status": "ok" if ok else "failed",
@@ -466,6 +490,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--path", action="append", dest="paths", help="Path to check. May be repeated.")
     parser.add_argument("--timeout", type=float, default=10.0, help="Request timeout in seconds.")
+    parser.add_argument("--attempts", type=int, default=1, help="Attempts per endpoint before marking a smoke check failed.")
+    parser.add_argument("--retry-delay-seconds", type=float, default=1.0, help="Delay between retry attempts.")
     parser.add_argument("--require-postgres-split-metrics", action="store_true", help="Fail unless /metrics exposes PostgreSQL split cutover gauges.")
     parser.add_argument("--expect-postgres-split-required", type=parse_bool, help="Fail unless /ready and /metrics report the expected split cutover requirement.")
     parser.add_argument("--expect-database-backend", choices=("sqlite", "postgres"), help="Fail unless /ready reports the expected database_backend.")
@@ -508,6 +534,8 @@ def main() -> int:
         expect_cutover_report_expected_status=args.expect_cutover_report_expected_status,
         expect_cutover_report_production_preflight_status=args.expect_cutover_report_production_preflight_status,
         require_cutover_report_expectation_met=args.require_cutover_report_expectation_met,
+        attempts=args.attempts,
+        retry_delay_seconds=args.retry_delay_seconds,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -3,6 +3,8 @@ set -euo pipefail
 
 BASE_URL="${SCA_MONITOR_SMOKE_BASE_URL:-${SCA_MONITOR_PUBLIC_URL:-}}"
 RUN_HTTP_SMOKE="${SCA_MONITOR_CI_HTTP_SMOKE:-auto}"
+HTTP_SMOKE_ATTEMPTS="${SCA_MONITOR_HTTP_SMOKE_ATTEMPTS:-1}"
+HTTP_SMOKE_RETRY_DELAY_SECONDS="${SCA_MONITOR_HTTP_SMOKE_RETRY_DELAY_SECONDS:-1}"
 EXPECT_POSTGRES_SPLIT_REQUIRED="${SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED:-}"
 EXPECT_ADVISORY_SYNC_READY="${SCA_MONITOR_EXPECT_ADVISORY_SYNC_READY:-}"
 EXPECT_DATABASE_BACKEND="${SCA_MONITOR_EXPECT_DATABASE_BACKEND:-}"
@@ -20,7 +22,7 @@ if [ "$RUN_HTTP_SMOKE" = "required" ] && [ -z "$BASE_URL" ]; then
 fi
 
 python3 -m pytest tests
-python3 -m py_compile backend/sca_monitor/app.py backend/sca_monitor/db.py backend/sca_monitor/postgres_cutover.py scripts/configure_runtime_inputs.py scripts/postgres_integration_smoke.py scripts/validate_database_env_file.py scripts/prepare_database_env_file.py scripts/postgres_prepare_rehearsal.py scripts/migration_manifest_check.py scripts/database_env_dry_run_gate.py scripts/backup_database.py scripts/verify_backup_restore.py scripts/cutover_readiness_report.py scripts/advisory_source_preflight.py
+python3 -m py_compile backend/sca_monitor/app.py backend/sca_monitor/db.py backend/sca_monitor/postgres_cutover.py scripts/configure_runtime_inputs.py scripts/postgres_integration_smoke.py scripts/validate_database_env_file.py scripts/prepare_database_env_file.py scripts/postgres_prepare_rehearsal.py scripts/migration_manifest_check.py scripts/database_env_dry_run_gate.py scripts/backup_database.py scripts/verify_backup_restore.py scripts/cutover_readiness_report.py scripts/advisory_source_preflight.py scripts/http_smoke.py
 python3 scripts/migration_manifest_check.py --json
 deployment_readiness_args=(--env-file "$DEPLOYMENT_ENV_FILE" --json)
 case "$REQUIRE_RUNTIME_INPUTS" in
@@ -54,7 +56,7 @@ case "$RUN_HTTP_SMOKE" in
       echo "http smoke required but SCA_MONITOR_SMOKE_BASE_URL or SCA_MONITOR_PUBLIC_URL is not configured" >&2
       exit 2
     fi
-    http_smoke_args=(--base-url "$BASE_URL")
+    http_smoke_args=(--base-url "$BASE_URL" --attempts "$HTTP_SMOKE_ATTEMPTS" --retry-delay-seconds "$HTTP_SMOKE_RETRY_DELAY_SECONDS")
     if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
       http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
     fi
@@ -91,7 +93,7 @@ case "$RUN_HTTP_SMOKE" in
     ;;
   auto|"")
     if [ -n "$BASE_URL" ]; then
-      http_smoke_args=(--base-url "$BASE_URL")
+      http_smoke_args=(--base-url "$BASE_URL" --attempts "$HTTP_SMOKE_ATTEMPTS" --retry-delay-seconds "$HTTP_SMOKE_RETRY_DELAY_SECONDS")
       if [ -n "$EXPECT_POSTGRES_SPLIT_REQUIRED" ]; then
         http_smoke_args+=(--expect-postgres-split-required "$EXPECT_POSTGRES_SPLIT_REQUIRED")
       fi

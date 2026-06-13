@@ -597,6 +597,68 @@ def test_http_smoke_checks_read_only_endpoints():
     ]
 
 
+def test_http_smoke_retries_transient_endpoint_failure():
+    seen_paths = []
+    ready_attempts = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal ready_attempts
+            seen_paths.append(self.path)
+            if self.path == "/ready":
+                ready_attempts += 1
+                if ready_attempts == 1:
+                    self.close_connection = True
+                    return
+            if self.path in {"/health", "/ready"}:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = subprocess.run(
+            [
+                "python3",
+                "scripts/http_smoke.py",
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--path",
+                "/health",
+                "--path",
+                "/ready",
+                "--attempts",
+                "2",
+                "--retry-delay-seconds",
+                "0",
+                "--json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    payload = json.loads(result.stdout)
+    ready_check = next(check for check in payload["checks"] if check["path"] == "/ready")
+    assert payload["status"] == "ok"
+    assert ready_check["ok"] is True
+    assert ready_check["attempts"] == 2
+    assert seen_paths == ["/health", "/ready", "/ready"]
+
+
 def test_http_smoke_can_require_postgres_split_metrics():
     seen_paths = []
 
@@ -3320,6 +3382,10 @@ def test_ci_smoke_runs_core_gates():
     assert "bash scripts/postgres_docker_smoke_gate.sh" in script
     assert "scripts/http_smoke.py" in script
     assert "--base-url" in script
+    assert "--attempts" in script
+    assert "--retry-delay-seconds" in script
+    assert "SCA_MONITOR_HTTP_SMOKE_ATTEMPTS" in script
+    assert "SCA_MONITOR_HTTP_SMOKE_RETRY_DELAY_SECONDS" in script
     assert "SCA_MONITOR_CI_HTTP_SMOKE" in script
     assert "SCA_MONITOR_EXPECT_POSTGRES_SPLIT_REQUIRED" in script
     assert "--expect-postgres-split-required" in script
@@ -3354,6 +3420,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "SCA_MONITOR_ADVISORY_SOURCE_PREFLIGHT_TIMEOUT" in script
     assert "SCA_MONITOR_BOOTSTRAP_READINESS" in script
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE" in script
+    assert "SCA_MONITOR_HTTP_SMOKE_ATTEMPTS" in script
+    assert "SCA_MONITOR_HTTP_SMOKE_RETRY_DELAY_SECONDS" in script
     assert "SCA_MONITOR_SYSTEMD_REQUIRE_ACTIVE_UNITS" in script
     assert "SCA_MONITOR_ALERT_GO_LIVE_GATE" in script
     assert "SCA_MONITOR_EXPECT_ALERT_CHANNEL_TYPE" in script
@@ -3419,6 +3487,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "--expect-cutover-report-expected-status" in script
     assert "--expect-cutover-report-production-preflight-status" in script
     assert "--require-cutover-report-expectation-met" in script
+    assert "--attempts" in script
+    assert "--retry-delay-seconds" in script
     assert "python3 scripts/deployment_input_readiness.py --env-file .env --json" in script
     assert "SCA_MONITOR_REQUIRE_RUNTIME_INPUTS" in script
     assert "--require-runtime-inputs" in script
@@ -3496,6 +3566,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=postgres" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_ENV_FILE_CONFIGURED=true" in cicd_doc
     assert "SCA_MONITOR_POST_DEPLOY_HTTP_SMOKE=required" in cicd_doc
+    assert "SCA_MONITOR_HTTP_SMOKE_ATTEMPTS=3" in cicd_doc
+    assert "--attempts 3 --retry-delay-seconds 2" in cicd_doc
     assert "--expect-cutover-report-expected-status blocked" in cicd_doc
     assert "--require-cutover-report-expectation-met" in cicd_doc
     assert "--expect-cutover-report-expected-status" in operations_doc
