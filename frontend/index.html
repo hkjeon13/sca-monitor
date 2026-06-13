@@ -208,6 +208,12 @@
                 </select>
               </label>
               <label>Owner Team<input name="owner_team" placeholder="platform-security" /></label>
+              <label>Collection Mode
+                <select name="collection_mode">
+                  <option value="push">snapshot push</option>
+                  <option value="poll">endpoint polling</option>
+                </select>
+              </label>
               <label>Endpoint URL<input name="status_endpoint_url" placeholder="https://service/.well-known/sca/dependencies" /></label>
               <label>Endpoint Auth
                 <select name="status_auth_type">

@@ -3816,8 +3816,12 @@ def test_web_console_service_registration_includes_polling_schedule_fields():
     html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 
+    assert 'name="collection_mode"' in html
+    assert '<option value="poll">endpoint polling</option>' in html
+    assert '<option value="push">snapshot push</option>' in html
     assert 'name="poll_interval_seconds"' in html
     assert 'name="freshness_threshold_seconds"' in html
+    assert "collection_mode" in script
     assert "poll_interval_seconds" in script
     assert "freshness_threshold_seconds" in script
 
