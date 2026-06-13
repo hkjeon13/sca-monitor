@@ -3143,6 +3143,34 @@ def test_deploy_db_gate_uses_migration_api_and_worker_postgres_urls():
     assert "postgres integration smoke required for $label but database URL is not configured" in script
 
 
+def test_migration_manifest_check_reports_required_version_alignment():
+    result = subprocess.run(
+        ["python3", "scripts/migration_manifest_check.py", "--json"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert payload["status"] == "ok"
+    assert payload["required_version"]["configured"] == REQUIRED_MIGRATION_VERSION
+    assert payload["required_version"]["matches_latest"] is True
+    assert payload["backends"]["sqlite"]["latest"] == REQUIRED_MIGRATION_VERSION
+    assert payload["backends"]["postgres"]["latest"] == REQUIRED_MIGRATION_VERSION
+    assert payload["backend_alignment"]["matching_versions"] is True
+    assert payload["backend_alignment"]["missing_from_sqlite"] == []
+    assert payload["backend_alignment"]["missing_from_postgres"] == []
+
+
+def test_ci_smoke_runs_migration_manifest_check():
+    script = (REPO_ROOT / "scripts" / "ci_smoke.sh").read_text(encoding="utf-8")
+
+    assert "scripts/migration_manifest_check.py" in script
+    assert "python3 scripts/migration_manifest_check.py --json" in script
+
+
 def test_deploy_db_gate_requires_split_when_configured(tmp_path):
     database_url = f"sqlite:///{tmp_path / 'sca-monitor.sqlite3'}"
     result = subprocess.run(
@@ -3435,6 +3463,7 @@ def test_harness_documents_deployment_input_readiness():
     assert "deploy/postgres.env.example" in database_doc
     assert "scripts/prepare_database_env_file.py" in database_doc
     assert "scripts/postgres_prepare_rehearsal.py --json" in database_doc
+    assert "scripts/migration_manifest_check.py --json" in database_doc
     assert "scripts/validate_database_env_file.py" in database_doc
     assert "scripts/database_env_dry_run_gate.py" in database_doc
     assert "scripts/verify_backup_restore.py" in database_doc

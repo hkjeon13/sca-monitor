@@ -48,6 +48,7 @@ scripts/migrate.py
 현재 구현은 SQLite와 PostgreSQL migration 실행, version 기록을 지원한다.
 `scripts/migrate.py`는 `load_settings(component="migration")`를 사용하므로 `SCA_MONITOR_DATABASE_URL`이 없을 때 `MIGRATION_DATABASE_URL`을 migration 전용 DB URL로 선택한다.
 `scripts/db_smoke.py`는 배포 후 DB smoke gate로 사용하며 SQLite fallback과 PostgreSQL runtime adapter에서 schema read와 `audit_logs` transactional write/rollback을 검증한다.
+`scripts/migration_manifest_check.py --json`은 DB에 접속하지 않고 repository의 SQLite/PostgreSQL migration version set, 중복, 순차성, `REQUIRED_MIGRATION_VERSION` 정합성을 확인한다.
 PostgreSQL 운영 적용 전 실제 PostgreSQL instance, credential, network access, migration dry-run, API workflow별 integration test가 필요하다.
 
 장기 Migration tool은 아직 REQUIRED이다.
