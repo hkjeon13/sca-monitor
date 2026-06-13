@@ -5537,6 +5537,38 @@ def test_evaluate_advisory_sync_freshness_cli_retries_sqlite_lock(monkeypatch):
     assert sleeps == [0.5]
 
 
+def test_evaluate_advisory_sync_freshness_cli_retries_sqlite_lock_during_app_init(monkeypatch):
+    from scripts import evaluate_advisory_sync_freshness as freshness_cli
+
+    calls = []
+    sleeps = []
+
+    class FreshnessApp:
+        def evaluate_advisory_sync_freshness_alerts(self, **kwargs):
+            return {"stale_sources": [], "enqueued": 0, "resolved": 0}
+
+    def app_factory():
+        calls.append("factory")
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return FreshnessApp()
+
+    monkeypatch.setattr(freshness_cli.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    payload = freshness_cli.evaluate_with_retries(
+        app_factory,
+        now="2026-01-01T00:01:00+00:00",
+        dry_run=True,
+        actor="freshness-scheduler",
+        attempts=2,
+        retry_delay_seconds=0.5,
+    )
+
+    assert payload["attempts"] == 2
+    assert calls == ["factory", "factory"]
+    assert sleeps == [0.5]
+
+
 def test_evaluate_advisory_sync_freshness_cli_defers_when_sqlite_stays_locked(monkeypatch):
     from scripts import evaluate_advisory_sync_freshness as freshness_cli
 

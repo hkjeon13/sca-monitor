@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -21,7 +22,7 @@ def is_sqlite_locked_error(exc: BaseException) -> bool:
 
 
 def evaluate_with_retries(
-    app: ScaMonitorApp,
+    app: ScaMonitorApp | Callable[[], ScaMonitorApp],
     *,
     now: str | None,
     dry_run: bool,
@@ -33,7 +34,11 @@ def evaluate_with_retries(
     last_error: sqlite3.OperationalError | None = None
     for attempt in range(1, attempts + 1):
         try:
-            result = app.evaluate_advisory_sync_freshness_alerts(now=now, dry_run=dry_run, actor=actor)
+            if callable(app):
+                current_app = app()
+            else:
+                current_app = app
+            result = current_app.evaluate_advisory_sync_freshness_alerts(now=now, dry_run=dry_run, actor=actor)
             result["attempts"] = attempt
             return result
         except sqlite3.OperationalError as exc:
@@ -60,9 +65,8 @@ def main() -> None:
     parser.add_argument("--retry-delay-seconds", type=float, default=2.0, help="Delay between SQLite lock retry attempts")
     args = parser.parse_args()
 
-    app = ScaMonitorApp(load_settings(component="worker"))
     result = evaluate_with_retries(
-        app,
+        lambda: ScaMonitorApp(load_settings(component="worker")),
         now=args.now,
         dry_run=args.dry_run,
         actor=args.actor,
