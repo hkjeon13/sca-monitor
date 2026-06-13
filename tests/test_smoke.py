@@ -3173,7 +3173,7 @@ def test_remote_deploy_uses_db_gate():
     assert "-endpoint-poller.service" in script
     assert "-alert-dispatcher-dry-run.service" in script
     stop_call = script.index("stop_systemd_workers_for_migration\n  trap")
-    restart_call = script.index("restart_systemd_workers_after_migration\n  trap - EXIT")
+    restart_call = script.index("restart_systemd_workers_after_migration\n  restart_systemd_timers_after_migration\n  trap - EXIT")
     assert stop_call < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("bash scripts/deploy_db_gate.sh")
     assert script.index("bash scripts/deploy_db_gate.sh") < restart_call
@@ -3476,6 +3476,12 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert "--actor deploy-canonical-merge" in script
     assert "--lock-owner deploy-ghsa-bootstrap" in script
     assert "--lock-owner deploy-ghsa-malware-bootstrap" in script
+    assert "cisa-kev-sync.timer" in script
+    assert "nvd-cve-sync.timer" in script
+    assert "osv-npm-sync.timer" in script
+    assert "openssf-malicious-sync.timer" in script
+    assert "stop_systemd_timers_for_migration" in script
+    assert "restart_systemd_timers_after_migration" in script
     assert "scripts/cutover_readiness_report.py" in script
     assert "--output" in script
     assert 'if [ -n \\"\\$DATABASE_ENV_FILE\\" ]; then' in script
@@ -3499,6 +3505,8 @@ def test_deploy_remote_runs_deployment_input_readiness_before_migration():
     assert script.index("SCA_MONITOR_DATABASE_ENV_PREFLIGHT_ONLY") < script.index("set -a")
     assert script.index("python3 scripts/deployment_input_readiness.py") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/advisory_source_preflight.py --check") < script.index("python3 scripts/migrate.py")
+    assert script.index("stop_systemd_timers_for_migration") < script.index("python3 scripts/migrate.py")
+    assert script.index("stop_systemd_workers_for_migration") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/backup_database.py --json") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/verify_backup_restore.py --backup-path") < script.index("python3 scripts/migrate.py")
     assert script.index("scripts/postgres_integration_smoke.py --production-preflight --json") < script.index("python3 scripts/migrate.py")
@@ -3551,6 +3559,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "SCA_MONITOR_POSTGRES_PRODUCTION_PREFLIGHT=required" in database_doc
     assert "SCA_MONITOR_CUTOVER_READINESS_REPORT=required" in database_doc
     assert "SCA_MONITOR_CUTOVER_READINESS_REPORT_PATH" in database_doc
+    assert "advisory sync timer" in database_doc
+    assert "원래 active였던 timer만" in database_doc
     assert "자동으로 `--require-postgres --require-split`" in database_doc
     assert "SCA_MONITOR_DATABASE_ENV_DRY_RUN=synthetic" in cicd_doc
     assert "SCA_MONITOR_EXPECT_DATABASE_BACKEND=sqlite" in cicd_doc

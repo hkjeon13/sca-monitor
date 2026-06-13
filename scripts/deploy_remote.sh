@@ -315,6 +315,14 @@ ssh "$REMOTE" "set -euo pipefail
         ;;
     esac
   }
+  systemd_advisory_timer_units_for_migration() {
+    prefix=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\"
+    printf '%s' \"\$prefix-cisa-kev-sync.timer \$prefix-nvd-cve-sync.timer \$prefix-osv-npm-sync.timer \$prefix-openssf-malicious-sync.timer\"
+  }
+  systemd_advisory_service_units_for_migration() {
+    prefix=\"\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\"
+    printf '%s' \"\$prefix-cisa-kev-sync.service \$prefix-nvd-cve-sync.service \$prefix-osv-npm-sync.service \$prefix-openssf-malicious-sync.service\"
+  }
   systemd_scope_args() {
     if [ \"\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\" = 'system' ]; then
       printf ''
@@ -323,7 +331,41 @@ ssh "$REMOTE" "set -euo pipefail
     fi
   }
   workers_stopped_for_migration=0
+  timers_stopped_for_migration=0
   migration_worker_units=\"\$(systemd_worker_units_for_migration)\"
+  migration_advisory_timer_units=\"\$(systemd_advisory_timer_units_for_migration)\"
+  migration_advisory_service_units=\"\$(systemd_advisory_service_units_for_migration)\"
+  active_migration_timer_units=''
+  stop_systemd_timers_for_migration() {
+    if [ -z \"\$migration_advisory_timer_units\" ] || ! command -v systemctl >/dev/null 2>&1; then
+      return
+    fi
+    scope_args=\"\$(systemd_scope_args)\"
+    for unit in \$migration_advisory_timer_units; do
+      if systemctl \$scope_args is-active --quiet \"\$unit\" 2>/dev/null; then
+        active_migration_timer_units=\"\$active_migration_timer_units \$unit\"
+      fi
+    done
+    if [ -n \"\$active_migration_timer_units\" ]; then
+      echo \"stopping advisory sync timers for migration: \$active_migration_timer_units\"
+      # shellcheck disable=SC2086
+      systemctl \$scope_args stop \$active_migration_timer_units 2>/dev/null || true
+      timers_stopped_for_migration=1
+    fi
+    echo \"stopping advisory sync services for migration: \$migration_advisory_service_units\"
+    # shellcheck disable=SC2086
+    systemctl \$scope_args stop \$migration_advisory_service_units 2>/dev/null || true
+  }
+  restart_systemd_timers_after_migration() {
+    if [ \"\$timers_stopped_for_migration\" != '1' ] || [ -z \"\$active_migration_timer_units\" ] || ! command -v systemctl >/dev/null 2>&1; then
+      return
+    fi
+    scope_args=\"\$(systemd_scope_args)\"
+    echo \"starting advisory sync timers after migration: \$active_migration_timer_units\"
+    # shellcheck disable=SC2086
+    systemctl \$scope_args start \$active_migration_timer_units 2>/dev/null || true
+    timers_stopped_for_migration=0
+  }
   stop_systemd_workers_for_migration() {
     if [ -z \"\$migration_worker_units\" ] || ! command -v systemctl >/dev/null 2>&1; then
       return
@@ -344,8 +386,9 @@ ssh "$REMOTE" "set -euo pipefail
     systemctl \$scope_args start \$migration_worker_units 2>/dev/null || true
     workers_stopped_for_migration=0
   }
+  stop_systemd_timers_for_migration
   stop_systemd_workers_for_migration
-  trap restart_systemd_workers_after_migration EXIT
+  trap 'restart_systemd_workers_after_migration; restart_systemd_timers_after_migration' EXIT
   backup_result_file=''
   cutover_report_backup_path=''
   case \"\$BACKUP_BEFORE_MIGRATION\" in
@@ -565,6 +608,7 @@ PY
       ;;
   esac
   restart_systemd_workers_after_migration
+  restart_systemd_timers_after_migration
   trap - EXIT
   start_legacy_api() {
     nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
