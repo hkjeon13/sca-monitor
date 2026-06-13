@@ -400,7 +400,7 @@ async function loadServices() {
       <td><strong>${escapeHtml(svc.service_name)}</strong><br><span>${escapeHtml(svc.service_id)}</span></td>
       <td>${escapeHtml(svc.environment)}</td>
       <td>${escapeHtml(svc.owner_team)}</td>
-      <td><span class="badge">${escapeHtml(svc.collection_status || "ok")} / ${escapeHtml(svc.freshness_status || "fresh")}</span><br><span>${escapeHtml(svc.status_auth_configured ? svc.status_auth_type : "no endpoint auth")}</span></td>
+      <td><span class="badge">${escapeHtml(svc.collection_status || "ok")} / ${escapeHtml(svc.freshness_status || "fresh")}</span><br><span>${escapeHtml(svc.status_auth_configured ? svc.status_auth_type : "no endpoint auth")}</span><br><span>${escapeHtml(servicePollingSchedule(svc))}</span></td>
       <td>${escapeHtml(svc.open_impacts || 0)}</td>
     </tr>
   `).join("");
@@ -420,6 +420,13 @@ async function selectService(serviceId) {
 
 function renderServiceDetailEmpty(message) {
   document.querySelector("#service-detail").innerHTML = `<p>${escapeHtml(message)}</p>`;
+}
+
+function servicePollingSchedule(service) {
+  const interval = service.poll_interval_seconds;
+  const threshold = service.freshness_threshold_seconds;
+  if (!interval && !threshold) return "default schedule";
+  return `${interval || "-"}s poll / ${threshold || "-"}s stale`;
 }
 
 async function loadServiceDetail(serviceId) {
@@ -450,6 +457,7 @@ async function loadServiceDetail(serviceId) {
       ${detailRow("Owner", service.owner_team)}
       ${detailRow("Collection", service.collection_mode)}
       ${detailRow("Endpoint", service.status_endpoint_url || "-")}
+      ${detailRow("Polling Schedule", servicePollingSchedule(service))}
       ${detailRow("Endpoint Health", `${service.collection_status || "ok"} / ${service.freshness_status || "fresh"}`)}
       ${detailRow("Snapshot", snapshot ? snapshot.snapshot_id : "-")}
       ${detailRow("Collected", snapshot ? snapshot.collected_at : "-")}

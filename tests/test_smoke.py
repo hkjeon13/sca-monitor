@@ -3810,6 +3810,16 @@ def test_web_console_guides_service_scoped_snapshot_push():
     assert "/api/v1/services/${encodeURIComponent(form.service_id)}/status" in script
 
 
+def test_web_console_service_registration_includes_polling_schedule_fields():
+    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert 'name="poll_interval_seconds"' in html
+    assert 'name="freshness_threshold_seconds"' in html
+    assert "poll_interval_seconds" in script
+    assert "freshness_threshold_seconds" in script
+
+
 def test_web_console_push_credential_result_includes_ready_to_copy_curl():
     script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     styles = (REPO_ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
@@ -5046,6 +5056,27 @@ def test_service_endpoint_uses_saved_bearer_token_without_exposing_secret(tmp_pa
     assert service["status_auth_configured"] is True
     assert "encrypted_auth_config" not in service
     assert "endpoint-secret" not in json.dumps(service)
+
+
+def test_service_registration_stores_polling_schedule_metadata(tmp_path):
+    app = make_test_app(tmp_path)
+
+    app.create_service(
+        {
+            "service_id": "scheduled-endpoint-service",
+            "environment": "prod",
+            "owner_team": "platform",
+            "collection_mode": "poll",
+            "status_endpoint_url": "https://endpoint.example.test/dependencies",
+            "poll_interval_seconds": "300",
+            "freshness_threshold_seconds": "900",
+        }
+    )
+
+    service = app.list_services()[0]
+
+    assert service["poll_interval_seconds"] == 300
+    assert service["freshness_threshold_seconds"] == 900
 
 
 def test_service_endpoint_missing_bearer_token_records_auth_failed(tmp_path):

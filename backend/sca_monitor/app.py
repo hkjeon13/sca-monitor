@@ -836,6 +836,8 @@ class ScaMonitorApp:
         service_id = required(body, "service_id")
         environment = body.get("environment", "prod")
         auth_type, auth_secret_ref, encrypted_auth_config = endpoint_auth_config_from_body(body)
+        poll_interval_seconds = optional_positive_int(body.get("poll_interval_seconds"), "poll_interval_seconds")
+        freshness_threshold_seconds = optional_positive_int(body.get("freshness_threshold_seconds"), "freshness_threshold_seconds")
         now = utcnow()
         service_pk = str(uuid.uuid4())
         with self.db.connect() as conn:
@@ -845,8 +847,9 @@ class ScaMonitorApp:
                     id, service_id, service_name, environment, owner_team,
                     status_endpoint_url, collection_mode, internet_facing,
                     business_criticality, alert_channel, status_auth_type,
-                    auth_secret_ref, encrypted_auth_config, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    auth_secret_ref, encrypted_auth_config, poll_interval_seconds,
+                    freshness_threshold_seconds, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(service_id, environment) DO UPDATE SET
                     service_name=excluded.service_name,
                     owner_team=excluded.owner_team,
@@ -858,6 +861,8 @@ class ScaMonitorApp:
                     status_auth_type=COALESCE(excluded.status_auth_type, services.status_auth_type),
                     auth_secret_ref=COALESCE(excluded.auth_secret_ref, services.auth_secret_ref),
                     encrypted_auth_config=COALESCE(excluded.encrypted_auth_config, services.encrypted_auth_config),
+                    poll_interval_seconds=COALESCE(excluded.poll_interval_seconds, services.poll_interval_seconds),
+                    freshness_threshold_seconds=COALESCE(excluded.freshness_threshold_seconds, services.freshness_threshold_seconds),
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -874,6 +879,8 @@ class ScaMonitorApp:
                     auth_type,
                     auth_secret_ref,
                     encrypted_auth_config,
+                    poll_interval_seconds,
+                    freshness_threshold_seconds,
                     now,
                     now,
                 ),
@@ -3534,6 +3541,18 @@ def required(data: dict, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"{key} required")
     return str(value)
+
+
+def optional_positive_int(value, key: str) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be a positive integer") from exc
+    if parsed <= 0:
+        raise ValueError(f"{key} must be a positive integer")
+    return parsed
 
 
 def sanitize_service(service: dict | None) -> dict | None:

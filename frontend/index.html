@@ -216,6 +216,8 @@
                 </select>
               </label>
               <label>Bearer Token<input name="status_bearer_token" type="password" autocomplete="off" placeholder="optional endpoint token" /></label>
+              <label>Poll Interval Seconds<input name="poll_interval_seconds" type="number" min="1" step="1" placeholder="300" /></label>
+              <label>Freshness Threshold Seconds<input name="freshness_threshold_seconds" type="number" min="1" step="1" placeholder="900" /></label>
               <button type="submit">Register</button>
               <button type="button" id="endpoint-test" class="secondary">Test Endpoint</button>
             </form>
