@@ -539,7 +539,7 @@ def test_http_smoke_checks_read_only_endpoints():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             seen_paths.append(self.path)
-            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
+            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/api/v1/operations/worker-leases"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -585,6 +585,7 @@ def test_http_smoke_checks_read_only_endpoints():
         "/ready",
         "/api/v1/overview",
         "/api/v1/operations/cutover-readiness-report",
+        "/api/v1/operations/worker-leases",
         "/",
     ]
     assert all(check["ok"] for check in payload["checks"])
@@ -593,6 +594,7 @@ def test_http_smoke_checks_read_only_endpoints():
         "/ready",
         "/api/v1/overview",
         "/api/v1/operations/cutover-readiness-report",
+        "/api/v1/operations/worker-leases",
         "/",
     ]
 
@@ -665,7 +667,7 @@ def test_http_smoke_can_require_postgres_split_metrics():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             seen_paths.append(self.path)
-            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
+            if self.path in {"/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/api/v1/operations/worker-leases"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -721,7 +723,14 @@ def test_http_smoke_can_require_postgres_split_metrics():
         "required_metric_present": True,
         "ready_metric_present": True,
     }
-    assert seen_paths[:5] == ["/health", "/ready", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/"]
+    assert seen_paths[:6] == [
+        "/health",
+        "/ready",
+        "/api/v1/overview",
+        "/api/v1/operations/cutover-readiness-report",
+        "/api/v1/operations/worker-leases",
+        "/",
+    ]
     assert "/metrics" in seen_paths
 
 
@@ -742,7 +751,7 @@ def test_http_smoke_can_expect_postgres_split_required_value():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
+            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/api/v1/operations/worker-leases"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -819,7 +828,7 @@ def test_http_smoke_can_expect_database_backend():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report"}:
+            if self.path in {"/health", "/api/v1/overview", "/api/v1/operations/cutover-readiness-report", "/api/v1/operations/worker-leases"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -1008,7 +1017,7 @@ def test_http_smoke_can_expect_advisory_sync_ready():
                     ).encode("utf-8")
                 )
                 return
-            if self.path in {"/health", "/ready", "/api/v1/operations/cutover-readiness-report"}:
+            if self.path in {"/health", "/ready", "/api/v1/operations/cutover-readiness-report", "/api/v1/operations/worker-leases"}:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -2915,6 +2924,30 @@ def test_database_readiness_endpoint_exposes_migration_and_cutover(tmp_path):
     assert any(check["id"] == "database_url_mode" for check in payload["cutover_required"]["checks"])
 
 
+def test_worker_lease_status_endpoint_exposes_current_locks(tmp_path):
+    app = make_test_app(tmp_path)
+
+    with app.advisory_sync_lock("OSV", "sync-owner", ttl_seconds=60):
+        with endpoint_poll_lock(app, "default", "poll-owner", ttl_seconds=60):
+            with run_test_server(app) as base_url:
+                payload = http_json(f"{base_url}/api/v1/operations/worker-leases")
+
+    advisory = payload["advisory_sync"][0]
+    endpoint = payload["endpoint_poll"][0]
+
+    assert payload["status"] == "locked"
+    assert advisory["source"] == "OSV"
+    assert advisory["locked"] is True
+    assert advisory["lock_owner"] == "sync-owner"
+    assert advisory["lock_expires_at"] is not None
+    assert advisory["lease_acquire_failures"] == 0
+    assert endpoint["worker_name"] == "default"
+    assert endpoint["locked"] is True
+    assert endpoint["lock_owner"] == "poll-owner"
+    assert endpoint["lock_expires_at"] is not None
+    assert endpoint["lease_acquire_failures"] == 0
+
+
 def test_database_readiness_summary_exposes_database_env_file_without_path(monkeypatch, tmp_path):
     secret_path = tmp_path / ".secrets" / "postgres.env"
     secret_path.parent.mkdir()
@@ -3583,6 +3616,10 @@ def test_harness_documents_deployment_input_readiness():
     assert "--expect-cutover-report-expected-status" in operations_doc
     assert "--expect-cutover-report-production-preflight-status" in operations_doc
     assert "--require-cutover-report-expectation-met" in operations_doc
+    assert "/api/v1/operations/worker-leases" in operations_doc
+    assert "/api/v1/operations/worker-leases" in cicd_doc
+    assert "lock_owner" in operations_doc
+    assert "lock_expires_at" in operations_doc
     assert "Slack incoming webhook은 Settings에서 `slack_webhook` type" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok" in cicd_doc

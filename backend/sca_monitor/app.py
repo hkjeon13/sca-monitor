@@ -146,6 +146,8 @@ class ScaMonitorApp:
                 return self.json_response(request, self.database_readiness_summary())
             if path == "/api/v1/operations/cutover-readiness-report" and method == "GET":
                 return self.json_response(request, self.cutover_readiness_report_artifact())
+            if path == "/api/v1/operations/worker-leases" and method == "GET":
+                return self.json_response(request, self.worker_lease_status())
             if path == "/api/v1/operations/canonicalization" and method == "GET":
                 return self.json_response(request, self.canonicalization_status(parse_qs(parsed.query)))
             if path == "/api/v1/operations/canonicalization/apply" and method == "POST":
@@ -728,6 +730,52 @@ class ScaMonitorApp:
                 "oldest_source": oldest_source["source"] if oldest_source else None,
             },
             "sources": sources,
+        }
+
+    def worker_lease_status(self) -> dict:
+        now = datetime.now(timezone.utc)
+        with self.db.connect() as conn:
+            advisory_rows = conn.execute(
+                """
+                SELECT source, status, lock_owner, lock_expires_at, lease_acquire_failures,
+                       last_run_at, last_success_at, last_error_at, last_error_message, updated_at
+                FROM advisory_sync_state
+                ORDER BY source
+                """
+            ).fetchall()
+            endpoint_rows = conn.execute(
+                """
+                SELECT worker_name, status, lock_owner, lock_expires_at, lease_acquire_failures,
+                       last_success_at, last_error_at, last_error_message, updated_at
+                FROM endpoint_poll_state
+                ORDER BY worker_name
+                """
+            ).fetchall()
+
+        advisory = [self.worker_lease_row(row_to_dict(row), identity_key="source", now=now) for row in advisory_rows]
+        endpoint = [self.worker_lease_row(row_to_dict(row), identity_key="worker_name", now=now) for row in endpoint_rows]
+        locked_count = sum(1 for row in [*advisory, *endpoint] if row["locked"])
+        return {
+            "status": "locked" if locked_count else "ok",
+            "locked_count": locked_count,
+            "advisory_sync": advisory,
+            "endpoint_poll": endpoint,
+        }
+
+    def worker_lease_row(self, row: dict, *, identity_key: str, now: datetime) -> dict:
+        lock_expires_at = row.get("lock_expires_at")
+        return {
+            identity_key: row[identity_key],
+            "status": row.get("status"),
+            "locked": bool(row.get("lock_owner")),
+            "lock_owner": row.get("lock_owner"),
+            "lock_expires_at": lock_expires_at,
+            "lock_ttl_remaining_seconds": seconds_until(lock_expires_at, now),
+            "lease_acquire_failures": int(row.get("lease_acquire_failures") or 0),
+            "last_success_at": row.get("last_success_at"),
+            "last_error_at": row.get("last_error_at"),
+            "last_error_message": row.get("last_error_message"),
+            "updated_at": row.get("updated_at"),
         }
 
     def alert_readiness_overview(self, conn) -> dict:
@@ -3661,6 +3709,16 @@ def seconds_since(value: str | None, now: datetime) -> int | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return max(0, int((now - parsed).total_seconds()))
+
+
+def seconds_until(value: str | None, now: datetime) -> int | None:
+    if not value:
+        return None
+    try:
+        parsed = parse_iso_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, int((parsed - now).total_seconds()))
 
 
 def seconds_between(start_value: str | None, end_value: str | None) -> int | None:

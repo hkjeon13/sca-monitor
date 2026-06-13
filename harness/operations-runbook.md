@@ -31,7 +31,7 @@ SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smok
 SCA_MONITOR_PUBLIC_URL=https://monitoring.fin-ally.net python3 scripts/http_smoke.py --expect-cutover-report-status blocked --expect-cutover-report-expected-status blocked --require-cutover-report-expectation-met --json
 ```
 
-기본 검증은 `/health`, `/ready`, `/api/v1/overview`, `/api/v1/operations/cutover-readiness-report`, `/`만 조회하며 운영 데이터를 변경하지 않는다. `--require-postgres-split-metrics`는 `/metrics`의 PostgreSQL split cutover gauge 존재까지 read-only로 확인한다. `--expect-postgres-split-required`는 `/ready`의 split 요구값과 `/metrics`의 `sca_monitor_postgres_split_required` 값이 같은지 확인하며, split credential stage 전환 gate에서는 `true`로 실행한다. `--expect-database-backend`는 `/ready`의 `database_backend`가 현재 의도한 runtime과 일치하는지 확인한다. `--expect-database-env-file-configured`는 `/ready`의 `database_env_file.configured`가 stage 의도와 같은지 확인하며 SQLite fallback에서는 `false`, protected env file cutover stage에서는 `true`로 실행한다. `--expect-cutover-report-status`는 cutover readiness report artifact가 있고 report status가 기대값과 같은지 확인한다. `--expect-cutover-report-production-preflight-status`는 report에 포함된 `production_preflight.status`가 기대값과 같은지 확인한다. `--expect-cutover-report-expected-status`와 `--require-cutover-report-expectation-met`은 expected-blocked preflight 증적이 의도한 blocked 결과였는지 확인한다. 현재 SQLite fallback 운영에서는 `sqlite`, PostgreSQL cutover 검증 stage에서는 `postgres`로 실행한다.
+기본 검증은 `/health`, `/ready`, `/api/v1/overview`, `/api/v1/operations/cutover-readiness-report`, `/api/v1/operations/worker-leases`, `/`만 조회하며 운영 데이터를 변경하지 않는다. `--require-postgres-split-metrics`는 `/metrics`의 PostgreSQL split cutover gauge 존재까지 read-only로 확인한다. `--expect-postgres-split-required`는 `/ready`의 split 요구값과 `/metrics`의 `sca_monitor_postgres_split_required` 값이 같은지 확인하며, split credential stage 전환 gate에서는 `true`로 실행한다. `--expect-database-backend`는 `/ready`의 `database_backend`가 현재 의도한 runtime과 일치하는지 확인한다. `--expect-database-env-file-configured`는 `/ready`의 `database_env_file.configured`가 stage 의도와 같은지 확인하며 SQLite fallback에서는 `false`, protected env file cutover stage에서는 `true`로 실행한다. `--expect-cutover-report-status`는 cutover readiness report artifact가 있고 report status가 기대값과 같은지 확인한다. `--expect-cutover-report-production-preflight-status`는 report에 포함된 `production_preflight.status`가 기대값과 같은지 확인한다. `--expect-cutover-report-expected-status`와 `--require-cutover-report-expectation-met`은 expected-blocked preflight 증적이 의도한 blocked 결과였는지 확인한다. 현재 SQLite fallback 운영에서는 `sqlite`, PostgreSQL cutover 검증 stage에서는 `postgres`로 실행한다.
 
 VM systemd scheduler 등록:
 
@@ -108,6 +108,7 @@ curl -fsS "$SCA_MONITOR_PUBLIC_URL/api/v1/audit-logs?target_type=impact&target_i
 
 1. worker process 상태 확인
 2. DB lock/lease 확인
+   - `GET /api/v1/operations/worker-leases`에서 advisory sync와 endpoint poll lease의 `lock_owner`, `lock_expires_at`, `lease_acquire_failures`를 확인한다.
 3. pending alert count 확인
 4. worker 재시작
 5. outbox 재처리 확인
