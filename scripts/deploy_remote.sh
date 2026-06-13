@@ -608,8 +608,6 @@ PY
       ;;
   esac
   restart_systemd_workers_after_migration
-  restart_systemd_timers_after_migration
-  trap - EXIT
   start_legacy_api() {
     nohup python3 -m backend.sca_monitor > logs/sca-monitor.log 2>&1 &
     echo \$! > .data/sca-monitor.pid
@@ -750,6 +748,8 @@ PY
         exit 2
         ;;
     esac
+    restart_systemd_timers_after_migration
+    trap - EXIT
     exit 0
   fi
   tail -80 logs/sca-monitor.log || true

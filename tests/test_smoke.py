@@ -3207,10 +3207,12 @@ def test_remote_deploy_uses_db_gate():
     assert "-endpoint-poller.service" in script
     assert "-alert-dispatcher-dry-run.service" in script
     stop_call = script.index("stop_systemd_workers_for_migration\n  trap")
-    restart_call = script.index("restart_systemd_workers_after_migration\n  restart_systemd_timers_after_migration\n  trap - EXIT")
+    worker_restart_call = script.index("restart_systemd_workers_after_migration\n  start_legacy_api()")
+    timer_restart_call = script.index("restart_systemd_timers_after_migration\n    trap - EXIT")
     assert stop_call < script.index("python3 scripts/migrate.py")
     assert script.index("python3 scripts/migrate.py") < script.index("bash scripts/deploy_db_gate.sh")
-    assert script.index("bash scripts/deploy_db_gate.sh") < restart_call
+    assert script.index("bash scripts/deploy_db_gate.sh") < worker_restart_call
+    assert script.index("python3 scripts/http_smoke.py") < timer_restart_call
     assert 'SCA_MONITOR_SYSTEMD_SCOPE=\\"\\${SCA_MONITOR_SYSTEMD_SCOPE:-user}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PREFIX=\\"\\${SCA_MONITOR_SYSTEMD_PREFIX:-sca-monitor}\\"' in script
     assert 'SCA_MONITOR_SYSTEMD_PYTHON=\\"\\${SCA_MONITOR_SYSTEMD_PYTHON:-python3}\\"' in script
