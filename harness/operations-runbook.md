@@ -71,6 +71,9 @@ python3 scripts/evaluate_advisory_sync_freshness.py --dry-run
 python3 scripts/evaluate_advisory_sync_freshness.py --actor freshness-scheduler
 ```
 
+SQLite fallback 운영에서 다른 worker가 write lock을 오래 잡고 있으면 이 CLI는 기본 3회 재시도하며, 수동 실행에서는 `--attempts 3 --retry-delay-seconds 2`로 같은 기준을 명시할 수 있다.
+모든 재시도가 `database is locked`로 실패하면 JSON `status=deferred`, `reason=database_locked`를 출력하고 다음 timer 주기에서 다시 평가한다.
+
 VM systemd full `enable` 모드에서는 `sca-monitor-advisory-freshness.timer`가 같은 평가를 15분 주기로 실행한다.
 canary 배포용 `enable-dispatcher-dry-run` 모드는 API, endpoint poller, dry-run dispatcher만 활성화하므로 이 timer는 unit 파일 검증 대상이지만 자동 시작 대상은 아니다.
 live dispatcher 전환 전 advisory 동기화를 먼저 운영화하려면 `enable-advisory-sync-dry-run` 모드를 사용한다.

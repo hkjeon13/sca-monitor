@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import subprocess
 import tomllib
 import threading
@@ -3620,6 +3621,8 @@ def test_harness_documents_deployment_input_readiness():
     assert "/api/v1/operations/worker-leases" in cicd_doc
     assert "lock_owner" in operations_doc
     assert "lock_expires_at" in operations_doc
+    assert "database_locked" in operations_doc
+    assert "--retry-delay-seconds" in operations_doc
     assert "Slack incoming webhook은 Settings에서 `slack_webhook` type" in operations_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_STATUS=ok" in cicd_doc
     assert "SCA_MONITOR_EXPECT_CUTOVER_REPORT_EXPECTED_STATUS=ok" in cicd_doc
@@ -5503,6 +5506,62 @@ def test_evaluate_advisory_sync_freshness_cli(tmp_path):
     assert payload["enqueued"] == 1
     with app.db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM alert_events WHERE reason = 'system_advisory_sync_stale'").fetchone()["c"] == 1
+
+
+def test_evaluate_advisory_sync_freshness_cli_retries_sqlite_lock(monkeypatch):
+    from scripts import evaluate_advisory_sync_freshness as freshness_cli
+
+    calls = []
+    sleeps = []
+
+    class LockedOnceApp:
+        def evaluate_advisory_sync_freshness_alerts(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return {"stale_sources": [], "enqueued": 0, "resolved": 0}
+
+    monkeypatch.setattr(freshness_cli.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    payload = freshness_cli.evaluate_with_retries(
+        LockedOnceApp(),
+        now="2026-01-01T00:01:00+00:00",
+        dry_run=False,
+        actor="freshness-scheduler",
+        attempts=2,
+        retry_delay_seconds=0.5,
+    )
+
+    assert payload["attempts"] == 2
+    assert len(calls) == 2
+    assert sleeps == [0.5]
+
+
+def test_evaluate_advisory_sync_freshness_cli_defers_when_sqlite_stays_locked(monkeypatch):
+    from scripts import evaluate_advisory_sync_freshness as freshness_cli
+
+    sleeps = []
+
+    class LockedApp:
+        def evaluate_advisory_sync_freshness_alerts(self, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(freshness_cli.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    payload = freshness_cli.evaluate_with_retries(
+        LockedApp(),
+        now="2026-01-01T00:01:00+00:00",
+        dry_run=False,
+        actor="freshness-scheduler",
+        attempts=3,
+        retry_delay_seconds=0.25,
+    )
+
+    assert payload["status"] == "deferred"
+    assert payload["reason"] == "database_locked"
+    assert payload["attempts"] == 3
+    assert "database is locked" in payload["error"]
+    assert sleeps == [0.25, 0.25]
 
 
 def test_overview_advisory_sync_readiness_degraded_on_source_error(tmp_path):
