@@ -31,6 +31,7 @@ from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .postgres_cutover import assess_cutover, summarize_preflight
 from .versioning import version_is_affected
 from .workspace import WorkspaceAPI, ApiError
+from .coordination import yield_to_interactive
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
@@ -1433,6 +1434,7 @@ class ScaMonitorApp:
             raise
 
     def import_osv_payload(self, payload: dict, source_override: str | None = None) -> dict:
+        yield_to_interactive(self.settings.data_dir)
         advisories = parse_osv_advisories(payload, source_override=source_override)
         source_advisory_id = str(payload.get("id") or advisories[0].advisory_id)
         sync_source = advisories[0].source

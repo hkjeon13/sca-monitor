@@ -12,6 +12,7 @@ from uuid import uuid4
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .coordination import yield_to_interactive
 from .app import ScaMonitorApp
 from .db import canonical_package_name
 from .osv import AdvisoryImport
@@ -180,6 +181,7 @@ def sync_cisa_kev_catalog(
     try:
         with app.advisory_sync_lock("CISA_KEV", owner, ttl_seconds=lock_ttl_seconds):
             for item in catalog.get("vulnerabilities") or []:
+                yield_to_interactive(app.settings.data_dir)
                 if limit is not None and processed >= limit:
                     break
                 processed += 1
@@ -337,6 +339,7 @@ def sync_github_advisories(
     try:
         with app.advisory_sync_lock("GHSA", owner, ttl_seconds=lock_ttl_seconds):
             for item in payload:
+                yield_to_interactive(app.settings.data_dir)
                 if limit is not None and processed >= limit:
                     break
                 processed += 1
@@ -554,6 +557,7 @@ def sync_nvd_cve(
     with app.advisory_sync_lock("NVD", owner, ttl_seconds=lock_ttl_seconds):
         for item in vulnerabilities:
             for advisory in parse_nvd_cve_vulnerability(item):
+                yield_to_interactive(app.settings.data_dir)
                 with app.db.connect() as conn:
                     changed = app.upsert_advisory(conn, advisory)
                     enrichment = app.enrich_nvd_advisories(conn, advisory)

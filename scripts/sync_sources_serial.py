@@ -72,6 +72,26 @@ def main():
         )
         progress = settings.data_dir / "source-sync-progress.json"
         failures = []
+        if progress.exists():
+            try:
+                previous = json.loads(progress.read_text())
+                if previous.get("status") == "running":
+                    start_index = next(
+                        (
+                            i
+                            for i, job in enumerate(jobs)
+                            if job[0] == previous.get("source")
+                        ),
+                        0,
+                    )
+                    jobs = jobs[start_index:]
+                    print(
+                        "Resuming interrupted source",
+                        previous.get("source"),
+                        flush=True,
+                    )
+            except (ValueError, OSError):
+                print("Starting a fresh source cycle", flush=True)
         for source, args in jobs:
             now = datetime.now(timezone.utc).isoformat()
             temporary = progress.with_suffix(".new")

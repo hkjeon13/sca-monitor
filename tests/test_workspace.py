@@ -410,3 +410,67 @@ def test_inventory_age_is_calculated_at_read_time(workspace):
     )
     assert client.request("/api/v2/overview")[1]["counts"]["stale_targets"] == 1
     assert client.request("/api/v2/findings")[1]["items"][0]["assessment"] == "unknown"
+
+
+def test_setup_and_session_are_atomic_when_session_write_fails(workspace):
+    app, url = workspace
+    client = Client(url)
+    token = app.workspace.make_setup_token(admin=True)
+    with app.db.connect() as conn:
+        conn.execute(
+            "CREATE TRIGGER fail_session BEFORE INSERT ON workspace_sessions BEGIN SELECT RAISE(ABORT, 'test session failure'); END"
+        )
+    status, _ = client.request(
+        "/api/v2/auth/setup",
+        "POST",
+        {
+            "token": token,
+            "email": "atomic@example.test",
+            "display_name": "Atomic",
+            "password": "Atomic-test-password-2026!",
+        },
+    )
+    assert status == 500
+    with app.db.connect() as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) AS c FROM workspace_users").fetchone()["c"]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT used_at FROM workspace_setup_tokens").fetchone()[
+                "used_at"
+            ]
+            is None
+        )
+
+
+def test_background_import_waits_for_interactive_write(workspace):
+    from backend.sca_monitor.coordination import interactive_write
+
+    app, _ = workspace
+    entered = threading.Event()
+    done = threading.Event()
+
+    def background():
+        entered.set()
+        app.import_osv_payload(
+            {
+                "id": "OSV-PRIORITY-TEST",
+                "modified": "2026-10-28T00:00:00Z",
+                "affected": [
+                    {
+                        "package": {"ecosystem": "npm", "name": "priority-test"},
+                        "versions": ["1.0.0"],
+                    }
+                ],
+            }
+        )
+        done.set()
+
+    with interactive_write(app.settings.data_dir):
+        thread = threading.Thread(target=background)
+        thread.start()
+        assert entered.wait(2)
+        assert not done.wait(0.1)
+    assert done.wait(5)
+    thread.join()

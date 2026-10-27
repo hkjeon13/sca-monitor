@@ -88,20 +88,40 @@ function toast(text, error = false) {
   toast.timer = setTimeout(() => ($("#toast").hidden = true), 6000);
 }
 async function api(path, method = "GET", body) {
-  const response = await fetch("/api/v2/" + path, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(user ? { "X-CSRF-Token": user.csrf_token } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    if (response.status === 401 && !path.startsWith("auth/")) showAuth();
-    throw new Error(data.error || "요청을 처리하지 못했습니다.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch("/api/v2/" + path, {
+      method,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(user ? { "X-CSRF-Token": user.csrf_token } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (
+      !(response.headers.get("content-type") || "").includes("application/json")
+    ) {
+      throw new Error(
+        `서버 또는 연결 경로에서 요청을 처리하지 못했습니다. (HTTP ${response.status})`,
+      );
+    }
+    const data = await response.json();
+    if (!response.ok) {
+      if (response.status === 401 && !path.startsWith("auth/")) showAuth();
+      throw new Error(data.error || "요청을 처리하지 못했습니다.");
+    }
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError")
+      throw new Error(
+        "서버 응답이 지연되어 대기를 종료했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data;
 }
 function showAuth() {
   user = null;
@@ -695,6 +715,8 @@ $("#auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const button = $("#auth-submit");
+  const originalLabel = button.textContent;
+  button.textContent = setupToken ? "계정 설정 중…" : "로그인 중…";
   button.disabled = true;
   $("#auth-error").textContent = "";
   try {
@@ -709,6 +731,7 @@ $("#auth-form").addEventListener("submit", async (event) => {
     $("#auth-error").textContent = error.message;
   } finally {
     button.disabled = false;
+    button.textContent = originalLabel;
   }
 });
 $("#logout").addEventListener("click", async () => {

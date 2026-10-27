@@ -1098,3 +1098,9 @@ dialog::backdrop { background: #020a13c9; backdrop-filter: blur(3px); }
 @media (max-width:1100px) { .workspace-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .topbar { flex-wrap: wrap; gap: 18px; } }
 @media (max-width:820px) { .account-bar { justify-content: flex-start; margin: 0 0 18px; } .scope-label { min-width: 200px; } .workspace-section { padding: 18px; } .section-header { align-items: flex-start; } }
 @media (max-width:520px) { .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .result-row { flex-direction: column; gap: 12px; } .row-badges { max-width: none; justify-content: flex-start; } .search-primary > label { flex-basis: 100%; } .scope-label { min-width: 0; width: 100%; max-width: none; } .top-actions { width: 100%; } .project-risk-row { flex-wrap: wrap; } .auth-card { padding: 26px 22px; } dialog { padding: 18px; } .pagination { flex-wrap: wrap; } }
+
+/* Align scope controls to the same bottom edge, including the caption above the select. */
+.topbar .top-actions { align-items: flex-end; flex-wrap: nowrap; }
+.topbar .scope-label { flex: 1 1 240px; min-width: 0; max-width: 260px; }
+#project-scope { height: 42px; margin: 0; }
+.topbar #refresh { flex: 0 0 42px; width: 42px; height: 42px; min-height: 42px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }

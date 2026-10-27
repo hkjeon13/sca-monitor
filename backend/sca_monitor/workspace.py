@@ -11,11 +11,14 @@ import ipaddress
 import re
 import secrets
 import uuid
+import sqlite3
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import unquote, urlparse
 
 from .db import json_column, utcnow
+from .coordination import interactive_write, InteractiveBusyError
 
 SOURCES = ("OSV", "GHSA", "OpenSSF", "CISA_KEV", "NVD")
 RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -210,10 +213,10 @@ class WorkspaceAPI:
         if origin and urlparse(origin).netloc != request.headers.get("Host"):
             raise ApiError(403, "허용되지 않은 요청 출처입니다.")
 
-    def new_session(self, user_id):
+    def new_session(self, user_id, *, connection=None):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
         now = datetime.now(timezone.utc)
-        with self.db.connect() as conn:
+        with nullcontext(connection) if connection else self.db.connect() as conn:
             conn.execute(
                 "INSERT INTO workspace_sessions(token_hash,user_id,csrf_token,expires_at,created_at) VALUES(?,?,?,?,?)",
                 (
@@ -229,6 +232,12 @@ class WorkspaceAPI:
             "; Secure" if secure else ""
         )
         return cookie
+
+    def setup_session(self, body):
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            uid = self.setup(body, connection=conn)
+            return self.new_session(uid, connection=conn)
 
     def make_setup_token(self, email=None, admin=False):
         token = secrets.token_urlsafe(32)
@@ -251,12 +260,12 @@ class WorkspaceAPI:
             )
         return token
 
-    def setup(self, body):
+    def setup(self, body, *, connection=None):
         email = email_value(body.get("email"))
         hashed = password_hash(body.get("password"))
         name = text(body, "display_name", 100)
         now = utcnow()
-        with self.db.connect() as conn:
+        with nullcontext(connection) if connection else self.db.connect() as conn:
             row = conn.execute(
                 "SELECT * FROM workspace_setup_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?",
                 (digest(str(body.get("token", ""))), now),
@@ -643,7 +652,7 @@ class WorkspaceAPI:
             rows = conn.execute(
                 f"""SELECT a.id,a.advisory_id,a.source,a.summary,a.severity,a.ecosystem,a.package_name,
                 a.fixed_version,a.is_known_exploited,a.is_malicious_package,a.published_at,a.modified_at,a.first_seen_at
-                FROM advisories a WHERE {clause} ORDER BY COALESCE(CAST(a.modified_at AS TEXT),CAST(a.published_at AS TEXT),'') DESC,a.id DESC LIMIT ? OFFSET ?""",
+                FROM advisories a WHERE {clause} ORDER BY a.modified_at DESC NULLS LAST,a.id DESC LIMIT ? OFFSET ?""",
                 params + [size, offset],
             ).fetchall()
             items = []
@@ -923,7 +932,32 @@ class WorkspaceAPI:
 
     def route(self, request, method, path, query):
         try:
+            if method != "GET":
+                maximum = (
+                    16384
+                    if "/auth/" in path
+                    else self.app.settings.max_snapshot_payload_bytes
+                )
+                request._workspace_body = self.app.read_json(
+                    request, max_length=maximum
+                )
+                with interactive_write(self.app.settings.data_dir):
+                    return self._route(request, method, path, query)
             return self._route(request, method, path, query)
+        except (sqlite3.OperationalError, InteractiveBusyError) as exc:
+            if (
+                isinstance(exc, InteractiveBusyError)
+                or "locked" in str(exc).lower()
+                or "busy" in str(exc).lower()
+            ):
+                return self.reply(
+                    request,
+                    {
+                        "error": "수집 작업으로 서버가 바쁩니다. 잠시 후 다시 시도해 주세요."
+                    },
+                    503,
+                )
+            raise
         except ApiError as exc:
             return self.reply(request, {"error": exc.message}, exc.status)
         except ValueError as exc:
@@ -960,23 +994,17 @@ class WorkspaceAPI:
                     window_start=CASE WHEN workspace_login_attempts.window_start<? THEN excluded.window_start ELSE workspace_login_attempts.window_start END""",
                     (ip_key, now.isoformat(), cutoff, cutoff),
                 )
-            body = self.app.read_json(request, max_length=16384)
+            body = request._workspace_body
             cookie = (
                 self.login(request, body)
                 if parts[-1] == "login"
-                else self.new_session(self.setup(body))
+                else self.setup_session(body)
             )
             return self.reply(request, {"ok": True}, cookie=cookie)
         user = self.session_user(request)
         if method != "GET":
             self.csrf(request, user)
-        body = (
-            self.app.read_json(
-                request, max_length=self.app.settings.max_snapshot_payload_bytes
-            )
-            if method != "GET"
-            else {}
-        )
+        body = request._workspace_body if method != "GET" else {}
         if parts == ["auth", "logout"] and method == "POST":
             with self.db.connect() as conn:
                 conn.execute(
