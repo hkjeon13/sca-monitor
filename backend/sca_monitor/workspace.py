@@ -7,10 +7,11 @@ import hashlib
 import hmac
 import json
 import os
+import ipaddress
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import unquote, urlparse
 
@@ -108,15 +109,15 @@ def inventory_freshness(last_seen, environment, threshold=None):
     if not last_seen:
         return "unknown"
     try:
-        seen = datetime.fromisoformat(str(last_seen))
+        seen = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
         if seen.tzinfo is None:
-            seen = seen.replace(tzinfo=UTC)
+            seen = seen.replace(tzinfo=timezone.utc)
         maximum = threshold or {"prod": 3600, "stage": 86400, "dev": 604800}.get(
             environment, 3600
         )
         return (
             "fresh"
-            if (datetime.now(UTC) - seen).total_seconds() <= maximum
+            if (datetime.now(timezone.utc) - seen).total_seconds() <= maximum
             else "stale"
         )
     except (ValueError, TypeError):
@@ -128,6 +129,17 @@ class WorkspaceAPI:
         self.app, self.db = app, app.db
         self._source_cache = None
         self._source_cache_at = None
+
+    def client_address(self, request):
+        peer = ipaddress.ip_address(request.client_address[0])
+        if peer.is_loopback and self.app.settings.app_env == "prod":
+            forwarded = request.headers.get("CF-Connecting-IP")
+            if forwarded:
+                try:
+                    return str(ipaddress.ip_address(forwarded))
+                except ValueError:
+                    pass
+        return str(peer)
 
     def reply(self, request, body, status=200, cookie=None):
         if (
@@ -200,7 +212,7 @@ class WorkspaceAPI:
 
     def new_session(self, user_id):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         with self.db.connect() as conn:
             conn.execute(
                 "INSERT INTO workspace_sessions(token_hash,user_id,csrf_token,expires_at,created_at) VALUES(?,?,?,?,?)",
@@ -234,7 +246,7 @@ class WorkspaceAPI:
                     digest(token),
                     email_value(email) if email else None,
                     int(admin),
-                    (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+                    (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
                 ),
             )
         return token
@@ -286,8 +298,8 @@ class WorkspaceAPI:
     def login(self, request, body):
         email = str(body.get("email", "")).strip().lower()[:254]
         password = str(body.get("password", ""))[:257]
-        key = digest(email + "|" + request.client_address[0])
-        now = datetime.now(UTC)
+        key = digest(email + "|" + self.client_address(request))
+        now = datetime.now(timezone.utc)
         cutoff = (now - timedelta(minutes=15)).isoformat()
         with self.db.connect() as conn:
             row = conn.execute(
@@ -504,7 +516,7 @@ class WorkspaceAPI:
         )
 
     def sources(self):
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         if (
             self._source_cache is not None
             and (now - self._source_cache_at).total_seconds() < 30
@@ -743,7 +755,7 @@ class WorkspaceAPI:
         pid = query.get("project_id", [None])[0]
         projects = [p for p in self.projects(user) if not pid or p["id"] == pid]
         scope, params = self.scope_sql(user, project_id=pid)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         with self.db.connect() as conn:
             rows = conn.execute(
                 f"""SELECT i.*,p.id AS project_id,p.name AS project_name,s.service_name,a.advisory_id,a.summary,a.is_known_exploited,a.is_malicious_package
@@ -926,8 +938,8 @@ class WorkspaceAPI:
             )
         if parts in (["auth", "login"], ["auth", "setup"]) and method == "POST":
             self.check_origin(request)
-            ip_key = digest("auth-ip:" + request.client_address[0])
-            now = datetime.now(UTC)
+            ip_key = digest("auth-ip:" + self.client_address(request))
+            now = datetime.now(timezone.utc)
             cutoff = (now - timedelta(minutes=15)).isoformat()
             with self.db.connect() as conn:
                 attempt = conn.execute(

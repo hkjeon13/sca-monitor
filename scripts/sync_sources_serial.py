@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -73,7 +73,7 @@ def main():
         progress = settings.data_dir / "source-sync-progress.json"
         failures = []
         for source, args in jobs:
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             temporary = progress.with_suffix(".new")
             temporary.write_text(
                 json.dumps(
@@ -105,7 +105,7 @@ def main():
                 {
                     "status": "complete",
                     "failed_sources": failures,
-                    "finished_at": datetime.now(UTC).isoformat(),
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
         )

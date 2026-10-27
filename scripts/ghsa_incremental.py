@@ -6,7 +6,7 @@ import os
 import re
 import sys
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -26,12 +26,14 @@ def main():
         row = conn.execute(
             "SELECT cursor,last_success_at FROM advisory_sync_state WHERE source='GHSA'"
         ).fetchone()
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     start = now - timedelta(days=30)
     if row:
         raw = row["cursor"] or row["last_success_at"]
         try:
-            start = datetime.fromisoformat(str(raw)) - timedelta(days=1)
+            start = datetime.fromisoformat(str(raw).replace("Z", "+00:00")) - timedelta(
+                days=1
+            )
         except (ValueError, TypeError):
             pass
     params = {
