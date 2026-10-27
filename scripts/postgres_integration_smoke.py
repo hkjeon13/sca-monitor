@@ -178,6 +178,10 @@ def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
         raise RuntimeError("API workflow smoke snapshot was not created")
     principal = {"id": "postgres-smoke-readonly", "is_admin": True}
     workspace_search = app.workspace.advisory_search(principal, {"page_size": ["5"]})
+    for keyword in ("lodash", "prototype poll", "@example/quasar", '"*() : -'):
+        result = app.workspace.advisory_search(principal, {"q": [keyword]})
+        if keyword == "lodash" and result["total"] < 1:
+            raise RuntimeError("PostgreSQL keyword search did not find seeded lodash advisory")
     app.workspace.findings(principal, {})
     app.workspace.overview(principal, {})
     return {

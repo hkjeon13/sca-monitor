@@ -632,10 +632,17 @@ class WorkspaceAPI:
                     UNION SELECT advisory_pk FROM advisory_aliases WHERE alias_type=? AND alias_value=?)""")
                 params.extend([term, normalized, kind, normalized])
             else:
-                like = "%" + term.lower() + "%"
-                where.append("""(lower(a.advisory_id) LIKE ? OR lower(a.summary) LIKE ? OR lower(a.package_name) LIKE ?
-                    OR a.id IN (SELECT advisory_pk FROM advisory_aliases WHERE lower(alias_value) LIKE ?))""")
-                params.extend([like] * 4)
+                # Accept words, never user-supplied FTS operators. Each word is
+                # a prefix so package names and partial descriptions are useful.
+                words = re.findall(r"\w+", term.lower())[:20]
+                if not words:
+                    where.append("1=0")
+                elif self.db.backend == "sqlite":
+                    where.append("a.rowid IN (SELECT rowid FROM advisory_search WHERE advisory_search MATCH ?)")
+                    params.append(" AND ".join('"' + word + '"*' for word in words))
+                else:
+                    where.append("to_tsvector('simple',a.advisory_id || ' ' || a.summary || ' ' || a.package_name) @@ to_tsquery('simple',?)")
+                    params.append(" & ".join("'" + word + "':*" for word in words))
         if query.get("package"):
             where.append("lower(a.package_name)=?")
             params.append(query["package"][0].lower())

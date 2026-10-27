@@ -32,7 +32,7 @@ local 인증에서는 v1 관리 API와 `/metrics`도 관리자에게 한정한�
 - `GET /api/v2/intel/advisories/{id}`: 원문, 별칭, 버전 범위, 권한 내 프로젝트 영향.
 - `GET /api/v2/intel/records?source=OSV` 및 `GET /api/v2/intel/records/{source}/{id}`: 저장된 소스 기록 조회.
 
-목록은 `items,total,page_size,offset,next_cursor,as_of`를 반환한다. 기본 25, 최대 100건씩 페이지 이동하며 200건 고정 제한을 제거했다. 별칭을 함께 검색한다. 현재 저장 모델에는 패키지별 분리 행과 기존 alias merge 결과가 포함되어 있어 저장 건수는 unique CVE 수가 아니다. 기존 merge 과정에서 사라진 소스 원본은 재구성했다고 표시하지 않는다. 전체 공개 데이터의 완전성도 보장하지 않는다.
+목록은 `items,total,page_size,offset,next_cursor,as_of`를 반환한다. 기본 25, 최대 100건씩 페이지 이동하며 200건 고정 제한을 제거했다. 완전한 CVE/GHSA 등의 ID는 별칭도 함께 검색한다. 일반 검색어는 ID·요약·패키지명의 단어 접두어를 검색하며 여러 단어는 모두 일치해야 한다. 검색 연산자는 해석하지 않는다. SQLite FTS5 / PostgreSQL GIN 색인을 사용한다. 현재 저장 모델에는 패키지별 분리 행과 기존 alias merge 결과가 포함되어 있어 저장 건수는 unique CVE 수가 아니다. 기존 merge 과정에서 사라진 소스 원본은 재구성했다고 표시하지 않는다. 전체 공개 데이터의 완전성도 보장하지 않는다.
 
 수집 범위는 현재 OSV 지정 생태계(`SCA_MONITOR_OSV_ECOSYSTEMS`, 기본 npm), GHSA reviewed 변경분 전체 페이지, npm MAL 보고, KEV 카탈로그, NVD 저장 커서 이후 변경분이다. 다른 OSV 생태계는 운영자가 환경 변수에 추가할 수 있다. NVD 변경 구간의 일부만 처리한 경우 완료 커서를 앞당기지 않는다.
 
@@ -63,6 +63,8 @@ local 인증에서는 v1 관리 API와 `/metrics`도 관리자에게 한정한�
 ## 배포/복구
 
 Migration 020은 users/sessions/setup tokens/projects/memberships/target links/project alert rules와 검색 인덱스를 추가한다. 기존 테이블 행을 삭제하거나 프로젝트에 자동 할당하지 않는다. 배포 전 SQLite backup API로 일관된 DB 복사본을 만들고 quick_check, 테이블 건수를 확인한다. 배포 전 코드, `.env`, 사용자 systemd 구성도 release backup에 보관한다.
+
+Migration 021은 기존 취약점 행을 유지하고 전문 검색 색인과 패키지 매칭 색인을 추가한다. SQLite에서는 기존 행을 색인에 채운 뒤 트리거로 INSERT/UPDATE/DELETE를 반영한다. 백업 복제본에서 이행을 검증하고 수집기와 API를 잠시 중지한 상태에서 운영 DB에 적용한다.
 
 새 타이머:
 

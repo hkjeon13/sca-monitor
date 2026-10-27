@@ -306,7 +306,7 @@ async function intel(params) {
         `<a class="tab ${String(params.source || "") === s ? "active" : ""}" href="#intel?${query({ ...params, source: s, cursor: "" })}">${s || "통합"} ${s ? number(data.source_freshness.find((x) => x.source === s)?.stored_count) : ""}</a>`,
     )
     .join("");
-  const filters = `<form id="intel-search" class="search-form"><div class="search-primary">${field("검색", input("q", "CVE, GHSA, MAL ID · 패키지 · 키워드", params.q || ""))}<button>검색</button><a class="button-link secondary" href="#intel">초기화</a></div><input type="hidden" name="source" value="${esc(params.source || "")}"><details class="advanced-filters"><summary>고급 필터</summary><div class="form-grid">${field("생태계", input("ecosystem", "npm, PyPI, Maven 등", params.ecosystem || ""), "패키지가 배포된 생태계입니다. 소스에서 제공하지 않으면 검색되지 않을 수 있습니다.")}${field("심각도", select("severity", [["", "전체"], ...["critical", "high", "medium", "low"].map((x) => [x, x])], params.severity))}${field(
+  const filters = `<form id="intel-search" class="search-form"><div class="search-primary">${field("검색", input("q", "CVE, GHSA, MAL ID · 패키지 · 키워드", params.q || ""), "완전한 CVE·GHSA ID는 별칭도 검색합니다. 패키지·요약은 단어 앞부분으로 검색하며 여러 단어를 입력하면 모두 일치하는 항목을 표시합니다.")}<button>검색</button><a class="button-link secondary" href="#intel">초기화</a></div><input type="hidden" name="source" value="${esc(params.source || "")}"><details class="advanced-filters"><summary>고급 필터</summary><div class="form-grid">${field("생태계", input("ecosystem", "npm, PyPI, Maven 등", params.ecosystem || ""), "패키지가 배포된 생태계입니다. 소스에서 제공하지 않으면 검색되지 않을 수 있습니다.")}${field("심각도", select("severity", [["", "전체"], ...["critical", "high", "medium", "low"].map((x) => [x, x])], params.severity))}${field(
     "KEV",
     select(
       "kev",

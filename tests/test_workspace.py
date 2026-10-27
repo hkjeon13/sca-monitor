@@ -276,6 +276,59 @@ def test_search_pagination_aliases_and_detail_privacy(workspace):
     )
 
 
+def test_keyword_search_tracks_insert_update_delete_and_literal_input(workspace):
+    app, _ = workspace
+    principal = {"id": "search-test", "is_admin": True}
+
+    def search(term):
+        return app.workspace.advisory_search(principal, {"q": [term]})
+
+    with app.db.connect() as conn:
+        conn.execute(
+            """INSERT INTO advisories(id,advisory_id,source,summary,severity,ecosystem,
+            package_name,canonical_package_name,affected_versions,raw_payload)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            ("fts-test", "TEST-FTS-2099", "OSV", "Quasar prototype pollution",
+             "high", "npm", "@example/quasar-parser", "@example/quasar-parser", "[]", "{}"),
+        )
+        conn.execute(
+            "INSERT INTO advisory_aliases(advisory_pk,alias_type,alias_value,created_at) VALUES(?,?,?,?)",
+            ("fts-test", "CVE", "CVE-2099-99999", "2099-01-01"),
+        )
+    for term in ("quasar", "QUASAR prot", "@example/quasar", '"quasar"', "CVE-2099-99999"):
+        assert {r["id"] for r in search(term)["items"]} == {"fts-test"}, term
+    assert search("quasar absentword")["total"] == 0
+    assert search('"*() : -')["total"] == 0
+    with app.db.connect() as conn:
+        conn.execute("UPDATE advisories SET summary=? WHERE id=?", ("Nebula issue", "fts-test"))
+    assert search("prototype")["total"] == 0
+    assert search("nebula")["total"] == 1
+    with app.db.connect() as conn:
+        conn.execute("DELETE FROM advisories WHERE id=?", ("fts-test",))
+    assert search("quasar")["total"] == 0
+
+
+def test_search_index_backfills_existing_records(tmp_path, monkeypatch):
+    import backend.sca_monitor.db as db_module
+
+    database = db_module.Database(tmp_path / "upgrade.sqlite3")
+    migration_files = db_module.migration_files
+    with monkeypatch.context() as patch:
+        patch.setattr(db_module, "migration_files", lambda backend: [
+            p for p in migration_files(backend) if int(p.name[:3]) <= 20
+        ])
+        database.migrate()
+    with database.connect() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM advisories").fetchone()[0]
+    database.migrate()
+    with database.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM advisories").fetchone()[0] == before
+        assert conn.execute(
+            "SELECT COUNT(*) FROM advisory_search WHERE advisory_search MATCH ?", ('"lodash"*',)
+        ).fetchone()[0] >= 1
+        conn.execute("INSERT INTO advisory_search(advisory_search,rank) VALUES('integrity-check',1)")
+
+
 def test_login_logout_reset_and_origin(workspace):
     app, url = workspace
     admin = Client(url)
