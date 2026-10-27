@@ -1,0 +1,8 @@
+[Unit]
+Description=Retain the ten newest SCA Monitor OSV temporary ZIPs
+ConditionPathIsDirectory=/data/psyche/Projects/sca-monitor
+
+[Service]
+Type=oneshot
+WorkingDirectory=/data/psyche/Projects/sca-monitor
+ExecStart=/usr/bin/python3 /data/psyche/Projects/sca-monitor/scripts/prune_osv_tmp_zips.py --directory /data/psyche/Projects/sca-monitor --keep 10 --minimum-age-hours 24 --apply

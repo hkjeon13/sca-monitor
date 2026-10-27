@@ -51,6 +51,18 @@ systemctl --user status sca-monitor-api.service
 
 ## 2. 주요 운영 지표
 
+### OSV 임시 ZIP 보관
+
+서버의 `/data/psyche/Projects/sca-monitor` 최상위에서 `tmp????????.zip` 형식의 소유자 파일만 대상으로 한다. 수정 시각 기준 최신 10개는 보관하고, 나머지는 수정 후 24시간이 지난 경우에만 삭제한다. 하위 디렉터리, 심볼릭 링크, 다른 소유자의 파일은 제외한다. 매일 03:17(서버 현지 시간)에 `sca-monitor-tmp-zip-prune.timer`가 실행한다. 삭제 전 파일명·크기·수정 시각·inode 목록을 `.data/tmp-zip-prune-*.json`에 기록한다. OSV 공개 덤프에서 최신 데이터를 다시 받을 수 있지만 과거 ZIP 바이트를 그대로 복구하는 백업은 별도로 필요하다.
+
+```bash
+python3 scripts/prune_osv_tmp_zips.py --directory /data/psyche/Projects/sca-monitor --keep 10
+systemctl --user status sca-monitor-tmp-zip-prune.timer
+journalctl --user -u sca-monitor-tmp-zip-prune.service -n 20 --no-pager
+```
+
+서비스와 타이머 원본은 `deploy/sca-monitor-tmp-zip-prune.service`와 `.timer`에 있다. 운영 호스트의 `~/.config/systemd/user/`에 각각 설치한 뒤 `systemctl --user daemon-reload`와 `systemctl --user enable --now sca-monitor-tmp-zip-prune.timer`로 활성화한다.
+
 | 지표 | 설명 |
 |---|---|
 | sca_monitor_advisory_sync_lag_seconds | source별 마지막 성공 동기화 이후 경과 |

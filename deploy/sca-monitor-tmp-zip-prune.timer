@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily retention of SCA Monitor OSV temporary ZIPs
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+Unit=sca-monitor-tmp-zip-prune.service
+
+[Install]
+WantedBy=timers.target
