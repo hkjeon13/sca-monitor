@@ -1,4 +1,4 @@
-"""Let interactive writes finish between individual background import records."""
+"""Let interactive requests finish between individual background import records."""
 
 from contextlib import contextmanager
 from pathlib import Path

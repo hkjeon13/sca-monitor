@@ -527,3 +527,34 @@ def test_background_import_waits_for_interactive_write(workspace):
         assert not done.wait(0.1)
     assert done.wait(5)
     thread.join()
+
+
+def test_search_request_gets_priority_over_background_import(workspace, monkeypatch):
+    app, url = workspace
+    client = Client(url)
+    client.setup(app, "reader@example.test", True)
+    entered, done = threading.Event(), threading.Event()
+    original = app.workspace.advisory_search
+    threads = []
+
+    def background():
+        entered.set()
+        app.import_osv_payload({
+            "id": "OSV-SEARCH-PRIORITY", "summary": "Search priority test",
+            "affected": [{"package": {"ecosystem": "npm", "name": "priority-read"}, "versions": ["1.0.0"]}],
+        })
+        done.set()
+
+    def search(user, query):
+        thread = threading.Thread(target=background)
+        threads.append(thread)
+        thread.start()
+        assert entered.wait(2)
+        assert not done.wait(0.1), "Bulk import started during a foreground GET"
+        return original(user, query)
+
+    monkeypatch.setattr(app.workspace, "advisory_search", search)
+    assert client.request("/api/v2/intel/advisories?q=lodash")[0] == 200
+    assert done.wait(5)
+    for thread in threads:
+        thread.join()

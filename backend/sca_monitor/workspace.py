@@ -964,9 +964,10 @@ class WorkspaceAPI:
                 request._workspace_body = self.app.read_json(
                     request, max_length=maximum
                 )
-                with interactive_write(self.app.settings.data_dir):
-                    return self._route(request, method, path, query)
-            return self._route(request, method, path, query)
+            # Reads also need a turn between bulk import records: SQLite's
+            # rollback journal can otherwise leave repeated SELECTs starving.
+            with interactive_write(self.app.settings.data_dir):
+                return self._route(request, method, path, query)
         except (sqlite3.OperationalError, InteractiveBusyError) as exc:
             if (
                 isinstance(exc, InteractiveBusyError)
