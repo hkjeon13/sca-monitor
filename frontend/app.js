@@ -87,8 +87,11 @@ function toast(text, error = false) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => ($("#toast").hidden = true), 6000);
 }
-async function api(path, method = "GET", body) {
+async function api(path, method = "GET", body, externalSignal) {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const response = await fetch("/api/v2/" + path, {
@@ -121,9 +124,11 @@ async function api(path, method = "GET", body) {
     throw error;
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", cancel);
   }
 }
 function showAuth() {
+  stopInfiniteScroll();
   user = null;
   $("#console").hidden = true;
   $("#auth-screen").hidden = false;
@@ -174,9 +179,91 @@ function freshness(items) {
   const bad = items.filter((s) => s.status !== "fresh");
   return `<div class="coverage-note ${bad.length ? "attention" : "healthy"}">${bad.length ? "◷ " + esc(bad.map((s) => s.source).join(", ")) + " 수집 상태를 확인해 주세요." : "● 모든 소스의 수집 시각이 설정 기준 안에 있습니다."} ${help("영향이 0건이어도 인벤토리나 외부 보안 정보 수집이 오래됐다면 현재 안전 여부를 판단할 수 없습니다. 소스별 저장 건수는 수집된 기록 수이며 전 세계 CVE 전체 수가 아닙니다.", "수집 신선도")}<a href="#operations">수집 상태 보기 ↗</a></div>`;
 }
+let activeFeed = null;
 function pagination(data, path, params) {
-  return `<div class="pagination"><span>검색 결과 ${number(data.total)}건 · ${data.total ? data.offset + 1 : 0}–${Math.min(data.offset + data.items.length, data.total)}</span><div>${data.offset ? `<button type="button" class="secondary" data-page-path="${path}" data-page-params="${esc(JSON.stringify({ ...params, cursor: "" }))}">처음</button>` : ""}${data.next_cursor ? `<button type="button" class="secondary" data-page-path="${path}" data-page-params="${esc(JSON.stringify({ ...params, cursor: data.next_cursor }))}">다음 →</button>` : ""}</div></div>`;
+  const metadata = {
+    path, params, next: data.next_cursor, total: data.total,
+    ids: data.items.map((item) => item.id),
+  };
+  return `<div class="infinite-feed" data-infinite-feed="${esc(JSON.stringify(metadata))}"><span class="scope-note" data-feed-count>${number(data.items.length)}개 표시 · 검색 결과 ${number(data.total)}건</span><div class="feed-sentinel" data-feed-sentinel><span class="feed-spinner" aria-hidden="true" hidden></span><span data-feed-status role="status" aria-live="polite">${data.next_cursor ? "아래로 스크롤하면 계속 불러옵니다" : "마지막 항목입니다"}</span><button type="button" class="secondary" data-feed-retry hidden>다시 시도</button></div></div>`;
 }
+function stopInfiniteScroll() {
+  if (!activeFeed) return;
+  activeFeed.observer.disconnect();
+  activeFeed.controller?.abort();
+  activeFeed = null;
+}
+function startInfiniteScroll() {
+  const footer = $("[data-infinite-feed]");
+  if (!footer) return;
+  const metadata = JSON.parse(footer.dataset.infiniteFeed);
+  const path = metadata.path;
+  const table = path === "alerts" || path.startsWith("projects/");
+  const items = footer.closest("section").querySelector(table ? "tbody" : ".results");
+  if (!items || !metadata.next) return;
+  const endpoint = path === "intel" ? "intel/advisories" : path === "alerts" ? "alert-events" : table ? path + "/inventory" : path;
+  const rows = path === "intel" ? advisoryRows : path === "alerts" ? alertRows : table ? inventoryRows : findingRows;
+  const sentinel = footer.querySelector("[data-feed-sentinel]");
+  const status = footer.querySelector("[data-feed-status]");
+  const spinner = footer.querySelector(".feed-spinner");
+  const retry = footer.querySelector("[data-feed-retry]");
+  const feed = { next: metadata.next, seen: new Set(metadata.ids), loading: false, controller: null };
+  const current = () => activeFeed === feed && footer.isConnected && !$("#console").hidden;
+  feed.load = async () => {
+    if (!current() || feed.loading || !feed.next) return;
+    feed.loading = true;
+    feed.observer.unobserve(sentinel);
+    feed.controller = new AbortController();
+    retry.hidden = true;
+    spinner.hidden = false;
+    items.setAttribute("aria-busy", "true");
+    status.textContent = "추가 목록을 불러오는 중입니다…";
+    try {
+      const data = await api(endpoint + "?" + query({ ...metadata.params, cursor: feed.next }), "GET", undefined, feed.controller.signal);
+      if (!current()) return;
+      if (!Array.isArray(data.items) || data.next_cursor === feed.next)
+        throw new Error("다음 목록의 위치를 확인하지 못했습니다. 새로고침해 주세요.");
+      const seen = new Set(feed.seen);
+      const added = data.items.filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+      items.insertAdjacentHTML("beforeend", rows(added));
+      feed.seen = seen;
+      feed.next = data.next_cursor;
+      footer.querySelector("[data-feed-count]").textContent = `${number(feed.seen.size)}개 표시 · 검색 결과 ${number(data.total)}건`;
+      status.textContent = feed.next ? "아래로 스크롤하면 계속 불러옵니다" : "마지막 항목입니다";
+    } catch (error) {
+      if (!current()) return;
+      status.textContent = error.message;
+      retry.hidden = false;
+    } finally {
+      feed.loading = false;
+      spinner.hidden = true;
+      items.removeAttribute("aria-busy");
+      if (current() && feed.next && retry.hidden) feed.observer.observe(sentinel);
+    }
+  };
+  feed.observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) feed.load();
+  }, { rootMargin: "0px 0px 240px 0px" });
+  retry.addEventListener("click", () => feed.load());
+  activeFeed = feed;
+  feed.observer.observe(sentinel);
+}
+function inventoryRows(items) {
+  return items.map((d) => `<tr><td><strong>${esc(d.package_name)}</strong><br>${esc(d.resolved_version)}</td><td>${esc(d.ecosystem)}</td><td>${esc(d.service_name)} / ${esc(d.environment)}</td><td>${date(d.collected_at)} ${pill(d.freshness_status)}</td></tr>`).join("");
+}
+
+function findingRows(items) {
+  return items.map((f) => `<button class="result-row" data-finding="${f.id}"><span class="result-copy"><strong>${esc(f.project_name)} / ${esc(f.service_name)} <small>${esc(f.environment)}</small></strong><span>${esc(f.package_name)}@${esc(f.resolved_version)} · ${esc(f.advisory_id)}</span><small>${esc(f.summary)}</small>${f.data_stale ? '<small class="text-attention">현재 영향 여부 재확인을 위해 수집 갱신이 필요합니다.</small>' : ""}</span><span class="row-badges">${pill(f.risk_level)}${pill(f.status)}</span></button>`).join("");
+}
+
+function alertRows(items) {
+  return items.map((e) => `<tr><td>${esc(e.project_name)}<br>${esc(e.service_name)}</td><td>${esc(e.package_name)}<br>${esc(e.reason)}</td><td>${pill(e.status)}<br>재시도 ${number(e.retry_count)}</td><td>${date(e.created_at)}<br>${date(e.sent_at)}</td></tr>`).join("");
+}
+
 function metric(label, value, description, href, tone = "") {
   return `<div class="metric metric-${tone}"><a class="metric-link" href="${href}"><span class="metric-label">${esc(label)}</span><strong>${number(value)}</strong></a>${help(description, label)}</div>`;
 }
@@ -388,7 +475,7 @@ async function projectDetail(pid, params) {
       )}${field("Endpoint URL", input("status_endpoint_url", "https://service/.well-known/sca/dependencies", "", "url"), "poll 방식을 선택할 때 의존성 JSON을 제공하는 내부 주소입니다.")}${field("OS 정보", input("os", "예: Ubuntu 24.04"), "OS 취약점 매칭에는 OS 패키지의 정확한 버전을 인벤토리에 포함하는 것이 필요합니다.")}${field("런타임", input("runtime", "예: Node.js 22"))}${field("CPE (선택)", input("cpe", "cpe:2.3:a:vendor:product:version:..."), "NVD 제품 식별자입니다. 제품명이 같아도 영향 확정은 아니며 환경 검토 후보로 표시됩니다.")}<div class="form-actions"><button>서비스·환경 등록</button></div></form></details>`;
   } else if (tab === "inventory") {
     const data = await api(`projects/${pid}/inventory?` + query(params));
-    body = `<form class="search-primary" id="inventory-search" data-project="${pid}">${field("패키지 검색", input("q", "패키지명", params.q || ""))}<button>검색</button></form>${data.items.length ? `<div class="table-wrap"><table><thead><tr><th>패키지 / 버전</th><th>생태계</th><th>서비스·환경</th><th>수집 시각</th></tr></thead><tbody>${data.items.map((d) => `<tr><td><strong>${esc(d.package_name)}</strong><br>${esc(d.resolved_version)}</td><td>${esc(d.ecosystem)}</td><td>${esc(d.service_name)} / ${esc(d.environment)}</td><td>${date(d.collected_at)} ${pill(d.freshness_status)}</td></tr>`).join("")}</tbody></table></div>` : empty("패키지 목록이 없습니다", "서비스·환경 탭에서 목록을 전송하거나 CI/CD 연동을 설정하세요.")}${pagination(data, "projects/" + pid, { ...params, tab: "inventory" })}`;
+    body = `<form class="search-primary" id="inventory-search" data-project="${pid}">${field("패키지 검색", input("q", "패키지명", params.q || ""))}<button>검색</button></form>${data.items.length ? `<div class="table-wrap"><table><thead><tr><th>패키지 / 버전</th><th>생태계</th><th>서비스·환경</th><th>수집 시각</th></tr></thead><tbody>${inventoryRows(data.items)}</tbody></table></div>` : empty("패키지 목록이 없습니다", "서비스·환경 탭에서 목록을 전송하거나 CI/CD 연동을 설정하세요.")}${pagination(data, "projects/" + pid, { ...params, tab: "inventory" })}`;
   } else if (tab === "environment") {
     const data = await api(`projects/${pid}/environment-candidates`);
     body =
@@ -461,7 +548,7 @@ async function findings(params) {
           ],
           params.environment,
         ),
-      )}</div></form><div class="results">${data.items.length ? data.items.map((f) => `<button class="result-row" data-finding="${f.id}"><span class="result-copy"><strong>${esc(f.project_name)} / ${esc(f.service_name)} <small>${esc(f.environment)}</small></strong><span>${esc(f.package_name)}@${esc(f.resolved_version)} · ${esc(f.advisory_id)}</span><small>${esc(f.summary)}</small>${f.data_stale ? '<small class="text-attention">현재 영향 여부 재확인을 위해 수집 갱신이 필요합니다.</small>' : ""}</span><span class="row-badges">${pill(f.risk_level)}${pill(f.status)}</span></button>`).join("") : empty("일치하는 영향이 없습니다", "등록 범위와 수집 시각을 함께 확인하세요. 환경 제품 정보는 프로젝트의 환경 검토 탭에서 확인할 수 있습니다.")}</div>${pagination(data, "findings", params)}`,
+      )}</div></form><div class="results">${data.items.length ? findingRows(data.items) : empty("일치하는 영향이 없습니다", "등록 범위와 수집 시각을 함께 확인하세요. 환경 제품 정보는 프로젝트의 환경 검토 탭에서 확인할 수 있습니다.")}</div>${pagination(data, "findings", filters)}`,
     )
   );
 }
@@ -517,8 +604,8 @@ async function alerts(params) {
       "알림 이력",
       "프로젝트 영향에 대한 발송 대기·성공·실패 기록입니다.",
       data.items.length
-        ? `<div class="table-wrap"><table><thead><tr><th>프로젝트 / 대상</th><th>내용</th><th>상태</th><th>생성 / 발송</th></tr></thead><tbody>${data.items.map((e) => `<tr><td>${esc(e.project_name)}<br>${esc(e.service_name)}</td><td>${esc(e.package_name)}<br>${esc(e.reason)}</td><td>${pill(e.status)}<br>재시도 ${number(e.retry_count)}</td><td>${date(e.created_at)}<br>${date(e.sent_at)}</td></tr>`).join("")}</tbody></table></div>` +
-            pagination(data, "alerts", params)
+        ? `<div class="table-wrap"><table><thead><tr><th>프로젝트 / 대상</th><th>내용</th><th>상태</th><th>생성 / 발송</th></tr></thead><tbody>${alertRows(data.items)}</tbody></table></div>` +
+            pagination(data, "alerts", { ...params, project_id: pid })
         : empty(
             "알림 기록이 없습니다",
             "영향이 생성되면 기록됩니다. 채널과 수집 상태를 함께 확인하세요.",
@@ -579,6 +666,7 @@ function guide() {
   );
 }
 async function render() {
+  stopInfiniteScroll();
   if (!user) return;
   const id = ++renderId;
   const { path, params } = route();
@@ -630,6 +718,7 @@ async function render() {
     if (id === renderId) {
       $("#page").innerHTML = html;
       window.scrollTo(0, 0);
+      startInfiniteScroll();
     }
   } catch (error) {
     if (id === renderId)
@@ -783,8 +872,6 @@ document.addEventListener("click", async (event) => {
       await editTargetDialog(button.dataset.project, button.dataset.editTarget);
     if (button.dataset.advisory) await advisoryDetail(button.dataset.advisory);
     if (button.dataset.finding) await findingDetail(button.dataset.finding);
-    if (button.dataset.pagePath)
-      go(button.dataset.pagePath, JSON.parse(button.dataset.pageParams));
     if (button.dataset.importTarget)
       openDialog(
         "패키지 목록 전송",

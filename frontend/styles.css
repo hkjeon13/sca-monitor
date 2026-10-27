@@ -1105,3 +1105,10 @@ dialog::backdrop { background: #020a13c9; backdrop-filter: blur(3px); }
 #project-scope { height: 42px; margin: 0; }
 .topbar #refresh { flex: 0 0 42px; width: 42px; height: 42px; min-height: 42px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .topbar .scope-label { width: 240px; }
+
+.infinite-feed { display: grid; justify-items: center; gap: 10px; padding-top: 20px; }
+.feed-sentinel { min-height: 54px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 13px; text-align: center; }
+.feed-spinner { width: 20px; height: 20px; flex: 0 0 20px; border: 2px solid #294b63; border-top-color: var(--accent); border-radius: 50%; animation: feed-spin .8s linear infinite; }
+.feed-spinner[hidden], .feed-sentinel button[hidden] { display: none; }
+@keyframes feed-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .feed-spinner { animation: none; } }
