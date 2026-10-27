@@ -39,6 +39,7 @@ def dispatch_pending_alerts(
     retry_backoff_seconds: int = 300,
     max_retries: int = 5,
     sender: Callable | None = None,
+    project_only: bool = False,
 ) -> AlertDispatchResult:
     now = utcnow()
     owner = lock_owner or default_lock_owner()
@@ -47,18 +48,25 @@ def dispatch_pending_alerts(
             """
             SELECT ae.*, i.risk_level, i.package_name, i.resolved_version,
                    s.service_id, s.service_name, s.environment,
-                   a.advisory_id, a.summary
+                   a.advisory_id, a.summary, pt.project_id,
+                   pr.target_url AS project_target_url, pr.channel_type AS project_channel_type
             FROM alert_events ae
             LEFT JOIN impacts i ON i.id = ae.impact_pk
             LEFT JOIN services s ON s.id = i.service_pk
             LEFT JOIN advisories a ON a.id = i.advisory_pk
-            WHERE ae.status = 'pending'
+            LEFT JOIN project_targets pt ON pt.service_pk = i.service_pk
+            LEFT JOIN project_alert_rules pr ON pr.project_id = pt.project_id
+            WHERE (ae.status = 'pending'
                OR (ae.status = 'failed' AND (ae.next_attempt_at IS NULL OR ae.next_attempt_at <= ?))
-               OR (ae.status = 'dispatching' AND (ae.dispatch_lock_expires_at IS NULL OR ae.dispatch_lock_expires_at <= ?))
+               OR (ae.status = 'dispatching' AND (ae.dispatch_lock_expires_at IS NULL OR ae.dispatch_lock_expires_at <= ?)))
+              AND (pt.id IS NULL OR (pr.enabled=1 AND pr.target_url<>'' AND
+                CASE i.risk_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END <=
+                CASE pr.minimum_risk WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END))
+              AND (? = 0 OR pt.id IS NOT NULL)
             ORDER BY ae.created_at ASC
             LIMIT ?
             """,
-            (now, now, limit),
+            (now, now, int(project_only), limit),
         ).fetchall()
 
         if dry_run:
@@ -206,6 +214,8 @@ def alert_headers(row) -> dict[str, str]:
 
 
 def resolve_alert_target(conn, row, *, explicit_webhook_url: str | None, default_target: dict | None) -> AlertTarget | None:
+    if 'project_id' in row.keys() and row['project_id']:
+        return AlertTarget(target_url=row['project_target_url'], channel_type=row['project_channel_type']) if row['project_target_url'] else None
     if explicit_webhook_url:
         return AlertTarget(target_url=explicit_webhook_url, channel_type="webhook")
     owner_team = alert_owner_team(row)

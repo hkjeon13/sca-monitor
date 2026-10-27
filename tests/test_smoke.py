@@ -3735,8 +3735,8 @@ def test_pyproject_limits_setuptools_package_discovery():
 
 
 def test_web_console_renders_database_readiness_panel():
-    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (REPO_ROOT / "frontend" / "admin.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert 'id="database-readiness"' in html
     assert 'id="canonicalization-status"' in html
@@ -3798,8 +3798,8 @@ def test_web_console_renders_database_readiness_panel():
 
 
 def test_web_console_guides_service_scoped_snapshot_push():
-    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (REPO_ROOT / "frontend" / "admin.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert "POST /api/v1/services/{service_id}/status" in html
     assert "Authorization: Bearer ${PUSH_TOKEN}" in html
@@ -3813,8 +3813,8 @@ def test_web_console_guides_service_scoped_snapshot_push():
 
 
 def test_web_console_service_registration_includes_polling_schedule_fields():
-    html = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (REPO_ROOT / "frontend" / "admin.html").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert 'name="collection_mode"' in html
     assert '<option value="poll">endpoint polling</option>' in html
@@ -3827,7 +3827,7 @@ def test_web_console_service_registration_includes_polling_schedule_fields():
 
 
 def test_web_console_push_credential_result_includes_ready_to_copy_curl():
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
     styles = (REPO_ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
 
     assert "function renderPushCredentialResult(data, actionLabel)" in script
@@ -3844,7 +3844,7 @@ def test_web_console_push_credential_result_includes_ready_to_copy_curl():
 
 
 def test_web_console_push_credential_snippet_can_be_copied():
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert "data-copy-snippet" in script
     assert "function attachCredentialSnippetCopyHandler()" in script
@@ -3856,7 +3856,7 @@ def test_web_console_push_credential_snippet_can_be_copied():
 
 
 def test_web_console_gates_impact_status_options_by_role():
-    script = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert "function canImpactStatusTarget(status, impact)" in script
     assert '["acknowledged", "in_progress", "fixed", "not_affected"].includes(status)' in script
@@ -9075,3 +9075,18 @@ def nvd_cve_fixture(cve_id: str = "CVE-2026-0001", *, product: str = "example-se
             }
         ],
     }
+
+
+def test_nvd_truncated_modified_window_does_not_skip_unprocessed_cves(tmp_path):
+    app = make_test_app(tmp_path)
+    json_dir = tmp_path / 'nvd-window'
+    json_dir.mkdir()
+    for cve_id in ('CVE-2026-0001', 'CVE-2026-0002'):
+        (json_dir / f'{cve_id}.json').write_text(json.dumps(nvd_cve_fixture(cve_id)), encoding='utf-8')
+    app.record_advisory_sync('NVD', 'ok', None, None, cursor='2026-01-01T00:00:00.000')
+    sync_nvd_cves(app, ['CVE-2026-0001', 'CVE-2026-0002'], json_dir=json_dir, limit=1,
+                  success_cursor='2026-02-01T00:00:00.000')
+    with app.db.connect() as conn:
+        state = conn.execute("SELECT status,cursor FROM advisory_sync_state WHERE source='NVD'").fetchone()
+    assert state['status'] == 'partial'
+    assert state['cursor'] == '2026-01-01T00:00:00.000'

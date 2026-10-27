@@ -3,426 +3,131 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SCA Monitor</title>
-    <link rel="stylesheet" href="/styles.css?v=20260611-postgres-preflight" />
+    <title>SCA Monitor · 프로젝트 보안</title>
+    <link rel="stylesheet" href="/styles.css?v=20261028-workspace" />
   </head>
   <body>
-    <div class="app">
-      <aside class="sidebar">
+    <div id="auth-screen" class="auth-screen" hidden>
+      <div class="auth-card">
         <div class="brand">
-          <div class="brand-mark">SCA</div>
+          <div class="brand-mark" aria-hidden="true">◆</div>
           <div>
-            <strong>SCA Monitor</strong>
-            <span>Supply Chain Alert</span>
+            <strong>SCA MONITOR</strong><span>PROJECT SECURITY WORKSPACE</span>
           </div>
         </div>
-        <nav>
-          <a href="#overview" class="active">Overview</a>
-          <a href="#services">Services</a>
-          <a href="#impacts">Impacts</a>
-          <a href="#advisories">Advisories</a>
-          <a href="#register">Register</a>
-          <a href="#guide">Integration</a>
-          <a href="#settings">Settings</a>
+        <h1 id="auth-title">로그인</h1>
+        <p id="auth-description">프로젝트의 패키지와 보안 영향을 확인하세요.</p>
+        <form id="auth-form">
+          <label id="display-name-field" hidden
+            >이름<input name="display_name" autocomplete="name" maxlength="100"
+          /></label>
+          <label
+            >이메일<input
+              name="email"
+              type="email"
+              autocomplete="username"
+              required
+              maxlength="254"
+          /></label>
+          <label
+            >비밀번호<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="256"
+          /></label>
+          <p id="password-hint" hidden>
+            비밀번호는 12자 이상으로 설정해 주세요.
+          </p>
+          <button type="submit" id="auth-submit">로그인</button>
+        </form>
+        <p id="auth-error" class="form-error" role="alert"></p>
+        <p class="auth-footnote">
+          계정이 없거나 비밀번호를 잊었다면 관리자에게 계정 설정 링크를
+          요청하세요.
+        </p>
+      </div>
+    </div>
+    <div class="app" id="console" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">◆</div>
+          <div><strong>SCA MONITOR</strong><span>PROJECT SECURITY</span></div>
+        </div>
+        <p class="nav-label">WORKSPACE</p>
+        <nav aria-label="주 메뉴">
+          <a href="#overview"
+            ><span class="nav-icon" aria-hidden="true">▦</span>Overview</a
+          >
+          <a href="#projects"
+            ><span class="nav-icon" aria-hidden="true">◈</span>프로젝트</a
+          >
+          <a href="#intel"
+            ><span class="nav-icon" aria-hidden="true">⌕</span>보안 정보 탐색</a
+          >
+          <a href="#findings"
+            ><span class="nav-icon" aria-hidden="true">△</span>영향 및 조치</a
+          >
+          <a href="#alerts"
+            ><span class="nav-icon" aria-hidden="true">♧</span>알림</a
+          >
+          <a href="#guide"
+            ><span class="nav-icon" aria-hidden="true">⌁</span>연동 가이드</a
+          >
+          <a href="#operations"
+            ><span class="nav-icon" aria-hidden="true">⚙</span>수집·계정
+            관리</a
+          >
         </nav>
+        <div class="sidebar-status">
+          <span class="status-dot"></span
+          ><span id="sidebar-caption">프로젝트 보안 모니터링</span>
+        </div>
       </aside>
       <main>
         <header class="topbar">
           <div>
-            <h1>Supply Chain Monitoring</h1>
-            <p>보고된 advisory를 등록 서비스의 dependency snapshot과 매칭합니다.</p>
+            <span class="eyebrow">SUPPLY CHAIN SECURITY / WORKSPACE</span>
+            <h1 id="view-title">Overview</h1>
+            <p id="view-subtitle"></p>
           </div>
           <div class="top-actions">
-            <span id="session-summary" class="session-summary"></span>
-            <button id="refresh">Refresh</button>
+            <label class="scope-label"
+              >프로젝트 범위<select
+                id="project-scope"
+                aria-label="프로젝트 범위"
+              >
+                <option value="">내 전체 프로젝트</option>
+              </select></label
+            ><button id="refresh" type="button" aria-label="새로고침">↻</button>
           </div>
         </header>
-
-        <section id="overview" class="section">
-          <h2>Overview</h2>
-          <div class="metrics" id="metrics"></div>
-          <div id="database-readiness" class="readiness-panel"></div>
-          <div id="canonicalization-status" class="readiness-panel"></div>
-        </section>
-
-        <section id="services" class="section">
-          <div class="section-header">
-            <h2>Services</h2>
-            <span id="service-count"></span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Env</th>
-                  <th>Owner</th>
-                  <th>Health</th>
-                  <th>Open Impacts</th>
-                </tr>
-              </thead>
-              <tbody id="services-body"></tbody>
-            </table>
-          </div>
-          <aside id="service-detail" class="service-detail">
-            <p>No service selected.</p>
-          </aside>
-        </section>
-
-        <section id="impacts" class="section">
-          <div class="section-header">
-            <h2>Impacts</h2>
-            <span>Open security work</span>
-          </div>
-          <form id="impact-filter-form" class="filter-bar">
-            <label>Status
-              <select name="status">
-                <option value="">Any</option>
-                <option value="open">open</option>
-                <option value="acknowledged">acknowledged</option>
-                <option value="in_progress">in_progress</option>
-                <option value="fixed">fixed</option>
-                <option value="accepted_risk">accepted_risk</option>
-                <option value="false_positive">false_positive</option>
-                <option value="not_affected">not_affected</option>
-              </select>
-            </label>
-            <label>Risk
-              <select name="risk_level">
-                <option value="">Any</option>
-                <option value="critical">critical</option>
-                <option value="high">high</option>
-                <option value="medium">medium</option>
-                <option value="low">low</option>
-              </select>
-            </label>
-            <label>Service<input name="service_id" placeholder="payment-api" /></label>
-            <label>Team<input name="owner_team" placeholder="platform-security" /></label>
-            <label>Environment
-              <select name="environment">
-                <option value="">Any</option>
-                <option value="prod">prod</option>
-                <option value="stage">stage</option>
-                <option value="dev">dev</option>
-              </select>
-            </label>
-            <label>Package<input name="package_name" placeholder="lodash" /></label>
-            <label>Advisory<input name="advisory_id" placeholder="CVE, GHSA, OSV" /></label>
-            <label>KEV
-              <select name="known_exploited">
-                <option value="">Any</option>
-                <option value="true">known exploited</option>
-                <option value="false">not KEV</option>
-              </select>
-            </label>
-            <label>Malicious
-              <select name="malicious_package">
-                <option value="">Any</option>
-                <option value="true">malicious package</option>
-                <option value="false">not malicious</option>
-              </select>
-            </label>
-            <label>Sort
-              <select name="sort">
-                <option value="risk">risk</option>
-                <option value="updated_at">updated</option>
-                <option value="last_seen_at">last seen</option>
-                <option value="service">service</option>
-                <option value="package">package</option>
-                <option value="status">status</option>
-              </select>
-            </label>
-            <label>Direction
-              <select name="direction">
-                <option value="asc">asc</option>
-                <option value="desc">desc</option>
-              </select>
-            </label>
-            <label>Page Size
-              <select name="limit">
-                <option value="10">10</option>
-                <option value="25" selected>25</option>
-                <option value="50">50</option>
-              </select>
-            </label>
-            <label>Search<input name="q" placeholder="service, package, advisory, team" /></label>
-            <input type="hidden" name="offset" value="0" />
-            <button type="submit">Apply</button>
-            <button type="button" id="clear-impact-filters" class="secondary">Clear</button>
-          </form>
-          <form id="impact-bulk-action-form" class="bulk-action-bar">
-            <label>Bulk Status
-              <select name="target_status">
-                <option value="acknowledged">acknowledged</option>
-                <option value="in_progress">in_progress</option>
-                <option value="fixed">fixed</option>
-                <option value="false_positive">false_positive</option>
-                <option value="not_affected">not_affected</option>
-              </select>
-            </label>
-            <label>Limit
-              <select name="limit">
-                <option value="25">25</option>
-                <option value="50" selected>50</option>
-                <option value="100">100</option>
-              </select>
-            </label>
-            <label>Reason<input name="reason" placeholder="Bulk triage note" /></label>
-            <button type="submit" class="secondary">Apply to Filtered</button>
-          </form>
-          <div id="impact-bulk-result" class="inline-result"></div>
-          <div class="impact-workspace">
-            <div>
-              <div id="impacts-list" class="impact-list"></div>
-              <div id="impact-pagination" class="pagination"></div>
-            </div>
-            <aside id="impact-detail" class="impact-detail">
-              <p>No impact selected.</p>
-            </aside>
-          </div>
-        </section>
-
-        <section id="advisories" class="section">
-          <div class="section-header">
-            <h2>Advisories</h2>
-            <span>Reported vulnerability sources</span>
-          </div>
-          <div class="advisory-workspace">
-            <div id="advisory-list" class="impact-list"></div>
-            <aside id="advisory-detail" class="impact-detail">
-              <p>No advisory selected.</p>
-            </aside>
-          </div>
-        </section>
-
-        <section id="register" class="section split">
-          <div>
-            <h2>Register Service</h2>
-            <form id="service-form">
-              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
-              <label>Environment
-                <select name="environment">
-                  <option value="prod">prod</option>
-                  <option value="stage">stage</option>
-                  <option value="dev">dev</option>
-                </select>
-              </label>
-              <label>Owner Team<input name="owner_team" placeholder="platform-security" /></label>
-              <label>Collection Mode
-                <select name="collection_mode">
-                  <option value="push">snapshot push</option>
-                  <option value="poll">endpoint polling</option>
-                </select>
-              </label>
-              <label>Endpoint URL<input name="status_endpoint_url" placeholder="https://service/.well-known/sca/dependencies" /></label>
-              <label>Endpoint Auth
-                <select name="status_auth_type">
-                  <option value="none">none</option>
-                  <option value="bearer_token">bearer token</option>
-                </select>
-              </label>
-              <label>Bearer Token<input name="status_bearer_token" type="password" autocomplete="off" placeholder="optional endpoint token" /></label>
-              <label>Poll Interval Seconds<input name="poll_interval_seconds" type="number" min="1" step="1" placeholder="300" /></label>
-              <label>Freshness Threshold Seconds<input name="freshness_threshold_seconds" type="number" min="1" step="1" placeholder="900" /></label>
-              <button type="submit">Register</button>
-              <button type="button" id="endpoint-test" class="secondary">Test Endpoint</button>
-            </form>
-            <div id="endpoint-test-result" class="inline-result"></div>
-          </div>
-          <div>
-            <h2>Issue Push Credential</h2>
-            <form id="credential-form">
-              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
-              <label>Environment
-                <select name="environment">
-                  <option value="prod">prod</option>
-                  <option value="stage">stage</option>
-                  <option value="dev">dev</option>
-                </select>
-              </label>
-              <label>TTL Days<input name="ttl_days" type="number" value="90" min="1" max="3650" /></label>
-              <button type="submit">Issue Credential</button>
-            </form>
-            <div id="credential-result" class="credential-result"></div>
-            <div id="credential-list" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Push Demo Snapshot</h2>
-            <form id="snapshot-form">
-              <label>Service ID<input name="service_id" placeholder="payment-api" required /></label>
-              <label>Push Token<input name="token" placeholder="optional bearer token" /></label>
-              <label>Package<input name="package_name" value="lodash" required /></label>
-              <label>Version<input name="version" value="4.17.20" required /></label>
-              <button type="submit">Push Snapshot</button>
-            </form>
-          </div>
-        </section>
-
-        <section id="guide" class="section">
-          <h2>Integration Guide</h2>
-          <pre><code>POST /api/v1/services/{service_id}/status
-Authorization: Bearer ${PUSH_TOKEN}
-Idempotency-Key: ${CI_PIPELINE_ID}-${CI_COMMIT_SHA}
-Content-Type: application/json
-
-{
-  "schema_version": "1.0",
-  "service_id": "payment-api",
-  "environment": "prod",
-  "generated_at": "2026-06-12T00:00:00Z",
-  "artifact": {
-    "type": "container_image",
-    "name": "payment-api",
-    "digest": "sha256:..."
-  },
-  "dependencies": [
-    {
-      "ecosystem": "npm",
-      "name": "lodash",
-      "version": "4.17.20",
-      "scope": "production",
-      "direct": false
-    }
-  ]
-}</code></pre>
-        </section>
-
-        <section id="settings" class="section split">
-          <div>
-            <h2>Alert Channel</h2>
-            <form id="alert-channel-form">
-              <label>Name<input name="name" value="default-webhook" required /></label>
-              <label>Type
-                <select name="channel_type">
-                  <option value="webhook">Webhook JSON</option>
-                  <option value="slack_webhook">Slack Incoming Webhook</option>
-                </select>
-              </label>
-              <label>Target URL<input name="target_url" placeholder="https://alert-router.example/webhook" required /></label>
-              <label>Owner Team<input name="owner_team" placeholder="optional team routing" /></label>
-              <label><input name="is_default" type="checkbox" checked /> Default channel</label>
-              <button type="submit">Save Channel</button>
-            </form>
-          </div>
-          <div>
-            <h2>Configured Channels</h2>
-            <div id="alert-channel-list" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Dispatcher Preflight</h2>
-            <form id="dispatcher-preflight-form" class="compact-filter">
-              <label>Limit
-                <select name="limit">
-                  <option value="10">10</option>
-                  <option value="50" selected>50</option>
-                  <option value="100">100</option>
-                </select>
-              </label>
-              <label><input name="allow_missing_default_channel" type="checkbox" /> Allow missing channel</label>
-              <button type="submit" class="secondary">Check</button>
-            </form>
-            <div id="dispatcher-preflight-result" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Activation Checklist</h2>
-            <form id="dispatcher-activation-form" class="compact-filter">
-              <label>Limit
-                <select name="limit">
-                  <option value="10">10</option>
-                  <option value="50" selected>50</option>
-                  <option value="100">100</option>
-                </select>
-              </label>
-              <button type="submit" class="secondary">Check</button>
-            </form>
-            <div id="dispatcher-activation-result" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Alert Events</h2>
-            <form id="alert-event-filter-form" class="compact-filter">
-              <label>Status
-                <select name="status">
-                  <option value="">Any</option>
-                  <option value="pending">pending</option>
-                  <option value="dispatching">dispatching</option>
-                  <option value="sent">sent</option>
-                  <option value="failed">failed</option>
-                  <option value="dead_letter">dead_letter</option>
-                  <option value="resolved">resolved</option>
-                </select>
-              </label>
-              <label>Limit
-                <select name="limit">
-                  <option value="10" selected>10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                </select>
-              </label>
-              <label>Type
-                <select name="system_only">
-                  <option value="">All</option>
-                  <option value="true">system only</option>
-                </select>
-              </label>
-              <label>Search<input name="q" placeholder="service, package, advisory" /></label>
-              <label>Requeue Reason<input name="requeue_reason" placeholder="Why this alert should retry" /></label>
-              <button type="submit">Apply</button>
-              <button type="button" id="bulk-requeue-alert-events" class="secondary">Requeue Dead Letters</button>
-            </form>
-            <div id="alert-event-list" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Daily Digest</h2>
-            <form id="daily-digest-preview-form" class="compact-filter">
-              <label>Date<input name="date" type="date" /></label>
-              <label>Timezone<input name="timezone" value="Asia/Seoul" /></label>
-              <label>Limit
-                <select name="limit">
-                  <option value="10">10</option>
-                  <option value="25" selected>25</option>
-                  <option value="100">100</option>
-                </select>
-              </label>
-              <button type="submit" class="secondary">Preview</button>
-            </form>
-            <div id="daily-digest-preview" class="credential-list"></div>
-          </div>
-          <div>
-            <h2>Audit Logs</h2>
-            <form id="audit-log-filter-form" class="compact-filter">
-              <label>Action
-                <select name="action">
-                  <option value="">Any</option>
-                  <option value="impact.status.update">impact.status.update</option>
-                  <option value="alert_channel.upsert">alert_channel.upsert</option>
-                  <option value="alert_channel.update">alert_channel.update</option>
-                  <option value="alert_channel.test">alert_channel.test</option>
-                  <option value="alert_event.requeue">alert_event.requeue</option>
-                </select>
-              </label>
-              <label>Target
-                <select name="target_type">
-                  <option value="">Any</option>
-                  <option value="impact">impact</option>
-                  <option value="alert_channel">alert_channel</option>
-                  <option value="alert_event">alert_event</option>
-                </select>
-              </label>
-              <label>Limit
-                <select name="limit">
-                  <option value="10" selected>10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                </select>
-              </label>
-              <label>Search<input name="q" placeholder="actor, action, reason" /></label>
-              <button type="submit">Apply</button>
-            </form>
-            <div id="audit-log-list" class="credential-list"></div>
-          </div>
-        </section>
+        <div class="account-bar">
+          <span id="account-name"></span
+          ><button type="button" class="text-button" id="logout">
+            로그아웃
+          </button>
+        </div>
+        <div id="page" aria-live="polite"></div>
       </main>
     </div>
-    <script src="/app.js?v=20260611-postgres-preflight"></script>
+    <dialog id="detail-dialog">
+      <div class="dialog-heading">
+        <h2 id="detail-title">상세</h2>
+        <button
+          type="button"
+          id="close-dialog"
+          class="secondary"
+          aria-label="상세 닫기"
+        >
+          ✕
+        </button>
+      </div>
+      <div id="detail-body"></div>
+    </dialog>
+    <div id="info-popover" class="info-popover" role="tooltip" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script src="/app.js?v=20261028-workspace"></script>
   </body>
 </html>

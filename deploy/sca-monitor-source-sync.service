@@ -1,0 +1,11 @@
+[Unit]
+Description=SCA Monitor sequential advisory ingestion
+After=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/data/psyche/Projects/sca-monitor
+EnvironmentFile=/data/psyche/Projects/sca-monitor/.env
+Environment=SCA_MONITOR_AUTO_MIGRATE=false
+ExecStart=/usr/bin/python3 scripts/sync_sources_serial.py
+TimeoutStartSec=32h
+Nice=10

@@ -30,6 +30,7 @@ from .db import Database, canonical_package_name, json_column, row_to_dict, utcn
 from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .postgres_cutover import assess_cutover, summarize_preflight
 from .versioning import version_is_affected
+from .workspace import WorkspaceAPI, ApiError
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
@@ -88,6 +89,7 @@ class ScaMonitorApp:
         if settings.auto_migrate:
             self.db.migrate()
             self.rebuild_missing_advisory_aliases()
+        self.workspace = WorkspaceAPI(self)
 
     def handler(self):
         app = self
@@ -129,6 +131,19 @@ class ScaMonitorApp:
         parsed = urlparse(request.path)
         path = parsed.path
         try:
+            if path.startswith('/api/v2/'):
+                return self.workspace.route(request, method, path, parse_qs(parsed.query))
+            if self.settings.auth_mode == 'local' and (path.startswith('/api/v1/') or path == '/metrics'):
+                snapshot_push = method == 'POST' and (path == '/api/v1/snapshots' or (path.startswith('/api/v1/services/') and path.endswith('/status')))
+                if snapshot_push:
+                    if not request.headers.get('Authorization'):
+                        raise ApiError(401, 'A target-scoped push credential is required.')
+                elif path != '/api/v1/session':
+                    user = self.workspace.session_user(request)
+                    if not user['is_admin']:
+                        raise ApiError(403, 'Use the project-scoped v2 API.')
+                    if method != 'GET':
+                        self.workspace.csrf(request, user)
             if path == "/health":
                 return self.json_response(request, {"status": "ok", "app": "sca-monitor"})
             if path == "/ready":
@@ -283,6 +298,8 @@ class ScaMonitorApp:
             if path.startswith("/api/"):
                 return self.json_response(request, {"error": "not_found"}, HTTPStatus.NOT_FOUND)
             return self.serve_static(request, path)
+        except ApiError as exc:
+            return self.workspace.reply(request, {'error': exc.message}, exc.status)
         except PayloadTooLargeError as exc:
             return self.json_response(request, {"error": str(exc)}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         except SnapshotConflictError as exc:
@@ -308,6 +325,7 @@ class ScaMonitorApp:
         payload = json.dumps(body, ensure_ascii=False, indent=2).encode("utf-8")
         request.send_response(status)
         request.send_header("Content-Type", "application/json; charset=utf-8")
+        request.send_header("Cache-Control", "no-store")
         request.send_header("Content-Length", str(len(payload)))
         request.end_headers()
         request.wfile.write(payload)
@@ -317,13 +335,16 @@ class ScaMonitorApp:
         request.send_response(HTTPStatus.OK)
         request.send_header("Content-Type", content_type)
         request.send_header("Content-Length", str(len(payload)))
+        request.send_header('X-Content-Type-Options', 'nosniff')
+        request.send_header('Referrer-Policy', 'same-origin')
+        request.send_header('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
         request.end_headers()
         request.wfile.write(payload)
 
     def serve_static(self, request: BaseHTTPRequestHandler, path: str) -> None:
         requested = "index.html" if path in ("", "/") else path.lstrip("/")
         file_path = (self.settings.frontend_dir / requested).resolve()
-        if not str(file_path).startswith(str(self.settings.frontend_dir)):
+        if not file_path.is_relative_to(self.settings.frontend_dir.resolve()):
             return self.json_response(request, {"error": "invalid_path"}, HTTPStatus.BAD_REQUEST)
         if not file_path.exists() or file_path.is_dir():
             file_path = self.settings.frontend_dir / "index.html"
@@ -332,7 +353,10 @@ class ScaMonitorApp:
         request.send_response(HTTPStatus.OK)
         request.send_header("Content-Type", content_type)
         request.send_header("Content-Length", str(len(payload)))
-        if file_path.name == "index.html" or file_path.suffix in {".js", ".css"}:
+        request.send_header('X-Content-Type-Options', 'nosniff')
+        request.send_header('Referrer-Policy', 'same-origin')
+        request.send_header('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        if file_path.suffix in {".html", ".js", ".css"}:
             request.send_header("Cache-Control", "no-cache")
         else:
             request.send_header("Cache-Control", "public, max-age=31536000, immutable")
@@ -341,6 +365,9 @@ class ScaMonitorApp:
 
     def auth_context(self, request: BaseHTTPRequestHandler) -> dict:
         mode = (self.settings.auth_mode or "disabled").lower()
+        if mode == 'local':
+            user = self.workspace.session_user(request)
+            return {'enabled': True, 'principal': user['email'], 'roles': {'admin', 'security-approver'} if user['is_admin'] else {'viewer'}, 'owner_teams': set()}
         if mode in {"disabled", "off", "none"}:
             return {"enabled": False, "principal": None, "roles": set(), "owner_teams": set()}
         if mode != "header":
@@ -363,6 +390,11 @@ class ScaMonitorApp:
 
     def session(self, request: BaseHTTPRequestHandler) -> dict:
         mode = (self.settings.auth_mode or "disabled").lower()
+        if mode == 'local':
+            user = self.workspace.session_user(request)
+            roles = {'admin', 'security-approver'} if user['is_admin'] else {'viewer'}
+            return {'auth_mode': mode, 'authenticated': True, 'principal': user['email'], 'roles': sorted(roles),
+                    'owner_teams': [], 'capabilities': self.role_capabilities(roles), 'csrf_token': user['csrf_token']}
         if mode in {"disabled", "off", "none"}:
             return {
                 "auth_mode": "disabled",
@@ -2114,13 +2146,15 @@ class ScaMonitorApp:
         credential_id = None
         if authorization:
             credential_id = self.validate_push_authorization(authorization, service_id, environment)
+        with self.db.connect() as conn:
+            existing_service = conn.execute('SELECT service_name,owner_team,collection_mode FROM services WHERE service_id=? AND environment=?', (service_id, environment)).fetchone()
         service = self.create_service(
             {
                 "service_id": service_id,
-                "service_name": body.get("service_name", service_id),
+                "service_name": body.get("service_name", existing_service['service_name'] if existing_service else service_id),
                 "environment": environment,
-                "owner_team": body.get("owner_team", "unassigned"),
-                "collection_mode": "push",
+                "owner_team": existing_service['owner_team'] if existing_service else body.get("owner_team", "unassigned"),
+                "collection_mode": existing_service['collection_mode'] if existing_service else "push",
             }
         )["service"]
         normalized = json.dumps(dependencies, sort_keys=True)

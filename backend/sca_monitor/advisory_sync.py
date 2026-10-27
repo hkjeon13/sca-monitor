@@ -604,6 +604,7 @@ def sync_nvd_cves(
             continue
         seen.add(cve_id)
         unique_cve_ids.append(cve_id)
+    window_truncated = success_cursor is not None and limit is not None and len(unique_cve_ids) > limit
     if limit is not None:
         unique_cve_ids = unique_cve_ids[:limit]
 
@@ -659,9 +660,9 @@ def sync_nvd_cves(
     if processed:
         app.record_advisory_sync(
             "NVD",
-            "ok" if failed == 0 else "partial",
+            "ok" if failed == 0 and not window_truncated else "partial",
             last_successful_cve_id,
-            None if failed == 0 else f"{failed} NVD CVE sync failures",
+            "modified window truncated by limit; cursor retained" if window_truncated else None if failed == 0 else f"{failed} NVD CVE sync failures",
             imported_count=imported_rows,
             cursor=success_cursor or last_successful_cve_id,
             records_processed=processed,

@@ -1,0 +1,10 @@
+[Unit]
+Description=SCA Monitor project inventory and alert worker
+After=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/data/psyche/Projects/sca-monitor
+EnvironmentFile=/data/psyche/Projects/sca-monitor/.env
+Environment=SCA_MONITOR_AUTO_MIGRATE=false
+ExecStart=/usr/bin/python3 scripts/project_worker.py
+TimeoutStartSec=30min

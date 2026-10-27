@@ -41,6 +41,8 @@ python3 scripts/postgres_prepare_rehearsal.py --json
 python3 scripts/database_env_dry_run_gate.py --json
 python3 scripts/advisory_source_preflight.py --list-only --json
 node --check frontend/app.js
+node --check frontend/admin.js
+python3 -m py_compile backend/sca_monitor/workspace.py scripts/workspace_admin.py scripts/ghsa_incremental.py scripts/sync_sources_serial.py scripts/project_worker.py
 bash -n scripts/deploy_remote.sh scripts/deploy_db_gate.sh scripts/deploy_systemd_gate.sh scripts/postgres_docker_smoke_gate.sh
 python3 scripts/migrate.py
 bash scripts/deploy_db_gate.sh
