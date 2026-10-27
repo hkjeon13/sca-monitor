@@ -47,6 +47,9 @@ def postgres_sql(sql: str) -> str:
         elif char == '"' and not in_single_quote:
             converted.append(char)
             in_double_quote = not in_double_quote
+        elif char == "%":
+            # psycopg parses percent signs even inside SQL string literals.
+            converted.append("%%")
         elif char == "?" and not in_single_quote and not in_double_quote:
             converted.append("%s")
         else:

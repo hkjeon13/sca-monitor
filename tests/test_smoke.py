@@ -9090,3 +9090,8 @@ def test_nvd_truncated_modified_window_does_not_skip_unprocessed_cves(tmp_path):
         state = conn.execute("SELECT status,cursor FROM advisory_sync_state WHERE source='NVD'").fetchone()
     assert state['status'] == 'partial'
     assert state['cursor'] == '2026-01-01T00:00:00.000'
+
+
+def test_postgres_sql_escapes_literal_percent_with_bound_parameters():
+    assert postgres_sql("SELECT id FROM alert_events WHERE reason LIKE 'system_%' AND status=?") == "SELECT id FROM alert_events WHERE reason LIKE 'system_%%' AND status=%s"
+    assert postgres_sql("SELECT 10 % 3") == "SELECT 10 %% 3"
