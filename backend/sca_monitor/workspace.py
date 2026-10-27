@@ -616,10 +616,26 @@ class WorkspaceAPI:
                 where.append(column + "=?")
                 params.append(value)
         if query.get("q") and query["q"][0]:
-            like = "%" + query["q"][0].lower()[:200] + "%"
-            where.append("""(lower(a.advisory_id) LIKE ? OR lower(a.summary) LIKE ? OR lower(a.package_name) LIKE ?
-                OR EXISTS(SELECT 1 FROM advisory_aliases aa WHERE aa.advisory_pk=a.id AND lower(aa.alias_value) LIKE ?))""")
-            params.extend([like] * 4)
+            term = query["q"][0].strip()[:200]
+            normalized = term.upper()
+            exact = re.fullmatch(
+                r"CVE-\d{4}-\d{4,}|GHSA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}|(?:OSV|PYSEC|MAL)-[A-Z0-9-]+",
+                normalized,
+            )
+            if exact:
+                kind = (
+                    "OSV"
+                    if normalized.startswith("PYSEC-")
+                    else normalized.split("-", 1)[0]
+                )
+                where.append("""a.id IN (SELECT id FROM advisories WHERE advisory_id IN (?,?)
+                    UNION SELECT advisory_pk FROM advisory_aliases WHERE alias_type=? AND alias_value=?)""")
+                params.extend([term, normalized, kind, normalized])
+            else:
+                like = "%" + term.lower() + "%"
+                where.append("""(lower(a.advisory_id) LIKE ? OR lower(a.summary) LIKE ? OR lower(a.package_name) LIKE ?
+                    OR a.id IN (SELECT advisory_pk FROM advisory_aliases WHERE lower(alias_value) LIKE ?))""")
+                params.extend([like] * 4)
         if query.get("package"):
             where.append("lower(a.package_name)=?")
             params.append(query["package"][0].lower())
