@@ -176,7 +176,12 @@ def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
         raise RuntimeError("API workflow smoke did not increase service_count")
     if snapshot["idempotency_status"] != "created":
         raise RuntimeError("API workflow smoke snapshot was not created")
+    principal = {"id": "postgres-smoke-readonly", "is_admin": True}
+    workspace_search = app.workspace.advisory_search(principal, {"page_size": ["5"]})
+    app.workspace.findings(principal, {})
+    app.workspace.overview(principal, {})
     return {
+        "workspace_search_total": workspace_search["total"],
         "service_id": service["service"]["service_id"],
         "snapshot_id": snapshot["snapshot_id"],
         "service_count_before": before["service_count"],

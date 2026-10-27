@@ -476,7 +476,7 @@ class WorkspaceAPI:
 
     def inventory(self, user, project_id, query):
         self.require_project(user, project_id)
-        where, params = ["pt.project_id=?", "ds.is_latest=1"], [project_id]
+        where, params = ["pt.project_id=?", "ds.is_latest"], [project_id]
         if query.get("target_id"):
             where.append("pt.id=?")
             params.append(query["target_id"][0])
@@ -643,7 +643,7 @@ class WorkspaceAPI:
             rows = conn.execute(
                 f"""SELECT a.id,a.advisory_id,a.source,a.summary,a.severity,a.ecosystem,a.package_name,
                 a.fixed_version,a.is_known_exploited,a.is_malicious_package,a.published_at,a.modified_at,a.first_seen_at
-                FROM advisories a WHERE {clause} ORDER BY COALESCE(a.modified_at,a.published_at,'') DESC,a.id DESC LIMIT ? OFFSET ?""",
+                FROM advisories a WHERE {clause} ORDER BY COALESCE(CAST(a.modified_at AS TEXT),CAST(a.published_at AS TEXT),'') DESC,a.id DESC LIMIT ? OFFSET ?""",
                 params + [size, offset],
             ).fetchall()
             items = []
