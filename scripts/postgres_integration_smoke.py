@@ -190,6 +190,16 @@ def run_api_workflow_smoke(database_url: str) -> dict[str, Any]:
             raise RuntimeError("PostgreSQL keyword search did not find imported smoke advisory")
     app.workspace.findings(principal, {})
     app.workspace.overview(principal, {})
+    repository_user = "pg-repository-" + uuid.uuid4().hex
+    with app.db.connect() as conn:
+        conn.execute("INSERT INTO workspace_users(id,email,display_name,password_hash,is_admin,created_at) VALUES(?,?,?,?,?,?)", (repository_user, repository_user + "@example.test", "Repository smoke", "unused", 1, "2026-10-28T00:00:00+00:00"))
+    repository_principal = {"id": repository_user, "is_admin": True}
+    repository_project = app.workspace.create_project(repository_principal, {"name": "Repository PostgreSQL smoke"})
+    repository = app.workspace.repositories.create(repository_principal, repository_project["id"], {"url": "https://github.com/example/postgres-smoke"})
+    scan = app.workspace.repositories.get_scan(repository_principal, repository_project["id"], repository["scan"]["id"])
+    if scan["status"] != "queued":
+        raise RuntimeError("PostgreSQL repository analysis queue failed")
+    app.workspace.repositories.cancel(repository_principal, repository_project["id"], scan["id"])
     return {
         "workspace_search_total": workspace_search["total"],
         "service_id": service["service"]["service_id"],

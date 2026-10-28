@@ -128,6 +128,7 @@ async function api(path, method = "GET", body, externalSignal) {
   }
 }
 function showAuth() {
+  stopRepositoryPolling();
   stopInfiniteScroll();
   user = null;
   $("#console").hidden = true;
@@ -253,7 +254,7 @@ function startInfiniteScroll() {
   feed.observer.observe(sentinel);
 }
 function inventoryRows(items) {
-  return items.map((d) => `<tr><td><strong>${esc(d.package_name)}</strong><br>${esc(d.resolved_version)}</td><td>${esc(d.ecosystem)}</td><td>${esc(d.service_name)} / ${esc(d.environment)}</td><td>${date(d.collected_at)} ${pill(d.freshness_status)}</td></tr>`).join("");
+  return items.map((d) => `<tr><td><strong>${esc(d.package_name)}</strong><br>${esc(d.resolved_version)}${String(d.source || "").startsWith("retained:") ? '<br><small class="text-attention">이전 관찰 보존 · 재확인 필요</small>' : ""}</td><td>${esc(d.ecosystem)}</td><td>${esc(d.service_name)} / ${esc(d.environment)}</td><td>${date(d.collected_at)} ${pill(d.freshness_status)}</td></tr>`).join("");
 }
 
 function findingRows(items) {
@@ -435,9 +436,10 @@ async function projectDetail(pid, params) {
   const project = await api("projects/" + pid);
   scope = pid;
   updateScope();
-  const tab = params.tab || "targets";
+  const tab = params.tab || "repositories";
   const write = project.role !== "viewer";
   const tabs = [
+    ["repositories", "저장소·분석"],
     ["targets", "서비스·환경"],
     ["inventory", "패키지 인벤토리"],
     ["environment", "환경 검토"],
@@ -450,7 +452,9 @@ async function projectDetail(pid, params) {
     )
     .join("");
   let body = "";
-  if (tab === "targets") {
+  if (tab === "repositories") {
+    body = await repositoryPanel(pid, write, project.role === "owner");
+  } else if (tab === "targets") {
     const data = await api(`projects/${pid}/targets`);
     body = data.items.length
       ? `<div class="target-cards">${data.items.map((t) => `<article class="target-card"><div class="section-header"><h3>${esc(t.service_name)}</h3>${pill(t.environment)}</div><p>수집 방식 ${esc(t.collection_mode)} · 열린 영향 ${number(t.open_findings)}</p><p>마지막 수집 ${date(t.last_collected_at)} ${pill(t.latest_snapshot_id ? t.freshness_status : "unknown")}</p><p>OS ${esc(t.metadata.os || "미제공")} · 런타임 ${esc(t.metadata.runtime || "미제공")}</p><div class="inline-actions">${write ? `<button type="button" class="secondary" data-edit-target="${t.id}" data-project="${pid}">대상 설정</button><button type="button" data-import-target="${t.id}" data-project="${pid}">패키지 목록 전송</button><button type="button" class="secondary" data-credential-target="${t.id}" data-project="${pid}">연동 토큰 발급</button>` : ""}</div></article>`).join("")}</div>`
@@ -650,6 +654,7 @@ async function operations() {
         `<form id="invite-account" class="search-primary">${field("초대할 이메일", input("email", "member@example.com", "", "email", "required"))}<button>계정 설정 링크 만들기</button></form><div id="invite-result"></div><p><a class="panel-link" href="/admin.html" target="_blank" rel="noopener">고급 운영 콘솔 ↗</a></p>`,
       );
   }
+  if (user.is_admin) admin += await repositoryAdminSettings();
   return (
     section(
       "데이터 수집 상태",
@@ -666,6 +671,7 @@ function guide() {
   );
 }
 async function render() {
+  stopRepositoryPolling();
   stopInfiniteScroll();
   if (!user) return;
   const id = ++renderId;
@@ -719,6 +725,7 @@ async function render() {
       $("#page").innerHTML = html;
       window.scrollTo(0, 0);
       startInfiniteScroll();
+      startRepositoryPolling();
     }
   } catch (error) {
     if (id === renderId)
@@ -868,6 +875,10 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   try {
+    if (Object.keys(button.dataset).some(k => k.startsWith("repo"))) {
+      await repositoryClick(button);
+      return;
+    }
     if (button.dataset.editTarget)
       await editTargetDialog(button.dataset.project, button.dataset.editTarget);
     if (button.dataset.advisory) await advisoryDetail(button.dataset.advisory);
@@ -900,6 +911,10 @@ document.addEventListener("submit", async (event) => {
   const submit = form.querySelector("button[type=submit],button:not([type])");
   if (submit) submit.disabled = true;
   try {
+    if (form.id.startsWith("repo-")) {
+      await repositorySubmit(form, body);
+      return;
+    }
     if (form.id === "intel-search") go("intel", body);
     else if (form.id === "finding-search") go("findings", body);
     else if (form.id === "inventory-search")

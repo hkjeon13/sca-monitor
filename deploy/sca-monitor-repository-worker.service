@@ -1,0 +1,14 @@
+[Unit]
+Description=SCA Monitor repository analysis worker
+After=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/data/psyche/Projects/sca-monitor
+EnvironmentFile=/data/psyche/Projects/sca-monitor/.env
+Environment=SCA_MONITOR_AUTO_MIGRATE=false
+ExecStart=/data/psyche/Projects/sca-monitor/.venv-repository/bin/python scripts/repository_worker.py
+TimeoutStartSec=35min
+Nice=10
+MemoryMax=1G
+CPUQuota=100%
+TasksMax=128

@@ -130,6 +130,8 @@ def inventory_freshness(last_seen, environment, threshold=None):
 class WorkspaceAPI:
     def __init__(self, app):
         self.app, self.db = app, app.db
+        from .repository.service import Repositories
+        self.repositories = Repositories(self)
         self._source_cache = None
         self._source_cache_at = None
 
@@ -511,7 +513,7 @@ class WorkspaceAPI:
             [
                 dict(r)
                 | {
-                    "freshness_status": inventory_freshness(
+                    "freshness_status": "stale" if str(r["source"] or "").startswith("retained:") else inventory_freshness(
                         r["last_confirmed_at"] or r["collected_at"],
                         r["environment"],
                         r["freshness_threshold_seconds"],
@@ -734,7 +736,8 @@ class WorkspaceAPI:
             params.extend([like] * 4)
         joins = """FROM impacts i JOIN services s ON s.id=i.service_pk JOIN advisories a ON a.id=i.advisory_pk
             JOIN project_targets pt ON pt.service_pk=i.service_pk JOIN projects p ON p.id=pt.project_id
-            LEFT JOIN dependency_snapshots ds ON ds.id=s.latest_snapshot_id"""
+            LEFT JOIN dependency_snapshots ds ON ds.id=s.latest_snapshot_id
+            LEFT JOIN dependencies d ON d.id=i.dependency_pk"""
         size, offset = (
             integer(query.get("page_size", [25])[0]),
             cursor_value(query.get("cursor", [None])[0]),
@@ -744,7 +747,7 @@ class WorkspaceAPI:
                 f"SELECT COUNT(*) AS c {joins} WHERE {' AND '.join(where)}", params
             ).fetchone()["c"]
             rows = conn.execute(
-                f"""SELECT i.*,s.service_name,s.freshness_threshold_seconds,ds.collected_at,ds.last_confirmed_at,a.advisory_id,a.source,a.summary,a.is_known_exploited,a.is_malicious_package,
+                f"""SELECT i.*,s.service_name,s.freshness_threshold_seconds,ds.collected_at,ds.last_confirmed_at,d.source AS inventory_source,a.advisory_id,a.source,a.summary,a.is_known_exploited,a.is_malicious_package,
                 p.id AS project_id,p.name AS project_name,pt.id AS target_id {joins} WHERE {" AND ".join(where)}
                 ORDER BY CASE i.risk_level WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,i.updated_at DESC,i.id LIMIT ? OFFSET ?""",
                 params + [size, offset],
@@ -758,7 +761,7 @@ class WorkspaceAPI:
                 row["environment"],
                 row["freshness_threshold_seconds"],
             )
-            stale = item["freshness_status"] != "fresh" or not fresh
+            stale = item["freshness_status"] != "fresh" or not fresh or str(item["inventory_source"] or "").startswith("retained:")
             items.append(
                 item
                 | {
@@ -1029,6 +1032,9 @@ class WorkspaceAPI:
         if method != "GET":
             self.csrf(request, user)
         body = request._workspace_body if method != "GET" else {}
+        result = self.repositories.route(request, method, parts, body, query, user)
+        if result is not False:
+            return result
         if parts == ["auth", "logout"] and method == "POST":
             with self.db.connect() as conn:
                 conn.execute(

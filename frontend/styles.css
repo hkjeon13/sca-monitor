@@ -1112,3 +1112,16 @@ dialog::backdrop { background: #020a13c9; backdrop-filter: blur(3px); }
 .feed-spinner[hidden], .feed-sentinel button[hidden] { display: none; }
 @keyframes feed-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .feed-spinner { animation: none; } }
+.repository-jobs { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 14px; margin-top: 16px; }
+.repository-job { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #102337; overflow-wrap: anywhere; }
+.repository-job small, .repository-tree-label small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.repository-job .inline-actions { margin-top: 14px; }
+.repo-capabilities { font-size: 12px; color: var(--muted); margin: 18px 0; }
+.repository-check { display: flex; align-items: flex-start; gap: 10px; grid-column: 1 / -1; font-size: 12px; }
+.repository-check input { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0; }
+.repository-tree-node { border-bottom: 1px solid var(--line); padding: 12px 0; }
+.repository-tree-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; overflow-wrap: anywhere; }
+.repository-tree-label > span { min-width: 0; }
+.repository-tree-label button { flex: 0 0 auto; }
+.repository-tree-children { padding-left: 18px; margin-top: 10px; border-left: 2px solid #2f667e; }
+@media(max-width:520px) { .repository-tree-label { align-items: flex-start; flex-direction: column; } .repository-tree-children { padding-left: 10px; } }
