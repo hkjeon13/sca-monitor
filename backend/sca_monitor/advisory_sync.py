@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import json
+import gzip
 import socket
 import tempfile
 import time
 import zipfile
-from dataclasses import dataclass
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterator
 from uuid import uuid4
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from http.client import IncompleteRead
 
-from .coordination import yield_to_interactive
+from .coordination import yield_to_interactive, interactive_write
 from .app import ScaMonitorApp
 from .db import canonical_package_name
 from .osv import AdvisoryImport
@@ -21,6 +27,11 @@ OSV_DUMP_BASE_URL = "https://osv-vulnerabilities.storage.googleapis.com"
 CISA_KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 GITHUB_ADVISORIES_API_URL = "https://api.github.com/advisories"
+COLLECTOR_BATCH_SIZE = 100
+
+
+class NvdWindowChanged(ValueError):
+    """The live provider changed a paginated result set; keep its cursor."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +82,19 @@ class NvdCveBatchSyncResult:
 
 
 @dataclass(frozen=True)
+class NvdWindowSyncResult:
+    source: str
+    window_start: str
+    window_end: str
+    processed: int
+    imported_rows: int
+    rematched_impacts: int
+    failed: int
+    pages: int
+    total_results: int
+
+
+@dataclass(frozen=True)
 class GhsaSyncResult:
     source: str
     processed: int
@@ -79,6 +103,32 @@ class GhsaSyncResult:
     failed: int
     api_url: str
     query: dict[str, Any]
+
+
+@contextmanager
+def _collector_connection(app):
+    with app.db.connect() as conn:
+        if app.db.backend == "sqlite":
+            # Bound to this collector connection. Keep index pages and pending
+            # batch writes in memory instead of repeatedly spilling a 2 MiB cache.
+            conn.execute("PRAGMA cache_size=-65536")
+            # Amortize the seek-heavy main-file checkpoint, while retaining
+            # FULL synchronization of each committed WAL transaction.
+            conn.execute("PRAGMA wal_autocheckpoint=16384")
+        yield conn
+
+
+@contextmanager
+def _committed_batch(app, conn):
+    """Keep one connection/WAL alive, but commit short, coordinated batches."""
+    with interactive_write(app.settings.data_dir):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
 
 def osv_dump_url(ecosystem: str) -> str:
@@ -111,7 +161,30 @@ def sync_osv_ecosystem_dump(
     owner = lock_owner or default_lock_owner(f"{sync_source.lower()}-{ecosystem}")
 
     try:
-        with app.advisory_sync_lock(sync_source, owner, ttl_seconds=lock_ttl_seconds):
+        with app.advisory_sync_lock(sync_source, owner, ttl_seconds=lock_ttl_seconds), _collector_connection(app) as conn:
+            batch = []
+
+            def flush_batch():
+                nonlocal imported_rows, failed
+                if not batch:
+                    return
+                with _committed_batch(app, conn):
+                    for payload in batch:
+                        conn.execute("SAVEPOINT osv_record")
+                        try:
+                            # OSV mirrors MAL records too. Keep their canonical
+                            # OpenSSF source instead of rewriting ownership twice
+                            # on every OSV/OpenSSF cycle.
+                            result = app.import_osv_payload(payload, source_override=None if sync_source == "OSV" else sync_source,
+                                record_state=False, connection=conn)
+                            imported_rows += result["imported"]
+                            conn.execute("RELEASE SAVEPOINT osv_record")
+                        except Exception:
+                            conn.execute("ROLLBACK TO SAVEPOINT osv_record")
+                            conn.execute("RELEASE SAVEPOINT osv_record")
+                            failed += 1
+                batch.clear()
+
             for payload in iter_osv_dump_payloads(url=url, zip_path=zip_path):
                 if limit is not None and processed >= limit:
                     break
@@ -124,10 +197,10 @@ def sync_osv_ecosystem_dump(
                     skipped += 1
                     continue
                 processed += 1
-                try:
-                    imported_rows += app.import_osv_payload(payload, source_override=sync_source)["imported"]
-                except Exception:
-                    failed += 1
+                batch.append(payload)
+                if len(batch) >= COLLECTOR_BATCH_SIZE:
+                    flush_batch()
+            flush_batch()
             status = "ok" if failed == 0 and not scan_limit_reached else "partial"
             error_message = "scan_limit reached before dump exhausted" if scan_limit_reached else None
             app.record_advisory_sync(sync_source, status, f"{ecosystem}:dump", error_message, imported_count=imported_rows)
@@ -187,7 +260,7 @@ def sync_cisa_kev_catalog(
                 processed += 1
                 try:
                     advisory = parse_cisa_kev_vulnerability(item, catalog)
-                    with app.db.connect() as conn:
+                    with interactive_write(app.settings.data_dir), app.db.connect() as conn:
                         app.upsert_advisory(conn, advisory)
                         enrichment = app.enrich_known_exploited_advisories(conn, item.get("cveID"))
                         enriched_advisories += enrichment["enriched_advisories"]
@@ -345,7 +418,7 @@ def sync_github_advisories(
                 processed += 1
                 try:
                     for advisory in parse_ghsa_advisory(item):
-                        with app.db.connect() as conn:
+                        with interactive_write(app.settings.data_dir), app.db.connect() as conn:
                             changed = app.upsert_advisory(conn, advisory)
                             if changed:
                                 rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
@@ -407,6 +480,7 @@ def load_nvd_modified_cve_ids(
     timeout_seconds: int = 60,
     json_path: Path | None = None,
     results_per_page: int = 2000,
+    delay_seconds: float | None = None,
 ) -> list[str]:
     if not last_mod_start or not last_mod_end:
         raise ValueError("last_mod_start and last_mod_end are required")
@@ -420,6 +494,7 @@ def load_nvd_modified_cve_ids(
     cve_ids: list[str] = []
     seen: set[str] = set()
     start_index = 0
+    client = NvdAPIClient(delay_seconds=(0.7 if api_key else 6.2) if delay_seconds is None else delay_seconds)
     while True:
         query = {
             "lastModStartDate": last_mod_start,
@@ -428,8 +503,7 @@ def load_nvd_modified_cve_ids(
             "resultsPerPage": results_per_page,
         }
         request = Request(f"{api_url}?{urlencode(query)}", headers=headers)
-        with urlopen(request, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        payload = client.fetch(request, timeout_seconds=timeout_seconds)
         for cve_id in nvd_cve_ids_from_payload(payload):
             if cve_id not in seen:
                 seen.add(cve_id)
@@ -441,6 +515,153 @@ def load_nvd_modified_cve_ids(
             return cve_ids
 
 
+class NvdAPIClient:
+    """Pace discovery pages as well as retries; never retry a permanent denial."""
+
+    def __init__(self, delay_seconds=6.2, attempts=5, sleep_func=time.sleep):
+        if delay_seconds < 0 or attempts < 1:
+            raise ValueError("invalid NVD request policy")
+        self.delay_seconds, self.attempts = delay_seconds, attempts
+        self.sleep, self.last_request = sleep_func, None
+        self.last_response = None
+
+    def fetch(self, request, timeout_seconds=60):
+        if not request.has_header("Accept-encoding"):
+            request.add_header("Accept-Encoding", "gzip")
+        for attempt in range(self.attempts):
+            if self.last_request is not None:
+                self.sleep(max(0, self.delay_seconds - (time.monotonic() - self.last_request)))
+            self.last_request = time.monotonic()
+            try:
+                with urlopen(request, timeout=timeout_seconds) as response:
+                    encoding = getattr(response, "headers", {}).get("Content-Encoding", "").strip().lower()
+                    self.last_response = {"http_status": getattr(response, "status", None), "content_encoding": encoding or "identity"}
+                    if encoding == "gzip":
+                        with gzip.GzipFile(fileobj=response) as decoded:
+                            return json.load(decoded)
+                    if encoding not in ("", "identity"):
+                        raise ValueError("unsupported NVD response content encoding")
+                    return json.load(response)
+            except (HTTPError, URLError, TimeoutError, IncompleteRead, EOFError) as exc:
+                retryable = not isinstance(exc, HTTPError) or exc.code in (429, 500, 502, 503, 504)
+                if not retryable or attempt + 1 == self.attempts:
+                    raise
+                retry_after = 0.0
+                if isinstance(exc, HTTPError):
+                    raw = exc.headers.get("Retry-After", "")
+                    try:
+                        retry_after = float(raw)
+                    except (ValueError, TypeError):
+                        try:
+                            retry_after = (parsedate_to_datetime(raw) - datetime.now(timezone.utc)).total_seconds()
+                        except (ValueError, TypeError, OverflowError):
+                            pass
+                    exc.close()
+                self.sleep(max(self.delay_seconds, retry_after, min(120, 6 * 2**attempt)))
+
+
+def _store_nvd_item(app, conn, item):
+    imported_rows = rematched_impacts = 0
+    advisories = parse_nvd_cve_vulnerability(item)
+    for advisory in advisories:
+        changed = app.upsert_advisory(conn, advisory)
+        if changed:
+            rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
+        imported_rows += 1
+    # Enrichment is keyed by CVE, not by each CPE/version row. Retain the full
+    # set of conditions while enriching each matching package only once.
+    combined = replace(advisories[0], advisory_id=(item.get("cve") or item)["id"],
+        affected_ranges=[match for a in advisories for match in a.affected_ranges])
+    enrichment = app.enrich_nvd_advisories(conn, combined)
+    rematched_impacts += enrichment["rematched_impacts"]
+    return imported_rows, rematched_impacts
+
+
+def sync_nvd_modified_window(app, *, last_mod_start, last_mod_end,
+        api_url=NVD_CVE_API_URL, api_key=None, results_per_page=2000,
+        delay_seconds=None, lock_ttl_seconds=21600, progress=None, client=None):
+    """Import the full records already returned by the modified-window API.
+
+    Each complete window is a durable checkpoint. Partial pages/failed requests
+    leave the old cursor intact, so committed chunks can be retried safely.
+    """
+    if not 1 <= results_per_page <= 2000:
+        raise ValueError("NVD results_per_page must be 1..2000")
+    client = client or NvdAPIClient(delay_seconds=(0.7 if api_key else 6.2) if delay_seconds is None else delay_seconds)
+    headers = {"Accept": "application/json", "User-Agent": "sca-monitor/0.2"}
+    if api_key:
+        headers["apiKey"] = api_key
+    processed = imported_rows = rematched = pages = start_index = 0
+    total = None
+    seen = set()
+    owner = default_lock_owner("nvd-window")
+    with app.advisory_sync_lock("NVD", owner, ttl_seconds=lock_ttl_seconds), _collector_connection(app) as conn:
+        try:
+            while True:
+                query = {"lastModStartDate": last_mod_start, "lastModEndDate": last_mod_end,
+                    "startIndex": start_index, "resultsPerPage": results_per_page}
+                if progress:
+                    progress({"event": "nvd_request", "method": "GET", "window_start": last_mod_start,
+                        "window_end": last_mod_end, "start_index": start_index, "results_per_page": results_per_page})
+                payload = client.fetch(Request(api_url + "?" + urlencode(query), headers=headers))
+                items = payload.get("vulnerabilities")
+                count = payload.get("totalResults")
+                size = payload.get("resultsPerPage")
+                if (not isinstance(items, list) or not isinstance(count, int) or count < 0
+                        or not isinstance(size, int) or size != len(items)
+                        or payload.get("startIndex") != start_index
+                        or (not items and start_index < count)):
+                    raise ValueError("incomplete or invalid NVD page")
+                if total is not None and count != total:
+                    raise NvdWindowChanged(f"NVD window changed during pagination ({total} -> {count}); cursor retained")
+                total = count
+                if progress:
+                    progress({"event": "nvd_response", "method": "GET", "start_index": start_index,
+                        "returned": len(items), "total_results": total,
+                        **(getattr(client, "last_response", None) or {})})
+                for offset in range(0, len(items), COLLECTOR_BATCH_SIZE):
+                    chunk_rows = chunk_impacts = chunk_processed = 0
+                    with _committed_batch(app, conn):
+                        for item in items[offset:offset + COLLECTOR_BATCH_SIZE]:
+                            cve_id = (item.get("cve") or {}).get("id")
+                            if not cve_id:
+                                raise ValueError("missing CVE in NVD page")
+                            if cve_id in seen:
+                                raise NvdWindowChanged("repeated CVE during NVD pagination; cursor retained")
+                            seen.add(cve_id)
+                            rows, impacts = _store_nvd_item(app, conn, item)
+                            chunk_rows += rows
+                            chunk_impacts += impacts
+                            chunk_processed += 1
+                    imported_rows += chunk_rows
+                    rematched += chunk_impacts
+                    processed += chunk_processed
+                    if progress and processed % 100 == 0:
+                        progress({"event": "nvd_chunk", "window_start": last_mod_start,
+                            "window_end": last_mod_end, "processed": processed,
+                            "total_results": total, "pages": pages})
+                pages += 1
+                if progress:
+                    progress({"event": "nvd_page", "window_start": last_mod_start,
+                        "window_end": last_mod_end, "processed": processed,
+                        "total_results": total, "pages": pages})
+                start_index += len(items)
+                if start_index >= total:
+                    break
+            if processed != total:
+                raise ValueError("NVD window is incomplete")
+            app.record_advisory_sync("NVD", "ok", "modified-window", None,
+                imported_count=imported_rows, records_processed=processed, cursor=last_mod_end)
+        except BaseException as exc:
+            # Keep previously committed records and the last complete cursor.
+            app.record_advisory_sync("NVD", "partial" if processed else "error", "modified-window",
+                "NVD window interrupted: " + type(exc).__name__ + (" HTTP " + str(exc.code) if isinstance(exc, HTTPError) else ""),
+                imported_count=imported_rows, records_processed=processed)
+            raise
+    return NvdWindowSyncResult("NVD", last_mod_start, last_mod_end, processed,
+        imported_rows, rematched, 0, pages, total)
+
+
 def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
     cve = item.get("cve") or item
     cve_id = str(cve.get("id") or "").strip()
@@ -450,10 +671,13 @@ def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
     if not cpe_matches:
         cpe_matches = [{"criteria": f"cve:{cve_id}"}]
 
-    imports: list[AdvisoryImport] = []
+    groups: dict[str, list[dict]] = {}
     for cpe_match in cpe_matches:
         criteria = str(cpe_match.get("criteria") or "").strip()
         package_name = package_name_from_cpe(criteria) or cve_id
+        groups.setdefault(package_name, []).append(cpe_match)
+    imports: list[AdvisoryImport] = []
+    for package_name, matches in groups.items():
         advisory_id = cve_id if len(cpe_matches) == 1 else f"{cve_id}:{package_name}"
         imports.append(
             AdvisoryImport(
@@ -464,8 +688,8 @@ def parse_nvd_cve_vulnerability(item: dict[str, Any]) -> list[AdvisoryImport]:
                 ecosystem="cpe",
                 package_name=package_name,
                 canonical_package_name=canonical_package_name("cpe", package_name),
-                affected_versions=nvd_affected_versions(cpe_match),
-                affected_ranges=[cpe_match],
+                affected_versions=list(dict.fromkeys(version for match in matches for version in nvd_affected_versions(match))),
+                affected_ranges=matches,
                 fixed_version=None,
                 is_known_exploited=bool(cve.get("cisaExploitAdd")),
                 is_malicious_package=False,
@@ -556,15 +780,10 @@ def sync_nvd_cve(
     rematched_impacts = 0
     with app.advisory_sync_lock("NVD", owner, ttl_seconds=lock_ttl_seconds):
         for item in vulnerabilities:
-            for advisory in parse_nvd_cve_vulnerability(item):
-                yield_to_interactive(app.settings.data_dir)
-                with app.db.connect() as conn:
-                    changed = app.upsert_advisory(conn, advisory)
-                    enrichment = app.enrich_nvd_advisories(conn, advisory)
-                    if changed:
-                        rematched_impacts += app.rematch_latest_snapshots_for_advisory(conn, advisory)
-                    rematched_impacts += enrichment["rematched_impacts"]
-                    imported_rows += 1
+            with interactive_write(app.settings.data_dir), app.db.connect() as conn:
+                rows, impacts = _store_nvd_item(app, conn, item)
+                imported_rows += rows
+                rematched_impacts += impacts
         status = "ok" if imported_rows else "partial"
         error_message = None if imported_rows else f"NVD CVE not found: {cve_id}"
         if record_state:
@@ -656,6 +875,8 @@ def sync_nvd_cves(
             results.append(result.__dict__)
             if result.imported_rows:
                 last_successful_cve_id = cve_id
+            else:
+                failed += 1
         except Exception as exc:  # noqa: BLE001 - batch sync should report per-CVE failures.
             failed += 1
             results.append({"source": "NVD", "cve_id": cve_id, "status": "failed", "error": exc.__class__.__name__, "detail": str(exc)})

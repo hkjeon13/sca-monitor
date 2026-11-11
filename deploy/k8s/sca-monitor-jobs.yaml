@@ -1,0 +1,138 @@
+# Keep suspended until the matching systemd timer is stopped at cutover.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sca-monitor-project-worker
+  namespace: sca-monitor
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: mobichat-k3s-1
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: sca-monitor:k8s-20261111b
+              imagePullPolicy: Never
+              command: ["python", "scripts/project_worker.py"]
+              envFrom:
+                - secretRef:
+                    name: sca-monitor-env
+              env:
+                - name: SCA_MONITOR_AUTO_MIGRATE
+                  value: "false"
+              volumeMounts:
+                - name: runtime-data
+                  mountPath: /data/psyche/Projects/sca-monitor/.data
+                - name: owned-storage
+                  mountPath: /home/psyche/.local/share/sca-monitor
+          volumes:
+            - name: runtime-data
+              hostPath:
+                path: /data/psyche/Projects/sca-monitor/.data
+                type: Directory
+            - name: owned-storage
+              hostPath:
+                path: /home/psyche/.local/share/sca-monitor
+                type: Directory
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sca-monitor-source-sync
+  namespace: sca-monitor
+spec:
+  schedule: "0 */6 * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: mobichat-k3s-1
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: sca-monitor:k8s-20261111b
+              imagePullPolicy: Never
+              command: ["python", "scripts/sync_sources_serial.py"]
+              envFrom:
+                - secretRef:
+                    name: sca-monitor-env
+              env:
+                - name: SCA_MONITOR_AUTO_MIGRATE
+                  value: "false"
+              volumeMounts:
+                - name: runtime-data
+                  mountPath: /data/psyche/Projects/sca-monitor/.data
+                - name: owned-storage
+                  mountPath: /home/psyche/.local/share/sca-monitor
+          volumes:
+            - name: runtime-data
+              hostPath:
+                path: /data/psyche/Projects/sca-monitor/.data
+                type: Directory
+            - name: owned-storage
+              hostPath:
+                path: /home/psyche/.local/share/sca-monitor
+                type: Directory
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sca-monitor-exploit-sync
+  namespace: sca-monitor
+spec:
+  schedule: "0 0 * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: mobichat-k3s-1
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: sca-monitor:k8s-20261111b
+              imagePullPolicy: Never
+              command: ["python", "scripts/exploit_sync.py", "--complete-sweep"]
+              envFrom:
+                - secretRef:
+                    name: sca-monitor-env
+              env:
+                - name: SCA_MONITOR_AUTO_MIGRATE
+                  value: "false"
+              volumeMounts:
+                - name: runtime-data
+                  mountPath: /data/psyche/Projects/sca-monitor/.data
+                - name: owned-storage
+                  mountPath: /home/psyche/.local/share/sca-monitor
+          volumes:
+            - name: runtime-data
+              hostPath:
+                path: /data/psyche/Projects/sca-monitor/.data
+                type: Directory
+            - name: owned-storage
+              hostPath:
+                path: /home/psyche/.local/share/sca-monitor
+                type: Directory

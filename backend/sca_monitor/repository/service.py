@@ -30,7 +30,14 @@ class Repositories:
         sandbox = Path(os.getenv("SCA_SANDBOX_READY_FILE", str(self.app.settings.data_dir / "sandbox-ready.json")))
         try:
             ready = json.loads(sandbox.read_text())
-            available = isinstance(ready, dict) and ready.get("isolation") == "kvm" and os.access("/dev/kvm", os.R_OK | os.W_OK) and Path(ready["base_image"]).is_file() and os.access(ready["launcher"], os.X_OK)
+            external_worker = os.getenv("SCA_REPOSITORY_EXTERNAL_KVM_WORKER", "false").lower() in {"1", "true", "yes", "on"}
+            available = isinstance(ready, dict) and ready.get("isolation") == "kvm" and (
+                external_worker or (
+                    os.access("/dev/kvm", os.R_OK | os.W_OK)
+                    and Path(ready["base_image"]).is_file()
+                    and os.access(ready["launcher"], os.X_OK)
+                )
+            )
         except (OSError, ValueError, KeyError, TypeError): available = False
         return {"llm": {"provider": "OpenRouter", "model": MODEL, "configured": configured}, "deep_analysis": available, "deep_profiles": ["python", "node", "docker"], "deep_max_seconds": 900}
 

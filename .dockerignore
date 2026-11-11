@@ -1,0 +1,14 @@
+.git
+.venv*
+.env
+.secrets
+.data
+logs
+releases
+*.egg-info
+tmp*.zip
+__pycache__
+.pytest_cache
+tests
+docs
+harness

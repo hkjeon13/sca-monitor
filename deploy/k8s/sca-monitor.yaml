@@ -1,0 +1,100 @@
+# Single-node transition: keep the existing SQLite and runtime data in place.
+# Create namespace and sca-monitor-env Secret separately; never commit .env.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sca-monitor-api
+  namespace: sca-monitor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sca-monitor-api
+  template:
+    metadata:
+      labels:
+        app: sca-monitor-api
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: mobichat-k3s-1
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: api
+          image: sca-monitor:k8s-20261111b
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 18780
+              hostPort: 18780
+          envFrom:
+            - secretRef:
+                name: sca-monitor-env
+          env:
+            - name: SCA_MONITOR_FRONTEND_DIR
+              value: /app/frontend
+            - name: SCA_MONITOR_AUTO_MIGRATE
+              value: "false"
+            # The isolated KVM executor stays in its existing host systemd unit.
+            - name: SCA_REPOSITORY_EXTERNAL_KVM_WORKER
+              value: "true"
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: runtime-data
+              mountPath: /data/psyche/Projects/sca-monitor/.data
+            - name: owned-storage
+              mountPath: /home/psyche/.local/share/sca-monitor
+            - name: repository-config
+              mountPath: /home/psyche/.config/sca-monitor
+              readOnly: true
+      volumes:
+        - name: runtime-data
+          hostPath:
+            path: /data/psyche/Projects/sca-monitor/.data
+            type: Directory
+        - name: owned-storage
+          hostPath:
+            path: /home/psyche/.local/share/sca-monitor
+            type: Directory
+        - name: repository-config
+          hostPath:
+            path: /home/psyche/.config/sca-monitor
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sca-monitor-api
+  namespace: sca-monitor
+spec:
+  type: ClusterIP
+  selector:
+    app: sca-monitor-api
+  ports:
+    - name: http
+      port: 18780
+      targetPort: http

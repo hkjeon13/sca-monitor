@@ -68,3 +68,10 @@ python3 scripts/deployment_input_readiness.py --env-file .env --require-postgres
 
 이 preflight는 public URL, API port, systemd mode, smoke token 설정 여부와 PostgreSQL cutover readiness를 확인한다.
 출력에는 DB URL 원문이나 password를 포함하지 않고, 환경 변수 source와 check 결과만 포함한다.
+
+
+## 2026-11-03 Collector Recovery Storage Note
+
+수집 복구 중 SQLite의 실제 저장 위치를 SSD로 전환했다. 위 fallback URL과 환경 설정은 유지하며, `/data/psyche/Projects/sca-monitor/.data/sca-monitor.sqlite3`는 `/home/psyche/.local/share/sca-monitor/sca-monitor.sqlite3`를 가리키는 symlink다. DB와 WAL을 함께 지원하는 SQLite 온라인 backup API를 사용해야 한다. symlink 또는 본체 파일만 복사한 백업은 최신 커밋을 보장하지 못한다.
+
+기존 HDD DB는 `.data/sca-monitor.before-ssd-20261103.sqlite3`에 보존했고, 검증된 초기/운영 백업과 전환 증거도 보존했다. 새 커밋이 있으므로 과거 HDD DB를 현재 DB 위에 덮어쓰지 않는다. 전환/복원/정상 수집 검증과 정확한 증거 경로는 [수집 복구 기록](../../docs/COLLECTOR_RECOVERY_2026-11-03.ko.md)을 따른다. PostgreSQL 전환은 이번에 수행하지 않았다.
