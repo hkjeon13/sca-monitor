@@ -115,7 +115,7 @@ spec:
             - name: worker
               image: sca-monitor:k8s-20261111b
               imagePullPolicy: Never
-              command: ["python", "scripts/exploit_sync.py", "--complete-sweep"]
+              command: ["python", "scripts/exploit_sync.py", "--complete-sweep", "--edb", "--metasploit"]
               envFrom:
                 - secretRef:
                     name: sca-monitor-env
