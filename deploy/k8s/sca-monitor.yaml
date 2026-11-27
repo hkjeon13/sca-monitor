@@ -24,7 +24,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: api
-          image: sca-monitor:k8s-20261111b
+          image: sca-monitor:metasploit-20261127
           imagePullPolicy: Never
           ports:
             - name: http
