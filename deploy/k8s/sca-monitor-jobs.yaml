@@ -113,7 +113,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: worker
-              image: sca-monitor:metasploit-20261127
+              image: sca-monitor:metasploit-20261127b
               imagePullPolicy: Never
               command: ["python", "scripts/exploit_sync.py", "--complete-sweep", "--edb", "--metasploit"]
               envFrom:
