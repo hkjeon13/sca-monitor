@@ -7,7 +7,8 @@ import mimetypes
 import os
 import re
 import secrets
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 import uuid
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
@@ -31,7 +32,9 @@ from .osv import AdvisoryImport, fetch_osv_advisory, parse_osv_advisories
 from .postgres_cutover import assess_cutover, summarize_preflight
 from .versioning import version_is_affected
 from .workspace import WorkspaceAPI, ApiError
-from .coordination import yield_to_interactive
+from .intel_integration import IntelIntegrationAPI, PREFIX as INTEL_INTEGRATION_PREFIX
+from .exploit_api import ExploitIntegrationAPI, PREFIX as EXPLOIT_INTEGRATION_PREFIX
+from .coordination import yield_to_interactive, interactive_write
 
 
 ACTIVE_IMPACT_STATUSES = ("open", "acknowledged", "in_progress")
@@ -91,6 +94,8 @@ class ScaMonitorApp:
             self.db.migrate()
             self.rebuild_missing_advisory_aliases()
         self.workspace = WorkspaceAPI(self)
+        self.intel_integration = IntelIntegrationAPI(self)
+        self.exploit_integration = ExploitIntegrationAPI(self)
 
     def handler(self):
         app = self
@@ -132,6 +137,10 @@ class ScaMonitorApp:
         parsed = urlparse(request.path)
         path = parsed.path
         try:
+            if path == EXPLOIT_INTEGRATION_PREFIX or path.startswith(EXPLOIT_INTEGRATION_PREFIX + '/'):
+                return self.exploit_integration.route(request, method, path, parse_qs(parsed.query, keep_blank_values=True))
+            if path.startswith(INTEL_INTEGRATION_PREFIX):
+                return self.intel_integration.route(request, method, path, parse_qs(parsed.query, keep_blank_values=True))
             if path.startswith('/api/v2/'):
                 return self.workspace.route(request, method, path, parse_qs(parsed.query))
             if self.settings.auth_mode == 'local' and (path.startswith('/api/v1/') or path == '/metrics'):
@@ -1433,20 +1442,23 @@ class ScaMonitorApp:
             self.record_advisory_sync("OSV", "error", advisory_id, str(exc))
             raise
 
-    def import_osv_payload(self, payload: dict, source_override: str | None = None) -> dict:
-        yield_to_interactive(self.settings.data_dir)
+    def import_osv_payload(self, payload: dict, source_override: str | None = None, *, record_state: bool = True, connection=None) -> dict:
         advisories = parse_osv_advisories(payload, source_override=source_override)
         source_advisory_id = str(payload.get("id") or advisories[0].advisory_id)
         sync_source = advisories[0].source
         changed_advisories: list[AdvisoryImport] = []
         rematched_impacts = 0
-        with self.db.connect() as conn:
+        # Share the actual transaction boundary with interactive requests, not
+        # just a check before it. A shared batch connection already owns it.
+        with (interactive_write(self.settings.data_dir) if connection is None else nullcontext()), \
+                (self.db.connect() if connection is None else nullcontext(connection)) as conn:
             for advisory in advisories:
                 if self.upsert_advisory(conn, advisory):
                     changed_advisories.append(advisory)
             for advisory in changed_advisories:
                 rematched_impacts += self.rematch_latest_snapshots_for_advisory(conn, advisory)
-            self.record_advisory_sync(sync_source, "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
+            if record_state:
+                self.record_advisory_sync(sync_source, "ok", source_advisory_id, None, conn=conn, imported_count=len(advisories))
         return {
             "source": sync_source,
             "imported": len(advisories),
@@ -1457,7 +1469,7 @@ class ScaMonitorApp:
     def upsert_advisory(self, conn, advisory: AdvisoryImport) -> bool:
         previous = conn.execute(
             """
-            SELECT summary, severity, ecosystem, package_name, canonical_package_name,
+            SELECT source, summary, severity, ecosystem, package_name, canonical_package_name,
                    affected_versions, affected_ranges, fixed_version, is_known_exploited,
                    is_malicious_package, published_at, modified_at, raw_payload
             FROM advisories
@@ -1465,7 +1477,21 @@ class ScaMonitorApp:
             """,
             (advisory.advisory_id,),
         ).fetchone()
+        if previous and previous["is_known_exploited"]:
+            # KEV is independent evidence; an NVD/OSV refresh must not erase it.
+            advisory = replace(advisory, is_known_exploited=True,
+                severity=highest_risk(advisory.severity, previous["severity"]))
+        if previous and advisory.source != "NVD":
+            # Independent NVD/KEV enrichment must survive a source refresh.
+            raw = dict(advisory.raw_payload)
+            enrichment = json_column(previous["raw_payload"], {}).get("_nvd_enrichment")
+            if enrichment:
+                raw["_nvd_enrichment"] = enrichment
+            advisory = replace(advisory, raw_payload=raw,
+                severity=highest_risk(advisory.severity, enrichment["severity"]) if enrichment else advisory.severity,
+                is_known_exploited=bool(advisory.is_known_exploited or previous["is_known_exploited"]))
         next_values = {
+            "source": advisory.source,
             "summary": advisory.summary,
             "severity": advisory.severity,
             "ecosystem": advisory.ecosystem,
@@ -1481,6 +1507,8 @@ class ScaMonitorApp:
             "raw_payload": json.dumps(advisory.raw_payload, ensure_ascii=False),
         }
         changed = previous is None or any(previous[key] != value for key, value in next_values.items())
+        if not changed:
+            return False
         now = utcnow()
         conn.execute(
             """
@@ -1716,7 +1744,8 @@ class ScaMonitorApp:
             raise ValueError("cve_id required")
         enriched = 0
         rematched = 0
-        rows = conn.execute("SELECT * FROM advisories WHERE source != 'CISA_KEV'").fetchall()
+        rows = conn.execute("""SELECT a.* FROM advisories a WHERE a.source != 'CISA_KEV'
+            AND a.id IN (SELECT advisory_pk FROM advisory_aliases WHERE alias_type='CVE' AND alias_value=?)""", (cve,)).fetchall()
         for row in rows:
             aliases = advisory_alias_values(row_to_dict(row))
             if cve not in aliases:
@@ -1743,7 +1772,8 @@ class ScaMonitorApp:
             raise ValueError("nvd_advisory must have a CVE advisory_id")
         enriched = 0
         rematched = 0
-        rows = conn.execute("SELECT * FROM advisories WHERE source != 'NVD'").fetchall()
+        rows = conn.execute("""SELECT a.* FROM advisories a WHERE a.source != 'NVD'
+            AND a.id IN (SELECT advisory_pk FROM advisory_aliases WHERE alias_type='CVE' AND alias_value=?)""", (cve,)).fetchall()
         cpe_matches = [
             item
             for item in nvd_advisory.affected_ranges

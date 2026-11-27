@@ -67,6 +67,8 @@ def main():
                     "24",
                     "--delay-seconds",
                     delay,
+                    "--lock-ttl-seconds",
+                    "21600",
                 ],
             )
         )
@@ -115,15 +117,20 @@ def main():
                     raise RuntimeError(f"source process exited {result.returncode}")
             except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
                 failures.append(source)
-                ScaMonitorApp(settings).record_advisory_sync(
-                    source, "error", "scheduled-sync", str(exc)
-                )
+                app = ScaMonitorApp(settings)
+                with app.db.connect() as conn:
+                    state = conn.execute("SELECT status,last_run_at FROM advisory_sync_state WHERE source=?", (source,)).fetchone()
+                # Keep a collector's specific failure; do not replace it with
+                # the unhelpful 'source process exited 1'.
+                if not (state and state["status"] in ("partial", "error")
+                        and state["last_run_at"] and str(state["last_run_at"]) >= now):
+                    app.record_advisory_sync(source, "error", "scheduled-sync", str(exc))
             print("Finished", source, flush=True)
         temporary = progress.with_suffix(".new")
         temporary.write_text(
             json.dumps(
                 {
-                    "status": "complete",
+                    "status": "failed" if failures else "complete",
                     "failed_sources": failures,
                     "finished_at": datetime.now(timezone.utc).isoformat(),
                 }

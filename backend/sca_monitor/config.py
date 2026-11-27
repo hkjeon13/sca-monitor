@@ -25,6 +25,10 @@ class Settings:
     max_snapshot_pushes_per_minute: int = 30
     strict_snapshot_push: bool = False
     advisory_sync_stale_after_seconds: int = 24 * 60 * 60
+    exploit_intel_enabled: bool = False
+    exploit_backfill_batch_size: int = 200
+    exploit_stale_after_seconds: int = 86400
+    github_exploit_search_enabled: bool = False
 
 
 def load_settings(component: str = "api") -> Settings:
@@ -68,7 +72,18 @@ def load_settings(component: str = "api") -> Settings:
         max_snapshot_pushes_per_minute=int(os.getenv("SCA_MONITOR_MAX_SNAPSHOT_PUSHES_PER_MINUTE", "30")),
         strict_snapshot_push=env_flag(os.getenv("SCA_MONITOR_STRICT_SNAPSHOT_PUSH"), default=False),
         advisory_sync_stale_after_seconds=int(os.getenv("SCA_MONITOR_ADVISORY_SYNC_STALE_AFTER_SECONDS", str(24 * 60 * 60))),
+        exploit_intel_enabled=env_flag(os.getenv("SCA_MONITOR_EXPLOIT_INTEL_ENABLED"), default=False),
+        exploit_backfill_batch_size=bounded_int("SCA_MONITOR_EXPLOIT_BACKFILL_BATCH_SIZE", 200, 1, 2000),
+        exploit_stale_after_seconds=bounded_int("SCA_MONITOR_EXPLOIT_STALE_AFTER_SECONDS", 86400, 60, 2592000),
+        github_exploit_search_enabled=env_flag(os.getenv("SCA_MONITOR_GITHUB_EXPLOIT_SEARCH_ENABLED"), default=False),
     )
+
+
+def bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    value = int(os.getenv(name, str(default)))
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return value
 
 
 def resolve_database_url(*, component_database_url_name: str, component_database_url: str | None, legacy_database_path: Path) -> tuple[str, str]:

@@ -1,0 +1,150 @@
+{
+  "observed_at_utc": "2026-11-03T11:03:55.419184+00:00",
+  "official_pages_reused_from": "/data/psyche/Projects/sca-monitor/releases/collector-recovery-20261103T081010Z/verification-20261103T105632Z/pages",
+  "source_state": {
+    "source": "NVD",
+    "status": "ok",
+    "cursor": "2026-11-03T10:49:52.000",
+    "last_success_at": "2026-11-03T10:49:52.987637+00:00"
+  },
+  "official_content_checks": [
+    {
+      "scope": "modified_6h",
+      "window_start": "2026-11-03T04:49:52.000",
+      "window_end": "2026-11-03T10:49:52.000",
+      "official_records": 271,
+      "matching_records": 271,
+      "missing_or_mismatched": []
+    },
+    {
+      "scope": "published_24h",
+      "window_start": "2026-11-02T10:49:52.000",
+      "window_end": "2026-11-03T10:49:52.000",
+      "official_records": 438,
+      "matching_records": 438,
+      "missing_or_mismatched": []
+    }
+  ],
+  "preservation": {
+    "services": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "dependency_snapshots": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "dependencies": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "workspace_users": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "workspace_sessions": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "workspace_setup_tokens": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "push_credentials": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "alert_channels": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "projects": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "project_memberships": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "project_targets": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "repository_credentials": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "repository_connections": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "repository_llm_settings": {
+      "baseline_rows_missing_or_changed": 0
+    },
+    "advisories": {
+      "baseline_keys_missing": 0
+    },
+    "impacts": {
+      "baseline_keys_missing": 0
+    },
+    "impact_history": {
+      "baseline_keys_missing": 0
+    },
+    "alert_events": {
+      "baseline_keys_missing": 0
+    },
+    "audit_logs": {
+      "baseline_keys_missing": 0
+    },
+    "repository_scan_runs": {
+      "baseline_keys_missing": 0
+    },
+    "repository_components": {
+      "baseline_keys_missing": 0
+    },
+    "repository_edges": {
+      "baseline_keys_missing": 0
+    }
+  },
+  "quick_check": "ok",
+  "foreign_key_issues": 0,
+  "source_states": [
+    {
+      "source": "CISA_KEV",
+      "status": "ok",
+      "cursor": null,
+      "last_run_at": "2026-11-03T10:48:32.568621+00:00",
+      "last_success_at": "2026-11-03T10:48:32.568621+00:00",
+      "records_processed": 1766
+    },
+    {
+      "source": "GHSA",
+      "status": "ok",
+      "cursor": "2026-11-03T10:48:32.725206+00:00",
+      "last_run_at": "2026-11-03T10:48:34.025258+00:00",
+      "last_success_at": "2026-11-03T10:48:34.025258+00:00",
+      "records_processed": 21
+    },
+    {
+      "source": "NVD",
+      "status": "ok",
+      "cursor": "2026-11-03T10:49:52.000",
+      "last_run_at": "2026-11-03T10:49:52.987637+00:00",
+      "last_success_at": "2026-11-03T10:49:52.987637+00:00",
+      "records_processed": 0
+    },
+    {
+      "source": "OSV",
+      "status": "ok",
+      "cursor": null,
+      "last_run_at": "2026-11-03T10:49:30.696659+00:00",
+      "last_success_at": "2026-11-03T10:49:30.696659+00:00",
+      "records_processed": 234573
+    },
+    {
+      "source": "OpenSSF",
+      "status": "ok",
+      "cursor": null,
+      "last_run_at": "2026-11-03T10:49:51.961854+00:00",
+      "last_success_at": "2026-11-03T10:49:51.961854+00:00",
+      "records_processed": 223006
+    }
+  ],
+  "advisory_counts": {
+    "CISA_KEV": 1766,
+    "GHSA": 5979,
+    "NVD": 124540,
+    "OSV": 9208,
+    "OpenSSF": 223007
+  },
+  "journal_mode": "wal",
+  "synchronous": 2,
+  "newest_nvd_modified_at": "2026-11-03T10:17:20.437"
+}

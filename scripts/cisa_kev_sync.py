@@ -34,6 +34,8 @@ def main() -> None:
         lock_ttl_seconds=args.lock_ttl_seconds,
     )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+    if result.failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

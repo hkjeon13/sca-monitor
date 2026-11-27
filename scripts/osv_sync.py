@@ -42,6 +42,8 @@ def main() -> None:
         scan_limit=args.scan_limit,
     )
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+    if result.failed or result.scan_limit_reached:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
